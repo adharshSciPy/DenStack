@@ -128,5 +128,70 @@ const loginDoctor = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
+// unckecked api
+const allDoctors = async (req, res) => {
+  try {
+    let { page = 1, limit = 10, search = "" } = req.query;
 
-export { registerDoctor, loginDoctor };
+    page = parseInt(page);
+    limit = parseInt(limit);
+
+    // Search filter
+    const query = {};
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: "i" } }, // case-insensitive search
+        { phoneNumber: { $regex: search, $options: "i" } }
+      ];
+    }
+
+    // Count total documents
+    const total = await Doctor.countDocuments(query);
+
+    // Pagination + sorting (newest first)
+    const doctors = await Doctor.find(query)
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit);
+
+    res.status(200).json({
+      success: true,
+      total,
+      page,
+      totalPages: Math.ceil(total / limit),
+      doctors
+    });
+  } catch (error) {
+    console.error("Error fetching doctors:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while fetching doctors",
+    });
+  }
+};
+ const fetchDoctorById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const doctor = await Doctor.findById(id);
+    if (!doctor) {
+      return res.status(404).json({
+        success: false,
+        message: "Doctor not found",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      doctor,
+    });
+  } catch (error) {
+    console.error("Error fetching doctor by ID:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while fetching doctor by ID",
+    });
+  }
+};
+
+export { registerDoctor, loginDoctor ,allDoctors,fetchDoctorById};
