@@ -5,6 +5,7 @@ import connectDB from "./mongoDB/connectDb.js";
 import superAdminAuthRoutes from "./routes/superAdminRouter.js";
 import clinicAuthRoutes from "./routes/clinicRouter.js";
 import doctorAuthRouter from "./routes/doctorRoute.js";
+import nurseAuthRouter from "./routes/nurseRouter.js";
 
 dotenv.config();
 connectDB();
@@ -20,9 +21,10 @@ app.get("/", (req, res) => {
   res.send("🚀 API is running...");
 });
 
-app.use("/api/v1/auth/super-admin",superAdminAuthRoutes)
-app.use("/api/v1/auth/clinic",clinicAuthRoutes)
-app.use("/api/v1/auth/doctor",doctorAuthRouter)
+app.use("/api/v1/auth/super-admin", superAdminAuthRoutes)
+app.use("/api/v1/auth/clinic", clinicAuthRoutes)
+app.use("/api/v1/auth/doctor", doctorAuthRouter)
+app.use("/api/v1/auth/nurse", nurseAuthRouter)
 
 
 const PORT = process.env.PORT || 8001;
