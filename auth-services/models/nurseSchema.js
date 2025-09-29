@@ -20,8 +20,7 @@ const nurseSchema = new Schema(
         },
         nurseId: {
             type: String,
-            unique: true,
-            required: true,
+            unique: true
         },
         email: {
             type: String,
@@ -93,6 +92,7 @@ nurseSchema.pre("save", async function (next) {
     }
     next();
 });
+
 
 // ====== Password hashing ======
 nurseSchema.pre("save", async function (next) {
