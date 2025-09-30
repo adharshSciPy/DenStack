@@ -5,7 +5,10 @@ import {
   passwordValidator,
   phoneValidator,
 } from "../utils/validators.js";
-
+const generateDoctorId = () => {
+  const randomNum = Math.floor(100000 + Math.random() * 900000); // 6-digit random
+  return `DCS-DR-${randomNum}`;
+};
 // ====== Register Doctor ======
 const registerDoctor = async (req, res) => {
   const { name, email, phoneNumber, password, specialization } = req.body;
@@ -39,13 +42,19 @@ const registerDoctor = async (req, res) => {
       return res.status(400).json({ message: "Phone number already exists" });
     }
 
-    
+    let uniqueId;
+    let exists = true;
+    while (exists) {
+      uniqueId = generateDoctorId();
+      exists = await Doctor.findOne({ uniqueId });
+    }
     const newDoctor = new Doctor({
       name,
       email,
       phoneNumber,
       password,
       specialization,
+      uniqueId
     });
 
     await newDoctor.save();
@@ -63,6 +72,7 @@ const registerDoctor = async (req, res) => {
         phoneNumber: newDoctor.phoneNumber,
         specialization: newDoctor.specialization,
         role: newDoctor.role,
+        uniqueId:newDoctor.uniqueId
       },
       accessToken,
       refreshToken,
@@ -193,5 +203,29 @@ const allDoctors = async (req, res) => {
     });
   }
 };
+const fetchDoctorByUniqueId = async (req, res) => {
+  try {
+    const {id: uniqueId } = req.params;
 
-export { registerDoctor, loginDoctor ,allDoctors,fetchDoctorById};
+    const doctor = await Doctor.findOne({ uniqueId });
+    if (!doctor) {
+      return res.status(404).json({
+        success: false,
+        message: "Doctor not found",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      doctor,
+    });
+  } catch (error) {
+    console.error("Error fetching doctor by uniqueId:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while fetching doctor by uniqueId",
+    });
+  }
+};
+
+export { registerDoctor, loginDoctor ,allDoctors,fetchDoctorById,fetchDoctorByUniqueId};

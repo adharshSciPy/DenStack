@@ -38,6 +38,11 @@ const doctorSchema = new Schema(
       trim: true,
       maxlength: [100, "Specialization cannot exceed 100 characters"],
     },
+    uniqueId:{
+type:String,
+required:true,
+unique:true
+    },
     role: {
       type: String,
       default: DOCTOR_ROLE,

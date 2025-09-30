@@ -121,4 +121,5 @@ const loginClinic = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
+
 export{registerClinic,loginClinic}
