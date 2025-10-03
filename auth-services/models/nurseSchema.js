@@ -37,7 +37,7 @@ const nurseSchema = new Schema(
             maxlength: [64, "Password cannot exceed 64 characters"],
         },
         phoneNumber: {
-            type: String,
+            type: Number,
             required: [true, "Phone number is required"],
             unique: true,
             match: [/^[6-9]\d{9}$/, "Phone number must be 10 digits"],
