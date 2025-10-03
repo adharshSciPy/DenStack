@@ -81,8 +81,8 @@ default:CLINIC_ROLE
       nurses: [{ type: Schema.Types.ObjectId }], 
       receptionists: [{ type: Schema.Types.ObjectId }], 
       pharmacists: [{ type: Schema.Types.ObjectId }],
-      accountant: [{ type: Schema.Types.ObjectId }],
-      
+      accountants: [{ type: Schema.Types.ObjectId }],
+
     
     },
   },
