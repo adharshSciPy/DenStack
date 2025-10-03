@@ -33,7 +33,7 @@ const registerAccountant = async (req, res) => {
       return res.status(400).json({ message: "Email already exists" });
     }
 
-    const existingAccountantPhone = await Doctor.findOne({ phoneNumber });
+    const existingAccountantPhone = await Accountant.findOne({ phoneNumber });
     if (existingAccountantPhone) {
       return res.status(400).json({ message: "Phone number already exists" });
     }
@@ -53,7 +53,7 @@ const registerAccountant = async (req, res) => {
 
     res.status(201).json({
       message: "Accountant registered successfully",
-      doctor: {
+      accountant: {
         id: newAccountant._id,
         name: newAccountant.name,
         email: newAccountant.email,
@@ -64,7 +64,7 @@ const registerAccountant = async (req, res) => {
       refreshToken,
     });
   } catch (error) {
-    console.error("❌ Error in registerDoctor:", error);
+    console.error("❌ Error in registeraccountant:", error);
 
 
     if (error.code === 11000) {
@@ -118,7 +118,7 @@ const loginAccountant = async (req, res) => {
       refreshToken,
     });
   } catch (error) {
-    console.error("❌ Error in loginDoctor:", error);
+    console.error("❌ Error in accountantlogin:", error);
     res.status(500).json({ message: "Server error" });
   }
 };
@@ -131,19 +131,19 @@ const loginAccountant = async (req, res) => {
     if (!accountant) {
       return res.status(404).json({
         success: false,
-        message: "Doctor not found",
+        message: "Accountant not found",
       });
     }
 
     res.status(200).json({
       success: true,
-      doctor,
+      accountant,
     });
   } catch (error) {
-    console.error("Error fetching doctor by ID:", error);
+    console.error("Error fetching accountant by ID:", error);
     res.status(500).json({
       success: false,
-      message: "Server error while fetching doctor by ID",
+      message: "Server error while fetching accountant by ID",
     });
   }
 };
@@ -180,10 +180,10 @@ const allAccountants = async (req, res) => {
       accountants
     });
   } catch (error) {
-    console.error("Error fetching doctors:", error);
+    console.error("Error fetching accountants:", error);
     res.status(500).json({
       success: false,
-      message: "Server error while fetching doctors",
+      message: "Server error while fetching accountants",
     });
   }
 };
