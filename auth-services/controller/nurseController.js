@@ -1,4 +1,5 @@
 import Nurse from "../models/nurseSchema.js";
+import Clinic from "../models/clinicSchema.js";
 import {
     nameValidator,
     emailValidator,
@@ -8,77 +9,93 @@ import {
 import bcrypt from "bcrypt"
 
 // ====== Register Nurse ======
+// ====== Register Nurse ======
 const registerNurse = async (req, res) => {
-    const { name, email, phoneNumber, password } = req.body;
+  const { name, email, phoneNumber, password, clinicId } = req.body;
 
-    try {
-
-        if (!name || !nameValidator(name)) {
-            return res.status(400).json({ message: "Invalid name" });
-        }
-
-        if (!email || !emailValidator(email)) {
-            return res.status(400).json({ message: "Invalid email" });
-        }
-
-        if (!phoneNumber || !phoneValidator(phoneNumber)) {
-            return res.status(400).json({ message: "Invalid phone number" });
-        }
-
-        if (!password || !passwordValidator(password)) {
-            return res.status(400).json({ message: "Invalid password" });
-        }
-
-
-        const existingNurseEmail = await Nurse.findOne({ email });
-        if (existingNurseEmail) {
-            return res.status(400).json({ message: "Email already exists" });
-        }
-
-        const existingNursePhone = await Nurse.findOne({ phoneNumber });
-        if (existingNursePhone) {
-            return res.status(400).json({ message: "Phone number already exists" });
-        }
-
-        // Create nurse (nurseId will be auto-generated in pre-save hook)
-        const newNurse = new Nurse({
-            name,
-            email,
-            phoneNumber,
-            password
-        });
-
-        await newNurse.save();
-
-
-        const accessToken = newNurse.generateAccessToken();
-        const refreshToken = newNurse.generateRefreshToken();
-
-        res.status(201).json({
-            message: "Nurse registered successfully",
-            Nurse: {
-                id: newNurse._id,
-                name: newNurse.name,
-                email: newNurse.email,
-                phoneNumber: newNurse.phoneNumber,
-                role: newNurse.role,
-                nurseId: newNurse.nurseId
-            },
-            accessToken,
-            refreshToken,
-        });
-    } catch (error) {
-        console.error("❌ Error in registerNurse:", error);
-
-
-        if (error.code === 11000) {
-            const field = Object.keys(error.keyPattern)[0];
-            return res.status(400).json({ message: `${field} already exists` });
-        }
-
-        res.status(500).json({ message: "Server error" });
+  try {
+    // Validate required fields
+    if (!name || !nameValidator(name)) {
+      return res.status(400).json({ message: "Invalid name" });
     }
+    if (!email || !emailValidator(email)) {
+      return res.status(400).json({ message: "Invalid email" });
+    }
+    if (!phoneNumber || !phoneValidator(phoneNumber)) {
+      return res.status(400).json({ message: "Invalid phone number" });
+    }
+    if (!password || !passwordValidator(password)) {
+      return res.status(400).json({ message: "Invalid password" });
+    }
+    if (!clinicId) {
+      return res.status(400).json({ message: "Clinic ID is required" });
+    }
+
+    // Check if clinic exists
+    const clinic = await Clinic.findById(clinicId);
+    if (!clinic) {
+      return res.status(404).json({ message: "Clinic not found" });
+    }
+
+    // Check if nurse email/phone already exists
+    const existingNurseEmail = await Nurse.findOne({ email });
+    if (existingNurseEmail) {
+      return res.status(400).json({ message: "Email already exists" });
+    }
+
+    const existingNursePhone = await Nurse.findOne({ phoneNumber });
+    if (existingNursePhone) {
+      return res.status(400).json({ message: "Phone number already exists" });
+    }
+
+    // Create nurse
+    const newNurse = new Nurse({
+      name,
+      email,
+      phoneNumber,
+      password
+    });
+
+    await newNurse.save();
+
+    // Push nurse _id into clinic.staffs.nurses
+    clinic.staffs.nurses.push(newNurse._id);
+    await clinic.save();
+
+    // Generate tokens
+    const accessToken = newNurse.generateAccessToken();
+    const refreshToken = newNurse.generateRefreshToken();
+
+    res.status(201).json({
+      message: "Nurse registered successfully",
+      Nurse: {
+        id: newNurse._id,
+        name: newNurse.name,
+        email: newNurse.email,
+        phoneNumber: newNurse.phoneNumber,
+        role: newNurse.role,
+        nurseId: newNurse.nurseId
+      },
+      clinic: {
+        id: clinic._id,
+        name: clinic.name,
+        staffs: clinic.staffs
+      },
+      accessToken,
+      refreshToken,
+    });
+  } catch (error) {
+    console.error("❌ Error in registerNurse:", error);
+
+    if (error.code === 11000) {
+      const field = Object.keys(error.keyPattern)[0];
+      return res.status(400).json({ message: `${field} already exists` });
+    }
+
+    res.status(500).json({ message: "Server error" });
+  }
 };
+    
 
 // ====== Login Nurse ======
 const loginNurse = async (req, res) => {

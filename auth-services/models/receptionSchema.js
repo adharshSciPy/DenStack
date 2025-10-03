@@ -51,6 +51,24 @@ const receptionSchema = new Schema(
   },
   { timestamps: true }
 );
+// 🔹 Auto-generate employeeId before saving
+receptionSchema.pre("save", async function (next) {
+  if (!this.employeeId) {
+    const lastReception = await mongoose
+      .model("Reception")
+      .findOne({}, {}, { sort: { createdAt: -1 } });
+
+    let newId = "REC001";
+
+    if (lastReception && lastReception.employeeId) {
+      const lastNumber = parseInt(lastReception.employeeId.replace("REC", "")) || 0;
+      newId = "REC" + String(lastNumber + 1).padStart(3, "0");
+    }
+
+    this.employeeId = newId;
+  }
+  next();
+});
 
 // ====== Password hashing ======
 receptionSchema.pre("save", async function (next) {
