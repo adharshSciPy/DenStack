@@ -6,6 +6,7 @@ const ACCOUNTANT_ROLE = process.env.ACCOUNTANT_ROLE || "400";
 
 const accountantSchema = new Schema({
   name: {
+    type: String,
     required: [true, "Name is required"],
     trim: true,
     minlength: [2, "Name must be at least 2 characters"],
@@ -31,7 +32,12 @@ const accountantSchema = new Schema({
       unique: true,
       match: [/^[6-9]\d{9}$/, "Phone number must be 10 digits"],
     },
-});
+     role: {
+      type: String,
+      default: ACCOUNTANT_ROLE,
+    }},
+  { timestamps: true }
+);
 
 accountantSchema.pre("save", async function (next) {
   if (!this.isModified("password")) return next();

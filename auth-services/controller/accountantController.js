@@ -1,4 +1,4 @@
-import Accountant from "../models/accountantModel.js";
+import Accountant from "../models/accountantSchema.js";
 import {
   nameValidator,
   emailValidator,
