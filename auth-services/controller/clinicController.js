@@ -6,7 +6,7 @@ import {
   phoneValidator,
 } from "../utils/validators.js";
 const registerClinic = async (req, res) => {
-    const { name, type, email, phoneNumber, password, address, description,} = req.body;
+  const { name, type, email, phoneNumber, password, address, description, } = req.body;
 
   try {
 
@@ -44,7 +44,7 @@ const registerClinic = async (req, res) => {
       password,
       address,
       description,
-  
+
     });
 
     await newClinic.save();
@@ -61,7 +61,7 @@ const registerClinic = async (req, res) => {
         email: newClinic.email,
         phoneNumber: newClinic.phoneNumber,
         type: newClinic.type,
-        role:newClinic.role,
+        role: newClinic.role,
         subscription: newClinic.subscription,
       },
       accessToken,
@@ -74,7 +74,7 @@ const registerClinic = async (req, res) => {
 };
 
 const loginClinic = async (req, res) => {
-    const { email, password } = req.body;
+  const { email, password } = req.body;
 
   try {
 
@@ -122,4 +122,48 @@ const loginClinic = async (req, res) => {
   }
 };
 
-export{registerClinic,loginClinic}
+const viewAllClinics = async (req, res) => {
+  try {
+    const response = await Clinic.find();
+    res.status(200).json({ message: "Clinics Fetched Successfully", data: response })
+  } catch (error) {
+    res.status(500).json({ message: "Internal Server Error", error: error.message })
+  }
+}
+
+const viewClinicById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const clinic = await Clinic.findById(id);
+    res.status(200).json({ message: "View Clinic", data: clinic })
+  } catch (error) {
+    res.status(500).json({ message: "Internal Server Error", error: error.message })
+  }
+}
+
+const editClinic = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name,
+      type,
+      email,
+      phoneNumber,
+      password,
+      address,
+      description } = req.body
+    const editRes = await Clinic.findByIdAndUpdate(id, {
+      name,
+      type,
+      email,
+      phoneNumber,
+      password,
+      address,
+      description,
+    })
+    res.status(200).json({ message: "Clinic updated successfully", data: editRes }, { new: true })
+  } catch (error) {
+    res.status(500).json({ message: "Internal Server Error", error: error.message })
+  }
+}
+
+export { registerClinic, loginClinic, viewAllClinics, viewClinicById, editClinic }
