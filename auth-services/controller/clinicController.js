@@ -124,12 +124,40 @@ const loginClinic = async (req, res) => {
 
 const viewAllClinics = async (req, res) => {
   try {
-    const response = await Clinic.find();
-    res.status(200).json({ message: "Clinics Fetched Successfully", data: response })
+    let { page, limit } = req.query;
+
+    // Convert to number and set defaults
+    page = parseInt(page) || 1;
+    limit = parseInt(limit) || 10;
+
+    const skip = (page - 1) * limit;
+
+    // Fetch clinics with pagination
+    const clinics = await Clinic.find()
+      .skip(skip)
+      .limit(limit);
+
+    // Get total count for frontend pagination
+    const total = await Clinic.countDocuments();
+
+    res.status(200).json({
+      message: "Clinics Fetched Successfully",
+      data: clinics,
+      pagination: {
+        total,
+        page,
+        pages: Math.ceil(total / limit),
+        limit
+      }
+    });
   } catch (error) {
-    res.status(500).json({ message: "Internal Server Error", error: error.message })
+    res.status(500).json({
+      message: "Internal Server Error",
+      error: error.message
+    });
   }
-}
+};
+
 
 const viewClinicById = async (req, res) => {
   try {
@@ -148,7 +176,6 @@ const editClinic = async (req, res) => {
       type,
       email,
       phoneNumber,
-      password,
       address,
       description } = req.body
     const editRes = await Clinic.findByIdAndUpdate(id, {
@@ -156,11 +183,10 @@ const editClinic = async (req, res) => {
       type,
       email,
       phoneNumber,
-      password,
       address,
       description,
-    })
-    res.status(200).json({ message: "Clinic updated successfully", data: editRes }, { new: true })
+    }, { new: true })
+    res.status(200).json({ message: "Clinic updated successfully", data: editRes })
   } catch (error) {
     res.status(500).json({ message: "Internal Server Error", error: error.message })
   }
