@@ -41,7 +41,7 @@ const receptionSchema = new Schema(
     },
     shift: {
       type: String,
-      enum: ["morning", "afternoon", "evening", "night"],
+      enum: ["Morning", "Afternoon", "Evening", "Night"],
       trim: true,
     },
     role: {
