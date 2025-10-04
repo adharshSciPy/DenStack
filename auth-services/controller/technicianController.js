@@ -11,94 +11,94 @@ import bcrypt from "bcrypt"
 // ====== Register Nurse ======
 // ====== Register Nurse ======
 const registerTechnician = async (req, res) => {
-  const { name, email, phoneNumber, password, clinicId } = req.body;
+    const { name, email, phoneNumber, password, clinicId } = req.body;
 
-  try {
-    // Validate required fields
-    if (!name || !nameValidator(name)) {
-      return res.status(400).json({ message: "Invalid name" });
+    try {
+        // Validate required fields
+        if (!name || !nameValidator(name)) {
+            return res.status(400).json({ message: "Invalid name" });
+        }
+        if (!email || !emailValidator(email)) {
+            return res.status(400).json({ message: "Invalid email" });
+        }
+        if (!phoneNumber || !phoneValidator(phoneNumber)) {
+            return res.status(400).json({ message: "Invalid phone number" });
+        }
+        if (!password || !passwordValidator(password)) {
+            return res.status(400).json({ message: "Invalid password" });
+        }
+        if (!clinicId) {
+            return res.status(400).json({ message: "Clinic ID is required" });
+        }
+
+        // Check if clinic exists
+        const clinic = await Clinic.findById(clinicId);
+        if (!clinic) {
+            return res.status(404).json({ message: "Clinic not found" });
+        }
+
+        // Check if nurse email/phone already exists
+        const existingTechnicianEmail = await Technician.findOne({ email });
+        if (existingTechnicianEmail) {
+            return res.status(400).json({ message: "Email already exists" });
+        }
+
+        const existingTechnicianPhone = await Technician.findOne({ phoneNumber });
+        if (existingTechnicianPhone) {
+            return res.status(400).json({ message: "Phone number already exists" });
+        }
+
+        // Create nurse
+        const newTechnician = new Technician({
+            name,
+            email,
+            phoneNumber,
+            password
+        });
+
+        await newTechnician.save();
+
+        // Push nurse _id into clinic.staffs.nurses
+        clinic.staffs.technicians.push(newTechnician._id);
+        await clinic.save();
+
+        // Generate tokens
+        const accessToken = newTechnician.generateAccessToken();
+        const refreshToken = newTechnician.generateRefreshToken();
+
+        res.status(200).json({
+            message: "Technician registered successfully",
+            Technician: {
+                id: newTechnician._id,
+                name: newTechnician.name,
+                email: newTechnician.email,
+                phoneNumber: newTechnician.phoneNumber,
+                role: newTechnician.role,
+                technicianId: newTechnician.technicianId
+            },
+            clinic: {
+                id: clinic._id,
+                name: clinic.name,
+                staffs: clinic.staffs
+            },
+            accessToken,
+            refreshToken,
+        });
+    } catch (error) {
+        console.error("❌ Error in registerNurse:", error);
+
+        if (error.code === 11000) {
+            const field = Object.keys(error.keyPattern)[0];
+            return res.status(400).json({ message: `${field} already exists` });
+        }
+
+        res.status(500).json({ message: "Server error" });
     }
-    if (!email || !emailValidator(email)) {
-      return res.status(400).json({ message: "Invalid email" });
-    }
-    if (!phoneNumber || !phoneValidator(phoneNumber)) {
-      return res.status(400).json({ message: "Invalid phone number" });
-    }
-    if (!password || !passwordValidator(password)) {
-      return res.status(400).json({ message: "Invalid password" });
-    }
-    if (!clinicId) {
-      return res.status(400).json({ message: "Clinic ID is required" });
-    }
-
-    // Check if clinic exists
-    const clinic = await Clinic.findById(clinicId);
-    if (!clinic) {
-      return res.status(404).json({ message: "Clinic not found" });
-    }
-
-    // Check if nurse email/phone already exists
-    const existingTechnicianEmail = await Technician.findOne({ email });
-    if (existingTechnicianEmail) {
-      return res.status(400).json({ message: "Email already exists" });
-    }
-
-    const existingTechnicianPhone = await Technician.findOne({ phoneNumber });
-    if (existingTechnicianPhone) {
-      return res.status(400).json({ message: "Phone number already exists" });
-    }
-
-    // Create nurse
-    const newTechnician = new Nurse({
-      name,
-      email,
-      phoneNumber,
-      password
-    });
-
-    await newTechnician.save();
-
-    // Push nurse _id into clinic.staffs.nurses
-    clinic.staffs.tec.push(newNurse._id);
-    await clinic.save();
-
-    // Generate tokens
-    const accessToken = newNurse.generateAccessToken();
-    const refreshToken = newNurse.generateRefreshToken();
-
-    res.status(201).json({
-      message: "Nurse registered successfully",
-      Nurse: {
-        id: newNurse._id,
-        name: newNurse.name,
-        email: newNurse.email,
-        phoneNumber: newNurse.phoneNumber,
-        role: newNurse.role,
-        nurseId: newNurse.nurseId
-      },
-      clinic: {
-        id: clinic._id,
-        name: clinic.name,
-        staffs: clinic.staffs
-      },
-      accessToken,
-      refreshToken,
-    });
-  } catch (error) {
-    console.error("❌ Error in registerNurse:", error);
-
-    if (error.code === 11000) {
-      const field = Object.keys(error.keyPattern)[0];
-      return res.status(400).json({ message: `${field} already exists` });
-    }
-
-    res.status(500).json({ message: "Server error" });
-  }
 };
-    
+
 
 // ====== Login Nurse ======
-const loginNurse = async (req, res) => {
+const loginTechnician = async (req, res) => {
     const { email, password } = req.body;
 
     try {
@@ -112,30 +112,30 @@ const loginNurse = async (req, res) => {
         }
 
 
-        const nurse = await Nurse.findOne({ email });
-        if (!nurse) {
+        const technician = await Technician.findOne({ email });
+        if (!technician) {
             return res.status(400).json({ message: "Invalid email or password" });
         }
 
 
-        const isMatch = await nurse.isPasswordCorrect(password);
+        const isMatch = await technician.isPasswordCorrect(password);
         if (!isMatch) {
             return res.status(400).json({ message: "Invalid email or password" });
         }
 
 
-        const accessToken = nurse.generateAccessToken();
-        const refreshToken = nurse.generateRefreshToken();
+        const accessToken = technician.generateAccessToken();
+        const refreshToken = technician.generateRefreshToken();
 
         res.status(200).json({
             message: "Login successful",
             Nurse: {
-                id: nurse._id,
-                name: nurse.name,
-                email: nurse.email,
-                phoneNumber: nurse.phoneNumber,
-                role: nurse.role,
-                nurseId: nurse.nurseId
+                id: technician._id,
+                name: technician.name,
+                email: technician.email,
+                phoneNumber: technician.phoneNumber,
+                role: technician.role,
+                nurseId: technician.nurseId
             },
             accessToken,
             refreshToken,
@@ -145,8 +145,9 @@ const loginNurse = async (req, res) => {
         res.status(500).json({ message: "Server error" });
     }
 };
-// unckecked api
-const allNurses = async (req, res) => {
+
+
+const allTechnicians = async (req, res) => {
     try {
         let { page = 1, limit = 10, search = "" } = req.query;
 
@@ -158,15 +159,23 @@ const allNurses = async (req, res) => {
         if (search) {
             query.$or = [
                 { name: { $regex: search, $options: "i" } }, // case-insensitive search
-                { phoneNumber: { $regex: search, $options: "i" } }
+                {
+                    $expr: {
+                        $regexMatch: {
+                            input: { $toString: "$phoneNumber" },
+                            regex: search,
+                            options: "i"
+                        }
+                    }
+                }
             ];
         }
 
         // Count total documents
-        const total = await Nurse.countDocuments(query);
+        const total = await Technician.countDocuments(query);
 
         // Pagination + sorting (newest first)
-        const nurses = await Nurse.find(query)
+        const technicians = await Technician.find(query)
             .sort({ createdAt: -1 })
             .skip((page - 1) * limit)
             .limit(limit);
@@ -176,39 +185,53 @@ const allNurses = async (req, res) => {
             total,
             page,
             totalPages: Math.ceil(total / limit),
-            nurses
+            technicians
         });
     } catch (error) {
-        console.error("Error fetching Nurses:", error);
+        console.error("Error fetching Technicians:", error);
         res.status(500).json({
             success: false,
-            message: "Server error while fetching Nurses",
+            message: "Server error while fetching Technicians",
         });
     }
 };
-const fetchNurseById = async (req, res) => {
+
+const fetchTechnicianById = async (req, res) => {
     try {
         const { id } = req.params;
 
-        const nurse = await Nurse.findById(id);
-        if (!nurse) {
+        const technician = await Technician.findById(id);
+        if (!technician) {
             return res.status(404).json({
                 success: false,
-                message: "Nurse not found",
+                message: "Technician not found",
             });
         }
 
         res.status(200).json({
             success: true,
-            nurse,
+            technician,
         });
     } catch (error) {
-        console.error("Error fetching Nurse by ID:", error);
+        console.error("Error fetching Technician by ID:", error);
         res.status(500).json({
             success: false,
-            message: "Server error while fetching Nurse by ID",
+            message: "Server error while fetching Technician by ID",
         });
     }
 };
 
-export { registerNurse, loginNurse, allNurses, fetchNurseById };
+const editTechnician = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { name, email, phoneNumber, department, specialization, shift, experienceYears, status } = req.body;
+        const editRes = await Technician.findByIdAndUpdate(id, {
+            name, phoneNumber, email, department, specialization, shift, experienceYears, status
+        }, { new: true })
+        res.status(200).json({ message: "Update Technician Successfully", data: editRes })
+    } catch (error) {
+        res.status(500).json({ message: "Internal Server Error", error: error.message })
+    }
+}
+
+export { registerTechnician, loginTechnician, allTechnicians, fetchTechnicianById, editTechnician };
