@@ -39,8 +39,7 @@ const technicianSchema = new Schema(
         },
         department: {
             type: String,
-            enum: ["Dental Lab", "Radiology", "Sterilization", "General Assistance"],
-            required: true,
+            enum: ["Dental Lab", "Radiology", "Sterilization", "General Assistance"]
         },
         specialization: {
             type: String,
@@ -55,17 +54,6 @@ const technicianSchema = new Schema(
             type: Number,
             default: 0,
         },
-    
-        certificates: [
-            {
-                fileName: String,   
-                fileUrl: String,    
-                uploadedAt: {
-                    type: Date,
-                    default: Date.now,
-                },
-            },
-        ],
         status: {
             type: String,
             enum: ["active", "inactive"],
@@ -87,7 +75,7 @@ const technicianSchema = new Schema(
 technicianSchema.pre("save", async function (next) {
     if (!this.technicianId) {
         const lastTechnician = await mongoose.model("Technician").findOne({}, {}, { sort: { createdAt: -1 } });
-        let newId = "TECH#001";
+        let newId = "TECH001";
 
         if (lastTechnician && lastTechnician.technicianId) {
             const lastNumber = parseInt(lastTechnician.technicianId.replace("TECH", "")) || 0;
