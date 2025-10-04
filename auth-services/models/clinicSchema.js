@@ -77,14 +77,14 @@ default:CLINIC_ROLE
       type: Boolean,
       default: true,
     },
-      staffs: {
-      nurses: [{ type: Schema.Types.ObjectId }], 
-      receptionists: [{ type: Schema.Types.ObjectId }], 
-      pharmacists: [{ type: Schema.Types.ObjectId }],
-      accountants: [{ type: Schema.Types.ObjectId }],
+  staffs: {
+  nurses: [{ type: Schema.Types.ObjectId, ref: "Nurse" }],
+  receptionists: [{ type: Schema.Types.ObjectId, ref: "Reception" }], 
+  pharmacists: [{ type: Schema.Types.ObjectId, ref: "Pharmacist" }],
+  accountants: [{ type: Schema.Types.ObjectId, ref: "Accountant" }], // if you have one
+}
 
-    
-    },
+
   },
  
   { timestamps: true }
