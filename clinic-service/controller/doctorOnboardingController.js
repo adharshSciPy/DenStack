@@ -81,18 +81,17 @@ const onboardDoctor = async (req, res) => {
 };
 
 const addDoctorAvailability = async (req, res) => {
-  const { id: doctorUniqueId } = req.params; // pass doctorUniqueId instead of Mongo _id
+  const { id: doctorUniqueId } = req.params; // doctorUniqueId from URL
   const { clinicId, daysOfWeek, startTime, endTime, createdBy } = req.body;
 
-  // ✅ Validate clinicId
+  // ✅ Validate input
   if (!mongoose.Types.ObjectId.isValid(clinicId)) {
     return res.status(400).json({ success: false, message: "Invalid clinicId" });
   }
-
-  if (!doctorUniqueId || !daysOfWeek || !Array.isArray(daysOfWeek) || daysOfWeek.length === 0) {
+  if (!doctorUniqueId || !Array.isArray(daysOfWeek) || daysOfWeek.length === 0) {
     return res.status(400).json({
       success: false,
-      message: "doctorUniqueId, daysOfWeek (array), startTime, and endTime are required",
+      message: "doctorUniqueId, daysOfWeek[], startTime, and endTime are required",
     });
   }
 
@@ -109,33 +108,27 @@ const addDoctorAvailability = async (req, res) => {
     }
   } catch (error) {
     console.error("Axios error fetching doctor:", error.response?.data || error.message);
-    return res.status(404).json({
+    return res.status(500).json({
       success: false,
       message: "Failed to fetch doctor from auth-service",
       details: error.response?.data || error.message,
     });
   }
 
-  // ✅ Check if doctor is onboarded in this clinic
-  try {
-    const onboarded = await DoctorClinic.findOne({
-      doctorId: new mongoose.Types.ObjectId(doctor._id),
-      clinicId: new mongoose.Types.ObjectId(clinicId),
-      status: "active",
+  // ✅ Ensure doctor is onboarded in this clinic
+  const onboarded = await DoctorClinic.findOne({
+    doctorId: new mongoose.Types.ObjectId(doctor._id),
+    clinicId: new mongoose.Types.ObjectId(clinicId),
+    status: "active",
+  });
+  if (!onboarded) {
+    return res.status(403).json({
+      success: false,
+      message: "Doctor is not onboarded to this clinic. Please onboard before adding availability.",
     });
-
-    if (!onboarded) {
-      return res.status(403).json({
-        success: false,
-        message: "Doctor is not onboarded to this clinic. Please onboard before adding availability.",
-      });
-    }
-  } catch (error) {
-    console.error("DB error checking onboard status:", error);
-    return res.status(500).json({ success: false, message: "Error checking doctor onboarding" });
   }
 
-  // ✅ Convert times to minutes for overlap check
+  // ✅ Time overlap helper
   const toMinutes = (time) => {
     const [h, m] = time.split(":").map(Number);
     return h * 60 + m;
@@ -146,21 +139,22 @@ const addDoctorAvailability = async (req, res) => {
   if (newEnd <= newStart) {
     return res.status(400).json({
       success: false,
-      message: "End time must be greater than start time",
+      message: "End time must be later than start time",
     });
   }
 
-  // ✅ Loop through days and create availability
   try {
     const createdSlots = [];
+
     for (const dayOfWeek of daysOfWeek) {
-      // Check overlaps across ALL clinics for that doctor on the same day
+      // ✅ Find all slots for this doctor on this day (across ALL clinics)
       const existingSlots = await DoctorAvailability.find({
-        doctorId: new mongoose.Types.ObjectId(doctor._id),
+        doctorId: doctor._id,
         dayOfWeek,
         isActive: true,
       });
 
+      // ✅ Check overlap with each existing slot
       const hasConflict = existingSlots.some((slot) => {
         const start = toMinutes(slot.startTime);
         const end = toMinutes(slot.endTime);
@@ -170,14 +164,14 @@ const addDoctorAvailability = async (req, res) => {
       if (hasConflict) {
         return res.status(400).json({
           success: false,
-          message: `Doctor already has an availability overlapping on ${dayOfWeek}`,
+          message: `Doctor already has availability overlapping on ${dayOfWeek} (${startTime} - ${endTime}) in another clinic`,
         });
       }
 
-      // Save availability
+      // ✅ If no conflict, create availability
       const availability = new DoctorAvailability({
-        doctorId: new mongoose.Types.ObjectId(doctor._id),
-        clinicId: new mongoose.Types.ObjectId(clinicId),
+        doctorId: doctor._id,
+        clinicId,
         dayOfWeek,
         startTime,
         endTime,
@@ -198,6 +192,7 @@ const addDoctorAvailability = async (req, res) => {
     return res.status(500).json({ success: false, message: "Error saving doctor availability" });
   }
 };
+
 
 const getAvailability = async (req, res) => {
   const { doctorId, clinicId, page = 1, limit = 10 } = req.query;
