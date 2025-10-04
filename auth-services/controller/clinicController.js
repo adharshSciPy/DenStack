@@ -191,5 +191,32 @@ const editClinic = async (req, res) => {
     res.status(500).json({ message: "Internal Server Error", error: error.message })
   }
 }
+const getClinicStaffs = async (req, res) => {
+  const {id: clinicId } = req.params;
 
-export { registerClinic, loginClinic, viewAllClinics, viewClinicById, editClinic }
+  try {
+    const clinic = await Clinic.findById(clinicId)
+      .populate("staffs.nurses")
+      .populate("staffs.receptionists", )
+      .populate("staffs.pharmacists", )
+      .populate("staffs.accountants",);
+
+    if (!clinic) {
+      return res.status(404).json({ message: "Clinic not found" });
+    }
+
+    res.status(200).json({
+      message: "Clinic staff fetched successfully",
+      clinic: {
+        id: clinic._id,
+        name: clinic.name,
+        staffs: clinic.staffs,
+      },
+    });
+  } catch (error) {
+    console.error("❌ Error in getClinicStaffs:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+export { registerClinic, loginClinic, viewAllClinics, viewClinicById, editClinic,getClinicStaffs }

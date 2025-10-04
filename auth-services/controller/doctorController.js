@@ -11,10 +11,9 @@ const generateDoctorId = () => {
 };
 // ====== Register Doctor ======
 const registerDoctor = async (req, res) => {
-  const { name, email, phoneNumber, password, specialization } = req.body;
+  const { name, email, phoneNumber, password, specialization, licenseNumber } = req.body;
 
   try {
-
     if (!name || !nameValidator(name)) {
       return res.status(400).json({ message: "Invalid name" });
     }
@@ -31,6 +30,9 @@ const registerDoctor = async (req, res) => {
       return res.status(400).json({ message: "Invalid password" });
     }
 
+    if (!licenseNumber) {
+      return res.status(400).json({ message: "License number is required" });
+    }
 
     const existingDoctorEmail = await Doctor.findOne({ email });
     if (existingDoctorEmail) {
@@ -42,24 +44,31 @@ const registerDoctor = async (req, res) => {
       return res.status(400).json({ message: "Phone number already exists" });
     }
 
+    const existingLicense = await Doctor.findOne({ licenseNumber });
+    if (existingLicense) {
+      return res.status(400).json({ message: "License number already exists" });
+    }
+
     let uniqueId;
     let exists = true;
     while (exists) {
       uniqueId = generateDoctorId();
       exists = await Doctor.findOne({ uniqueId });
     }
+
     const newDoctor = new Doctor({
       name,
       email,
       phoneNumber,
       password,
       specialization,
-      uniqueId
+      licenseNumber,
+      uniqueId,
+      approve: true, // default approved
     });
 
     await newDoctor.save();
 
-   
     const accessToken = newDoctor.generateAccessToken();
     const refreshToken = newDoctor.generateRefreshToken();
 
@@ -71,15 +80,16 @@ const registerDoctor = async (req, res) => {
         email: newDoctor.email,
         phoneNumber: newDoctor.phoneNumber,
         specialization: newDoctor.specialization,
+        licenseNumber: newDoctor.licenseNumber,
         role: newDoctor.role,
-        uniqueId:newDoctor.uniqueId
+        uniqueId: newDoctor.uniqueId,
+        approve: newDoctor.approve,
       },
       accessToken,
       refreshToken,
     });
   } catch (error) {
     console.error("❌ Error in registerDoctor:", error);
-
 
     if (error.code === 11000) {
       const field = Object.keys(error.keyPattern)[0];
@@ -90,12 +100,12 @@ const registerDoctor = async (req, res) => {
   }
 };
 
+
 // ====== Login Doctor ======
 const loginDoctor = async (req, res) => {
   const { email, password } = req.body;
 
   try {
-    
     if (!email || !emailValidator(email)) {
       return res.status(400).json({ message: "Invalid email" });
     }
@@ -104,19 +114,21 @@ const loginDoctor = async (req, res) => {
       return res.status(400).json({ message: "Password is required" });
     }
 
-  
     const doctor = await Doctor.findOne({ email });
     if (!doctor) {
       return res.status(400).json({ message: "Invalid email or password" });
     }
 
-   
+    // ✅ Check approval status
+    if (!doctor.approve) {
+      return res.status(403).json({ message: "Your account is not approved yet. Please contact admin." });
+    }
+
     const isMatch = await doctor.isPasswordCorrect(password);
     if (!isMatch) {
       return res.status(400).json({ message: "Invalid email or password" });
     }
 
-   
     const accessToken = doctor.generateAccessToken();
     const refreshToken = doctor.generateRefreshToken();
 
@@ -128,7 +140,10 @@ const loginDoctor = async (req, res) => {
         email: doctor.email,
         phoneNumber: doctor.phoneNumber,
         specialization: doctor.specialization,
+        licenseNumber: doctor.licenseNumber,
         role: doctor.role,
+        uniqueId: doctor.uniqueId,
+        approve: doctor.approve,
       },
       accessToken,
       refreshToken,
@@ -138,6 +153,8 @@ const loginDoctor = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
+
+
 // unckecked api
 const allDoctors = async (req, res) => {
   try {
