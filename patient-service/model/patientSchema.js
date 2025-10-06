@@ -3,6 +3,7 @@ import axios from "axios";
 import dotenv from "dotenv";
 dotenv.config();
 const AUTH_SERVICE_BASE_URL = process.env.AUTH_SERVICE_BASE_URL;
+const PATIENT_ROLE=process.env.PATIENT_ROLE;
 
 const patientSchema = new mongoose.Schema({
   clinicId: { 
@@ -19,7 +20,6 @@ const patientSchema = new mongoose.Schema({
   phone: { 
     type: Number, 
     required: [true, "Phone number is required"], 
-    unique: true,
     match: [/^\d{10}$/, "Phone number must be 10 digits"]
   },
   email: { 
@@ -44,16 +44,18 @@ const patientSchema = new mongoose.Schema({
     familyHistory: [String]
   },
 
-  opNumber: { type: String, unique: true}, 
+  patientUniqueId: { type: String, unique: true}, 
  parentPatient: { type: mongoose.Schema.Types.ObjectId, ref: "Patient" },
   linkedPatients: [{ type: mongoose.Schema.Types.ObjectId, ref: "Patient" }],
+  role:{type:String,default:PATIENT_ROLE},
+  // patientHistory:[{type:mongoose.Schema.Types.ObjectId,ref:"PatientHistory"}],
   createdBy: { type: String },
   createdAt: { type: Date, default: Date.now }
 });
 
 // Generate OP number before saving
 patientSchema.pre("save", async function(next) {
-  if (this.opNumber) return next();
+  if (this.patientUniqueId) return next();
 
   try {
     const url = `${AUTH_SERVICE_BASE_URL}/clinic/view-clinic/${this.clinicId}`;
@@ -69,19 +71,25 @@ patientSchema.pre("save", async function(next) {
     }
 
     const count = await mongoose.model("Patient").countDocuments({ clinicId: this.clinicId });
-    this.opNumber = `${prefix}-${String(count + 1).padStart(6, "0")}`;
-    // console.log("Generated OP Number:", this.opNumber);
+    this.patientUniqueId = `${prefix}-${String(count + 1).padStart(6, "0")}`;
+    // console.log("Generated OP Number:", this.patientUniqueId);
 
   } catch (err) {
     console.error("Clinic fetch failed, using fallback OP:", err.message);
     const random = Math.floor(100000 + Math.random() * 900000);
-    this.opNumber = `DEN-CLC-${random}`;
+    this.patientUniqueId = `DEN-CLC-${random}`;
   }
 
   next();
 });
 
 
-patientSchema.index({ clinicId: 1, opNumber: 1 }, { unique: true });
+// Good indexes for large-scale reads:
+patientSchema.index({ clinicId: 1, createdAt: -1 });   
+patientSchema.index({ clinicId: 1, name: 1 });     
+patientSchema.index({ clinicId: 1, patientUniqueId: 1 }, { unique: true }); 
+patientSchema.index({ clinicId: 1, phone: 1 }, { unique: true }); 
+
+
 
 export default mongoose.model("Patient", patientSchema);
