@@ -6,7 +6,7 @@ import {
   phoneValidator,
 } from "../utils/validators.js";
 const registerClinic = async (req, res) => {
-    const { name, type, email, phoneNumber, password, address, description,} = req.body;
+  const { name, type, email, phoneNumber, password, address, description, } = req.body;
 
   try {
 
@@ -44,7 +44,7 @@ const registerClinic = async (req, res) => {
       password,
       address,
       description,
-  
+
     });
 
     await newClinic.save();
@@ -61,7 +61,7 @@ const registerClinic = async (req, res) => {
         email: newClinic.email,
         phoneNumber: newClinic.phoneNumber,
         type: newClinic.type,
-        role:newClinic.role,
+        role: newClinic.role,
         subscription: newClinic.subscription,
       },
       accessToken,
@@ -74,7 +74,7 @@ const registerClinic = async (req, res) => {
 };
 
 const loginClinic = async (req, res) => {
-    const { email, password } = req.body;
+  const { email, password } = req.body;
 
   try {
 
@@ -122,6 +122,103 @@ const loginClinic = async (req, res) => {
   }
 };
 
+const viewAllClinics = async (req, res) => {
+  try {
+    let { page, limit } = req.query;
+
+    // Convert to number and set defaults
+    page = parseInt(page) || 1;
+    limit = parseInt(limit) || 10;
+
+    const skip = (page - 1) * limit;
+
+    // Fetch clinics with pagination
+    const clinics = await Clinic.find()
+      .skip(skip)
+      .limit(limit);
+
+    // Get total count for frontend pagination
+    const total = await Clinic.countDocuments();
+
+    res.status(200).json({
+      message: "Clinics Fetched Successfully",
+      data: clinics,
+      pagination: {
+        total,
+        page,
+        pages: Math.ceil(total / limit),
+        limit
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: "Internal Server Error",
+      error: error.message
+    });
+  }
+};
+
+
+const viewClinicById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const clinic = await Clinic.findById(id);
+    res.status(200).json({ message: "View Clinic", data: clinic })
+  } catch (error) {
+    res.status(500).json({ message: "Internal Server Error", error: error.message })
+  }
+}
+
+const editClinic = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name,
+      type,
+      email,
+      phoneNumber,
+      address,
+      description } = req.body
+    const editRes = await Clinic.findByIdAndUpdate(id, {
+      name,
+      type,
+      email,
+      phoneNumber,
+      address,
+      description,
+    }, { new: true })
+    res.status(200).json({ message: "Clinic updated successfully", data: editRes })
+  } catch (error) {
+    res.status(500).json({ message: "Internal Server Error", error: error.message })
+  }
+}
+const getClinicStaffs = async (req, res) => {
+  const {id: clinicId } = req.params;
+
+  try {
+    const clinic = await Clinic.findById(clinicId)
+      .populate("staffs.nurses")
+      .populate("staffs.receptionists", )
+      .populate("staffs.pharmacists", )
+      .populate("staffs.accountants",);
+
+    if (!clinic) {
+      return res.status(404).json({ message: "Clinic not found" });
+    }
+
+    res.status(200).json({
+      message: "Clinic staff fetched successfully",
+      clinic: {
+        id: clinic._id,
+        name: clinic.name,
+        staffs: clinic.staffs,
+      },
+    });
+  } catch (error) {
+    console.error("❌ Error in getClinicStaffs:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
 const getTheme=async (req, res) => {
   try {
     const clinic = await Clinic.findById(req.params.clinicId).select("theme");
@@ -146,4 +243,4 @@ const editTheme=async (req, res) => {
   }
 }
 
-export{registerClinic,loginClinic,getTheme,editTheme};
+export { registerClinic, loginClinic, viewAllClinics, viewClinicById, editClinic,getClinicStaffs ,getTheme,editTheme};

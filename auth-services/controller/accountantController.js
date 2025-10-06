@@ -5,29 +5,36 @@ import {
   passwordValidator,
   phoneValidator,
 } from "../utils/validators.js";
+import Clinic from "../models/clinicSchema.js";
 
 const registerAccountant = async (req, res) => {
-  const { name, email, phoneNumber, password } = req.body;
+  const { name, email, phoneNumber, password, clinicId } = req.body;
 
   try {
-
+    // ✅ Validate required fields
     if (!name || !nameValidator(name)) {
       return res.status(400).json({ message: "Invalid name" });
     }
-
     if (!email || !emailValidator(email)) {
       return res.status(400).json({ message: "Invalid email" });
     }
-
     if (!phoneNumber || !phoneValidator(phoneNumber)) {
       return res.status(400).json({ message: "Invalid phone number" });
     }
-
     if (!password || !passwordValidator(password)) {
       return res.status(400).json({ message: "Invalid password" });
     }
+    if (!clinicId) {
+      return res.status(400).json({ message: "Clinic ID is required" });
+    }
 
+    // ✅ Check if clinic exists
+    const clinic = await Clinic.findById(clinicId);
+    if (!clinic) {
+      return res.status(404).json({ message: "Clinic not found" });
+    }
 
+    // ✅ Check if email/phone already exists
     const existingAccountantEmail = await Accountant.findOne({ email });
     if (existingAccountantEmail) {
       return res.status(400).json({ message: "Email already exists" });
@@ -38,16 +45,21 @@ const registerAccountant = async (req, res) => {
       return res.status(400).json({ message: "Phone number already exists" });
     }
 
+    // ✅ Create Accountant
     const newAccountant = new Accountant({
       name,
       email,
       phoneNumber,
-      password
+      password,
     });
 
     await newAccountant.save();
 
-   
+    // ✅ Push accountant _id into clinic.staffs.accountants
+    clinic.staffs.accountants.push(newAccountant._id);
+    await clinic.save();
+
+    // ✅ Generate tokens
     const accessToken = newAccountant.generateAccessToken();
     const refreshToken = newAccountant.generateRefreshToken();
 
@@ -60,12 +72,16 @@ const registerAccountant = async (req, res) => {
         phoneNumber: newAccountant.phoneNumber,
         role: newAccountant.role,
       },
+      clinic: {
+        id: clinic._id,
+        name: clinic.name,
+        staffs: clinic.staffs,
+      },
       accessToken,
       refreshToken,
     });
   } catch (error) {
-    console.error("❌ Error in registeraccountant:", error);
-
+    console.error("❌ Error in registerAccountant:", error);
 
     if (error.code === 11000) {
       const field = Object.keys(error.keyPattern)[0];

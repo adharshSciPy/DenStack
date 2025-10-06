@@ -5,30 +5,38 @@ import {
   passwordValidator,
   phoneValidator,
 } from "../utils/validators.js";
+import Clinic from "../models/clinicSchema.js";
 
 // ====== Register Reception ======
+// ====== Register Receptionist ======
 const registerReception = async (req, res) => {
-  const { name, email, phoneNumber, password, employeeId, shift } = req.body;
+  const { name, email, phoneNumber, password, shift, clinicId } = req.body;
 
   try {
-
+    // ✅ Validate required fields
     if (!name || !nameValidator(name)) {
       return res.status(400).json({ message: "Invalid name" });
     }
-
     if (!email || !emailValidator(email)) {
       return res.status(400).json({ message: "Invalid email" });
     }
-
     if (!phoneNumber || !phoneValidator(phoneNumber)) {
       return res.status(400).json({ message: "Invalid phone number" });
     }
-
     if (!password || !passwordValidator(password)) {
       return res.status(400).json({ message: "Invalid password" });
     }
+    if (!clinicId) {
+      return res.status(400).json({ message: "Clinic ID is required" });
+    }
 
+    // ✅ Check if clinic exists
+    const clinic = await Clinic.findById(clinicId);
+    if (!clinic) {
+      return res.status(404).json({ message: "Clinic not found" });
+    }
 
+    // ✅ Check if email/phone already exists
     const existingReceptionEmail = await Reception.findOne({ email });
     if (existingReceptionEmail) {
       return res.status(400).json({ message: "Email already exists" });
@@ -39,39 +47,46 @@ const registerReception = async (req, res) => {
       return res.status(400).json({ message: "Phone number already exists" });
     }
 
-    
+    // ✅ Create receptionist (no employeeId passed → auto-generated)
     const newReception = new Reception({
       name,
       email,
       phoneNumber,
       password,
-      employeeId,
       shift,
     });
 
     await newReception.save();
 
-   
+    // ✅ Push receptionist _id into clinic.staffs.receptionists
+    clinic.staffs.receptionists.push(newReception._id);
+    await clinic.save();
+
+    // ✅ Generate tokens
     const accessToken = newReception.generateAccessToken();
     const refreshToken = newReception.generateRefreshToken();
 
     res.status(201).json({
-      message: "Reception registered successfully",
+      message: "Receptionist registered successfully",
       reception: {
         id: newReception._id,
         name: newReception.name,
         email: newReception.email,
         phoneNumber: newReception.phoneNumber,
-        employeeId: newReception.employeeId,
+        employeeId: newReception.employeeId, // auto-generated
         shift: newReception.shift,
         role: newReception.role,
+      },
+      clinic: {
+        id: clinic._id,
+        name: clinic.name,
+        staffs: clinic.staffs,
       },
       accessToken,
       refreshToken,
     });
   } catch (error) {
     console.error("❌ Error in registerReception:", error);
-
 
     if (error.code === 11000) {
       const field = Object.keys(error.keyPattern)[0];

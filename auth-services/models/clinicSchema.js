@@ -99,7 +99,17 @@ const clinicSchema = new Schema(
       type: Boolean,
       default: true,
     },
+    staffs: {
+      nurses: [{ type: Schema.Types.ObjectId, ref: "Nurse" }],
+      receptionists: [{ type: Schema.Types.ObjectId, ref: "Reception" }],
+      pharmacists: [{ type: Schema.Types.ObjectId, ref: "Pharmacist" }],
+      accountants: [{ type: Schema.Types.ObjectId, ref: "Accountant" }],
+      technicians: [{ type: Schema.Types.ObjectId, ref: "Technician" }]
+    }
+
+
   },
+
   { timestamps: true }
 );
 

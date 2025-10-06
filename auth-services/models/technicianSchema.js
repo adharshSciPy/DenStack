@@ -2,15 +2,10 @@ import mongoose, { Schema } from "mongoose";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 
-const NURSE_ROLE = process.env.NURSE_ROLE || "300";
+const TECHNICIAN_ROLE = process.env.TECHNICIAN_ROLE || "400";
 
-const nurseSchema = new Schema(
+const technicianSchema = new Schema(
     {
-        // hospitalId: {
-        //     type: mongoose.Schema.Types.ObjectId,
-        //     ref: "Hospital",
-        //     required: true,
-        // },
         name: {
             type: String,
             required: [true, "Name is required"],
@@ -18,7 +13,7 @@ const nurseSchema = new Schema(
             minlength: [2, "Name must be at least 2 characters"],
             maxlength: [50, "Name must not exceed 50 characters"],
         },
-        nurseId: {
+        technicianId: {
             type: String,
             unique: true
         },
@@ -42,33 +37,32 @@ const nurseSchema = new Schema(
             unique: true,
             match: [/^[6-9]\d{9}$/, "Phone number must be 10 digits"],
         },
+        department: {
+            type: String,
+            enum: ["Dental Lab", "Radiology", "Sterilization", "General Assistance"]
+        },
+        specialization: {
+            type: String,
+            trim: true,
+        },
+        shift: {
+            type: String,
+            enum: ["Morning", "Evening", "Night", "Rotational"],
+            default: "Morning",
+        },
+        experienceYears: {
+            type: Number,
+            default: 0,
+        },
+        status: {
+            type: String,
+            enum: ["active", "inactive"],
+            default: "active",
+        },
         role: {
             type: String,
-            default: NURSE_ROLE,
+            default: TECHNICIAN_ROLE,
         },
-        // department: {
-        //     type: String,
-        //     required: true,
-        // },
-        // shift: {
-        //     type: String,
-        //     enum: ["Morning", "Afternoon", "Night", "Rotational"],
-        //     default: "Morning",
-        // },
-        // qualification: {
-        //     type: String,
-        // },
-        // experienceYears: {
-        //     type: Number,
-        //     default: 0,
-        // },
-        // assignedWard: {
-        //     type: String,
-        // },
-        // isActive: {
-        //     type: Boolean,
-        //     default: true,
-        // },
         createdAt: {
             type: Date,
             default: Date.now,
@@ -78,49 +72,49 @@ const nurseSchema = new Schema(
 );
 
 // 🔹 Auto-generate nurseId before saving
-nurseSchema.pre("save", async function (next) {
-    if (!this.nurseId) {
-        const lastNurse = await mongoose.model("Nurse").findOne({}, {}, { sort: { createdAt: -1 } });
-        let newId = "NURSE001";
+technicianSchema.pre("save", async function (next) {
+    if (!this.technicianId) {
+        const lastTechnician = await mongoose.model("Technician").findOne({}, {}, { sort: { createdAt: -1 } });
+        let newId = "TECH001";
 
-        if (lastNurse && lastNurse.nurseId) {
-            const lastNumber = parseInt(lastNurse.nurseId.replace("NURSE", "")) || 0;
-            newId = "NURSE" + String(lastNumber + 1).padStart(3, "0");
+        if (lastTechnician && lastTechnician.technicianId) {
+            const lastNumber = parseInt(lastTechnician.technicianId.replace("TECH", "")) || 0;
+            newId = "TECH" + String(lastNumber + 1).padStart(3, "0");
         }
 
-        this.nurseId = newId;
+        this.technicianId = newId;
     }
     next();
 });
 
 
 // ====== Password hashing ======
-nurseSchema.pre("save", async function (next) {
+technicianSchema.pre("save", async function (next) {
     if (!this.isModified("password")) return next();
     this.password = await bcrypt.hash(this.password, 10);
     next();
 });
 
 // ====== Methods ======
-nurseSchema.methods.isPasswordCorrect = async function (password) {
+technicianSchema.methods.isPasswordCorrect = async function (password) {
     return bcrypt.compare(password, this.password);
 };
 
-nurseSchema.methods.generateAccessToken = function () {
+technicianSchema.methods.generateAccessToken = function () {
     return jwt.sign(
-        { nurseId: this._id, name: this.name, email: this.email, role: this.role },
+        { technicianId: this._id, name: this.name, email: this.email, role: this.role },
         process.env.ACCESS_TOKEN_SECRET,
         { expiresIn: process.env.ACCESS_TOKEN_EXPIRY }
     );
 };
 
-nurseSchema.methods.generateRefreshToken = function () {
+technicianSchema.methods.generateRefreshToken = function () {
     return jwt.sign(
-        { nurseId: this._id, name: this.name, email: this.email, role: this.role },
+        { technicianId: this._id, name: this.name, email: this.email, role: this.role },
         process.env.REFRESH_TOKEN_SECRET,
         { expiresIn: process.env.REFRESH_TOKEN_EXPIRY }
     );
 };
 
-const Nurse = mongoose.model("Nurse", nurseSchema);
-export default Nurse;
+const Technician = mongoose.model("Technician", technicianSchema);
+export default Technician;
