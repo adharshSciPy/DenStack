@@ -1,67 +1,15 @@
 import mongoose from "mongoose";
+import axios from "axios";
+import dotenv from "dotenv";
+dotenv.config();
+const AUTH_SERVICE_BASE_URL = process.env.AUTH_SERVICE_BASE_URL;
 
-const visitSchema = new mongoose.Schema({
+const patientSchema = new mongoose.Schema({
   clinicId: { 
     type: mongoose.Schema.Types.ObjectId, 
     ref: "Clinic", 
-    required: [true, "Clinic ID is required"] 
+    required: true 
   },
-  doctorId: { 
-    type: mongoose.Schema.Types.ObjectId, 
-    ref: "Doctor", 
-    required: false // doctor might not be assigned at registration
-  },
-  visitDate: { 
-    type: Date, 
-    default: Date.now 
-  },
-  symptoms: {
-    type: [String],
-    default: [] // receptionist may not enter symptoms initially
-  },
-  diagnosis: {
-    type: [String],
-    default: [] // doctor fills later
-  },
-  prescriptions: {
-    type: [String],
-    default: [] // doctor fills later
-  },
-  notes: {
-    type: String,
-    maxlength: [1000, "Notes cannot exceed 1000 characters"]
-  },
-  files: [
-    {
-      url: { 
-        type: String,
-        match: [/^https?:\/\/.+\..+/, "Please enter a valid URL"] 
-      },
-      type: {
-        type: String,
-        enum: ["image", "pdf", "report", "other"],
-        default: "other"
-      },
-      uploadedAt: { type: Date, default: Date.now }
-    }
-  ],
-  status: {
-    type: String,
-    enum: ["pending", "completed"],
-    default: "pending"
-  },
-  createdBy: { // receptionist or system
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "User",
-    required: true
-  },
-  updatedBy: { // usually doctor who finalizes it
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "User"
-  }
-});
-
-const patientSchema = new mongoose.Schema({
   name: { 
     type: String, 
     required: [true, "Name is required"],
@@ -69,7 +17,7 @@ const patientSchema = new mongoose.Schema({
     maxlength: [100, "Name cannot exceed 100 characters"]
   },
   phone: { 
-    type: String, 
+    type: Number, 
     required: [true, "Phone number is required"], 
     unique: true,
     match: [/^\d{10}$/, "Phone number must be 10 digits"]
@@ -80,26 +28,60 @@ const patientSchema = new mongoose.Schema({
     sparse: true,
     match: [/^\S+@\S+\.\S+$/, "Please enter a valid email address"]
   },
-  age: { 
-    type: Number,
-    min: [0, "Age cannot be negative"],
-    max: [150, "Age seems unrealistic"]
+  password: { 
+    type: String,
+    minlength: [8, "Password must be at least 8 characters"],
+    maxlength: [64, "Password cannot exceed 64 characters"],
+    select: false
   },
-  gender: { 
-    type: String, 
-    enum: ["Male", "Female", "Other"], 
-    default: "Other" 
-  },
+  age: { type: Number, min: 0, max: 150 },
+  gender: { type: String, enum: ["Male", "Female", "Other"], default: "Other" },
+
   medicalHistory: {
-    type: [String],
-    default: []
+    conditions: [String],
+    surgeries: [String],
+    allergies: [String],
+    familyHistory: [String]
   },
-  visits: [visitSchema],
+
+  opNumber: { type: String, unique: true}, 
+ parentPatient: { type: mongoose.Schema.Types.ObjectId, ref: "Patient" },
+  linkedPatients: [{ type: mongoose.Schema.Types.ObjectId, ref: "Patient" }],
+  createdBy: { type: String },
   createdAt: { type: Date, default: Date.now }
 });
 
-// Indexes
-patientSchema.index({ phone: 1, email: 1 });
-patientSchema.index({ "_id": 1, "visits.visitDate": -1 });
+// Generate OP number before saving
+patientSchema.pre("save", async function(next) {
+  if (this.opNumber) return next();
+
+  try {
+    const url = `${AUTH_SERVICE_BASE_URL}/clinic/view-clinic/${this.clinicId}`;
+    // console.log("Fetching clinic from:", url);
+
+    const clinicRes = await axios.get(url);
+    // console.log("Clinic fetch response:", clinicRes.data);
+
+    let prefix = "DEN-CLC"; 
+    if (clinicRes?.data?.data?.name) {
+      const rawName = clinicRes.data.data.name.replace(/[^a-zA-Z]/g, "");
+      prefix = rawName.substring(0, 3).toUpperCase() || "DEN";
+    }
+
+    const count = await mongoose.model("Patient").countDocuments({ clinicId: this.clinicId });
+    this.opNumber = `${prefix}-${String(count + 1).padStart(6, "0")}`;
+    // console.log("Generated OP Number:", this.opNumber);
+
+  } catch (err) {
+    console.error("Clinic fetch failed, using fallback OP:", err.message);
+    const random = Math.floor(100000 + Math.random() * 900000);
+    this.opNumber = `DEN-CLC-${random}`;
+  }
+
+  next();
+});
+
+
+patientSchema.index({ clinicId: 1, opNumber: 1 }, { unique: true });
 
 export default mongoose.model("Patient", patientSchema);
