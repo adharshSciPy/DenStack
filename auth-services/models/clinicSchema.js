@@ -50,6 +50,28 @@ const clinicSchema = new Schema(
       type: String,
       maxlength: [500, "Description cannot exceed 500 characters"],
     },
+    theme: {
+      startColor: {
+        type: String,
+        default: "#1E4D2B", // default gradient start
+      },
+      endColor: {
+        type: String,
+        default: "#3FA796", // default gradient end
+      },
+      primaryForeground: {
+        type: String,
+        default: "#ffffff", // text color on primary
+      },
+      sidebarForeground: {
+        type: String,
+        default: "#ffffff", // text color on sidebar
+      },
+      secondary:{
+        type: String,
+        default: "#3FA796", // text color on sidebar
+      },
+    },
 
     // createdBy: {
     //   type: Schema.Types.ObjectId,
@@ -57,10 +79,10 @@ const clinicSchema = new Schema(
     //   required: true,
     // },
 
-role:{
-type:String,
-default:CLINIC_ROLE
-},
+    role: {
+      type: String,
+      default: CLINIC_ROLE,
+    },
 
     subscription: {
       package: {
