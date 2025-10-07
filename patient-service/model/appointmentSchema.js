@@ -15,7 +15,8 @@ const appointmentSchema = new mongoose.Schema({
     ref: "Doctor",
     required: false 
   },
-  appointmentDate: { type: Date, required: true },
+    appointmentDate: { type: String, required: true }, // e.g. "2025-10-09"
+    appointmentTime: { type: String, required: true }, 
   status: { 
     type: String, 
     enum: ["scheduled", "cancelled", "completed"],
