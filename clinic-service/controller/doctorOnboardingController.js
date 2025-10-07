@@ -5,9 +5,9 @@ import DoctorClinic from "../model/doctorOnboardingSchema.js";
 import DoctorAvailability from "../model/doctorAvailabilitySchema.js";
 import bcrypt from "bcrypt";
 import jwt from 'jsonwebtoken'
-
 dotenv.config();
 
+const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const AUTH_SERVICE_BASE_URL = process.env.AUTH_SERVICE_BASE_URL;
 
 const onboardDoctor = async (req, res) => {
@@ -406,6 +406,125 @@ const getDoctorsBasedOnDepartment = async (req, res) => {
     });
   }
 };
+const getDoctorsWithAvailability = async (req, res) => {
+  try {
+    const { clinicId, department, page = 1, limit = 10 } = req.query;
+
+    if (!clinicId) {
+      return res.status(400).json({ success: false, message: "clinicId is required" });
+    }
+    if (!mongoose.Types.ObjectId.isValid(clinicId)) {
+      return res.status(400).json({ success: false, message: "Invalid clinicId" });
+    }
+
+    const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 10, 1), 100);
+    const skip = (parseInt(page, 10) - 1) * parsedLimit;
+
+    // 1️⃣ Fetch active doctors in this clinic
+    const doctorClinicDocs = await DoctorClinic.find({
+      clinicId: new mongoose.Types.ObjectId(clinicId),
+      status: "active",
+    })
+      .sort({ doctorId: 1 })
+      .lean();
+
+    if (!doctorClinicDocs.length) {
+      return res.status(404).json({ success: false, message: "No active doctors found for this clinic" });
+    }
+
+    let doctorIds = doctorClinicDocs.map((d) => d.doctorId.toString());
+
+    // 2️⃣ Filter by department BEFORE pagination
+    let filteredDoctorIds = [];
+    if (department) {
+      // Fetch details only for doctors that match department
+      const deptPromises = doctorIds.map(async (doctorId) => {
+        try {
+          const doctorRes = await axios.get(`${AUTH_SERVICE_BASE_URL}/doctor/details/${doctorId}`);
+          if (doctorRes.data?.success && doctorRes.data.doctor) {
+            return doctorRes.data.doctor.specialization === department ? doctorRes.data.doctor._id : null;
+          }
+        } catch (err) {
+          console.error(`Error fetching doctor ${doctorId}:`, err.message);
+        }
+        return null;
+      });
+
+      const deptResults = await Promise.all(deptPromises);
+      filteredDoctorIds = deptResults.filter(Boolean);
+
+      if (!filteredDoctorIds.length) {
+        return res.status(404).json({ success: false, message: "No doctors found for this department" });
+      }
+    } else {
+      filteredDoctorIds = doctorIds;
+    }
+
+    const totalDoctors = filteredDoctorIds.length;
+
+    // 3️⃣ Apply pagination
+    const paginatedDoctorIds = filteredDoctorIds.slice(skip, skip + parsedLimit);
+
+    // 4️⃣ Fetch doctor details in parallel only for paginated IDs
+    const doctorDetailsMap = {};
+    const detailPromises = paginatedDoctorIds.map(async (doctorId) => {
+      try {
+        const doctorRes = await axios.get(`${AUTH_SERVICE_BASE_URL}/doctor/details/${doctorId}`);
+        doctorDetailsMap[doctorId] = doctorRes.data?.success && doctorRes.data.doctor
+          ? doctorRes.data.doctor
+          : { _id: doctorId, name: "Unknown Doctor" };
+      } catch (err) {
+        console.error(`Error fetching doctor ${doctorId}:`, err.message);
+        doctorDetailsMap[doctorId] = { _id: doctorId, name: "Unknown Doctor" };
+      }
+    });
+    await Promise.all(detailPromises);
+
+    // 5️⃣ Fetch availabilities only for paginated doctors
+    const allAvailabilities = await DoctorAvailability.find({
+      doctorId: { $in: paginatedDoctorIds.map((id) => new mongoose.Types.ObjectId(id)) },
+      isActive: true,
+    })
+      .select("doctorId clinicId dayOfWeek startTime endTime")
+      .populate("clinicId", "name address")
+      .lean();
+
+    // 6️⃣ Map doctors with availability
+    const doctors = paginatedDoctorIds.map((id) => {
+      const docClinic = doctorClinicDocs.find((d) => d.doctorId.toString() === id) || {};
+      return {
+        doctorId: id,
+        roleInClinic: docClinic.roleInClinic,
+        clinicLogin: { email: docClinic.clinicLogin?.email },
+        status: docClinic.status,
+        doctor: doctorDetailsMap[id],
+        availability: allAvailabilities.filter((a) => a.doctorId.toString() === id),
+      };
+    });
+
+    const totalPages = Math.ceil(totalDoctors / parsedLimit);
+
+    return res.status(200).json({
+      success: true,
+      clinicId,
+      specialization: department || "All",
+      totalDoctors,
+      page: parseInt(page, 10),
+      totalPages,
+      limit: parsedLimit,
+      doctors,
+    });
+  } catch (err) {
+    console.error("Error fetching doctors with availability:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching doctors with availability",
+      details: err.message,
+    });
+  }
+};
+
+
 
 const getAllActiveDoctorsOnClinic = async (req, res) => {
   const { clinicId, page = 1, limit = 10 } = req.query;
@@ -553,4 +672,4 @@ const refreshToken = jwt.sign(
 };
 
 
-export{onboardDoctor,addDoctorAvailability,getAvailability,clinicDoctorLogin,getDoctorsBasedOnDepartment,getAllActiveDoctorsOnClinic}
+export{onboardDoctor,addDoctorAvailability,getAvailability,clinicDoctorLogin,getDoctorsBasedOnDepartment,getDoctorsWithAvailability,getAllActiveDoctorsOnClinic}

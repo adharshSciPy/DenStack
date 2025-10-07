@@ -15,7 +15,8 @@ const appointmentSchema = new mongoose.Schema({
     ref: "Doctor",
     required: false 
   },
-  appointmentDate: { type: Date, required: true },
+    appointmentDate: { type: String, required: true }, // e.g. "2025-10-09"
+    appointmentTime: { type: String, required: true }, 
   status: { 
     type: String, 
     enum: ["scheduled", "cancelled", "completed"],
@@ -28,7 +29,8 @@ const appointmentSchema = new mongoose.Schema({
   updatedBy: {
     type: mongoose.Schema.Types.ObjectId,
     
-  }
+  },
+    opNumber: { type: Number, required: true } 
 }, { timestamps: true });
 
 appointmentSchema.index({ patientId: 1, appointmentDate: -1 });
