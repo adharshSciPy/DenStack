@@ -37,7 +37,7 @@ const nurseSchema = new Schema(
             maxlength: [64, "Password cannot exceed 64 characters"],
         },
         phoneNumber: {
-            type: String,
+            type: Number,
             required: [true, "Phone number is required"],
             unique: true,
             match: [/^[6-9]\d{9}$/, "Phone number must be 10 digits"],
@@ -108,7 +108,7 @@ nurseSchema.methods.isPasswordCorrect = async function (password) {
 
 nurseSchema.methods.generateAccessToken = function () {
     return jwt.sign(
-        { doctorId: this._id, name: this.name, email: this.email, role: this.role },
+        { nurseId: this._id, name: this.name, email: this.email, role: this.role },
         process.env.ACCESS_TOKEN_SECRET,
         { expiresIn: process.env.ACCESS_TOKEN_EXPIRY }
     );
@@ -116,7 +116,7 @@ nurseSchema.methods.generateAccessToken = function () {
 
 nurseSchema.methods.generateRefreshToken = function () {
     return jwt.sign(
-        { doctorId: this._id, name: this.name, email: this.email, role: this.role },
+        { nurseId: this._id, name: this.name, email: this.email, role: this.role },
         process.env.REFRESH_TOKEN_SECRET,
         { expiresIn: process.env.REFRESH_TOKEN_EXPIRY }
     );

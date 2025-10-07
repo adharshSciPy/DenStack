@@ -57,10 +57,10 @@ const clinicSchema = new Schema(
     //   required: true,
     // },
 
-role:{
-type:String,
-default:CLINIC_ROLE
-},
+    role: {
+      type: String,
+      default: CLINIC_ROLE
+    },
 
     subscription: {
       package: {
@@ -77,7 +77,17 @@ default:CLINIC_ROLE
       type: Boolean,
       default: true,
     },
+    staffs: {
+      nurses: [{ type: Schema.Types.ObjectId, ref: "Nurse" }],
+      receptionists: [{ type: Schema.Types.ObjectId, ref: "Reception" }],
+      pharmacists: [{ type: Schema.Types.ObjectId, ref: "Pharmacist" }],
+      accountants: [{ type: Schema.Types.ObjectId, ref: "Accountant" }],
+      technicians: [{ type: Schema.Types.ObjectId, ref: "Technician" }]
+    }
+
+
   },
+
   { timestamps: true }
 );
 

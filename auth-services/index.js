@@ -7,6 +7,9 @@ import clinicAuthRoutes from "./routes/clinicRouter.js";
 import doctorAuthRouter from "./routes/doctorRoute.js";
 import nurseAuthRouter from "./routes/nurseRouter.js";
 import pharmacistAuthRouter from "./routes/pharmacistRouter.js";
+import accountantAuthRouter from "./routes/accountantRouter.js";
+import receptionAuthRouter from "./routes/receptionRoute.js";
+import technicianAuthRouter from "./routes/technicianRouter.js";
 import receptionAuthRouter from "./routes/receptionRoute.js";
 
 dotenv.config();
@@ -28,6 +31,10 @@ app.use("/api/v1/auth/clinic", clinicAuthRoutes)
 app.use("/api/v1/auth/doctor", doctorAuthRouter)
 app.use("/api/v1/auth/nurse", nurseAuthRouter)
 app.use("/api/v1/auth/pharmacist", pharmacistAuthRouter)
+app.use("/api/v1/auth/accountant", accountantAuthRouter)
+app.use("/api/v1/auth/receptionist", receptionAuthRouter)
+app.use("/api/v1/auth/technician", technicianAuthRouter)
+
 app.use("/api/v1/auth/reception", receptionAuthRouter)
 
 const PORT = process.env.PORT || 8001;

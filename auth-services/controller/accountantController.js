@@ -1,4 +1,4 @@
-import Reception from "../models/receptionSchema.js";
+import Accountant from "../models/accountantSchema.js";
 import {
   nameValidator,
   emailValidator,
@@ -7,10 +7,8 @@ import {
 } from "../utils/validators.js";
 import Clinic from "../models/clinicSchema.js";
 
-// ====== Register Reception ======
-// ====== Register Receptionist ======
-const registerReception = async (req, res) => {
-  const { name, email, phoneNumber, password, shift, clinicId } = req.body;
+const registerAccountant = async (req, res) => {
+  const { name, email, phoneNumber, password, clinicId } = req.body;
 
   try {
     // ✅ Validate required fields
@@ -37,45 +35,42 @@ const registerReception = async (req, res) => {
     }
 
     // ✅ Check if email/phone already exists
-    const existingReceptionEmail = await Reception.findOne({ email });
-    if (existingReceptionEmail) {
+    const existingAccountantEmail = await Accountant.findOne({ email });
+    if (existingAccountantEmail) {
       return res.status(400).json({ message: "Email already exists" });
     }
 
-    const existingReceptionPhone = await Reception.findOne({ phoneNumber });
-    if (existingReceptionPhone) {
+    const existingAccountantPhone = await Accountant.findOne({ phoneNumber });
+    if (existingAccountantPhone) {
       return res.status(400).json({ message: "Phone number already exists" });
     }
 
-    // ✅ Create receptionist (no employeeId passed → auto-generated)
-    const newReception = new Reception({
+    // ✅ Create Accountant
+    const newAccountant = new Accountant({
       name,
       email,
       phoneNumber,
       password,
-      shift,
     });
 
-    await newReception.save();
+    await newAccountant.save();
 
-    // ✅ Push receptionist _id into clinic.staffs.receptionists
-    clinic.staffs.receptionists.push(newReception._id);
+    // ✅ Push accountant _id into clinic.staffs.accountants
+    clinic.staffs.accountants.push(newAccountant._id);
     await clinic.save();
 
     // ✅ Generate tokens
-    const accessToken = newReception.generateAccessToken();
-    const refreshToken = newReception.generateRefreshToken();
+    const accessToken = newAccountant.generateAccessToken();
+    const refreshToken = newAccountant.generateRefreshToken();
 
     res.status(201).json({
-      message: "Receptionist registered successfully",
-      reception: {
-        id: newReception._id,
-        name: newReception.name,
-        email: newReception.email,
-        phoneNumber: newReception.phoneNumber,
-        employeeId: newReception.employeeId, // auto-generated
-        shift: newReception.shift,
-        role: newReception.role,
+      message: "Accountant registered successfully",
+      accountant: {
+        id: newAccountant._id,
+        name: newAccountant.name,
+        email: newAccountant.email,
+        phoneNumber: newAccountant.phoneNumber,
+        role: newAccountant.role,
       },
       clinic: {
         id: clinic._id,
@@ -86,7 +81,7 @@ const registerReception = async (req, res) => {
       refreshToken,
     });
   } catch (error) {
-    console.error("❌ Error in registerReception:", error);
+    console.error("❌ Error in registerAccountant:", error);
 
     if (error.code === 11000) {
       const field = Object.keys(error.keyPattern)[0];
@@ -97,8 +92,7 @@ const registerReception = async (req, res) => {
   }
 };
 
-// ====== Login Reception ======
-const loginReception = async (req, res) => {
+const loginAccountant = async (req, res) => {
   const { email, password } = req.body;
 
   try {
@@ -112,43 +106,64 @@ const loginReception = async (req, res) => {
     }
 
   
-    const reception = await Reception.findOne({ email });
-    if (!reception) {
+    const accountant = await Accountant.findOne({ email });
+    if (!accountant) {
       return res.status(400).json({ message: "Invalid email or password" });
     }
 
    
-    const isMatch = await reception.isPasswordCorrect(password);
+    const isMatch = await Accountant.isPasswordCorrect(password);
     if (!isMatch) {
       return res.status(400).json({ message: "Invalid email or password" });
     }
 
    
-    const accessToken = reception.generateAccessToken();
-    const refreshToken = reception.generateRefreshToken();
+    const accessToken = accountant.generateAccessToken();
+    const refreshToken = accountant.generateRefreshToken();
 
     res.status(200).json({
       message: "Login successful",
-      reception: {
-        id: reception._id,
-        name: reception.name,
-        email: reception.email,
-        phoneNumber: reception.phoneNumber,
-        employeeId: reception.employeeId,
-        shift: reception.shift,
-        role: reception.role,
+      accountant: {
+        id: accountant._id,
+        name: accountant.name,
+        email: accountant.email,
+        phoneNumber: accountant.phoneNumber,
+        role: accountant.role,
       },
       accessToken,
       refreshToken,
     });
   } catch (error) {
-    console.error("❌ Error in loginReception:", error);
+    console.error("❌ Error in accountantlogin:", error);
     res.status(500).json({ message: "Server error" });
   }
 };
 
-// ====== Get All Receptions ======
-const allReceptions = async (req, res) => {
+ const fetchAccountantById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const accountant = await Accountant.findById(id);
+    if (!accountant) {
+      return res.status(404).json({
+        success: false,
+        message: "Accountant not found",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      accountant,
+    });
+  } catch (error) {
+    console.error("Error fetching accountant by ID:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while fetching accountant by ID",
+    });
+  }
+};
+const allAccountants = async (req, res) => {
   try {
     let { page = 1, limit = 10, search = "" } = req.query;
 
@@ -160,16 +175,15 @@ const allReceptions = async (req, res) => {
     if (search) {
       query.$or = [
         { name: { $regex: search, $options: "i" } }, // case-insensitive search
-        { phoneNumber: { $regex: search, $options: "i" } },
-        { employeeId: { $regex: search, $options: "i" } }
+        { phoneNumber: { $regex: search, $options: "i" } }
       ];
     }
 
     // Count total documents
-    const total = await Reception.countDocuments(query);
+    const total = await Accountant.countDocuments(query);
 
     // Pagination + sorting (newest first)
-    const receptions = await Reception.find(query)
+    const accountants = await Accountant.find(query)
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit);
@@ -179,41 +193,14 @@ const allReceptions = async (req, res) => {
       total,
       page,
       totalPages: Math.ceil(total / limit),
-      receptions
+      accountants
     });
   } catch (error) {
-    console.error("Error fetching receptions:", error);
+    console.error("Error fetching accountants:", error);
     res.status(500).json({
       success: false,
-      message: "Server error while fetching receptions",
+      message: "Server error while fetching accountants",
     });
   }
 };
-
-// ====== Fetch Reception By ID ======
-const fetchReceptionById = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const reception = await Reception.findById(id);
-    if (!reception) {
-      return res.status(404).json({
-        success: false,
-        message: "Reception not found",
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      reception,
-    });
-  } catch (error) {
-    console.error("Error fetching reception by ID:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server error while fetching reception by ID",
-    });
-  }
-};
-
-export { registerReception, loginReception, allReceptions, fetchReceptionById };
+export { registerAccountant ,loginAccountant,fetchAccountantById,allAccountants};

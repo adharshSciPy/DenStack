@@ -2,7 +2,8 @@ import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
 import connectDB from "./mongoDB/connectDb.js";
-import avilabiltyRouter from "./routes/doctorAvailabiltyRouter.js";
+import patientRegisterRouter from "./routes/patientRegisterRoutes.js";
+
 
 dotenv.config();
 connectDB();
@@ -18,7 +19,7 @@ app.get("/", (req, res) => {
   res.send("🚀 API is running...");
 });
 
-app.use('/api/v1/patient',avilabiltyRouter)
+app.use("/api/v1/patient",patientRegisterRouter)
 
 
 const PORT = process.env.PORT || 8002;
