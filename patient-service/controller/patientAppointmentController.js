@@ -196,7 +196,38 @@ const getTodaysAppointments = async (req, res) => {
     return res.status(500).json({ success: false, message: "Server error", error: err.message });
   }
 };
+const getAppointmentById = async (req, res) => {
+  try {
+    const { id: appointmentId } = req.params;
+
+    if (!appointmentId || !mongoose.Types.ObjectId.isValid(appointmentId)) {
+      return res.status(400).json({ success: false, message: "Invalid appointment ID" });
+    }
+
+    const appointment = await Appointment.findById(appointmentId)
+      .populate("patientId", "name phone email") // only populate patient
+      .lean();
+
+    if (!appointment) {
+      return res.status(404).json({ success: false, message: "Appointment not found" });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Appointment details fetched successfully",
+      appointment,
+    });
+  } catch (err) {
+    console.error("getAppointmentById error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Server error while fetching appointment details",
+      error: err.message,
+    });
+  }
+};
 
 
 
-export { createAppointment ,getTodaysAppointments};
+
+export { createAppointment ,getTodaysAppointments,getAppointmentById };
