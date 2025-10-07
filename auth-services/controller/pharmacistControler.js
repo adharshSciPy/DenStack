@@ -1,14 +1,13 @@
-import Nurse from "../models/nurseSchema.js";
+import Pharmacist from "../models/pharmacistSchema.js";
 import {
     nameValidator,
     emailValidator,
     passwordValidator,
     phoneValidator,
 } from "../utils/validators.js";
-import bcrypt from "bcrypt"
 
-// ====== Register Nurse ======
-const registerNurse = async (req, res) => {
+// ====== Register Pharmacist ======
+const registerPharmacist = async (req, res) => {
     const { name, email, phoneNumber, password } = req.body;
 
     try {
@@ -30,45 +29,45 @@ const registerNurse = async (req, res) => {
         }
 
 
-        const existingNurseEmail = await Nurse.findOne({ email });
-        if (existingNurseEmail) {
+        const existingPharmacistEmail = await Pharmacist.findOne({ email });
+        if (existingPharmacistEmail) {
             return res.status(400).json({ message: "Email already exists" });
         }
 
-        const existingNursePhone = await Nurse.findOne({ phoneNumber });
-        if (existingNursePhone) {
+        const existingPharmacistPhone = await Pharmacist.findOne({ phoneNumber });
+        if (existingPharmacistPhone) {
             return res.status(400).json({ message: "Phone number already exists" });
         }
 
-        // Create nurse (nurseId will be auto-generated in pre-save hook)
-        const newNurse = new Nurse({
+        // Create Pharmacist (PharmacistId will be auto-generated in pre-save hook)
+        const newPharmacist = new Pharmacist({
             name,
             email,
             phoneNumber,
             password
         });
 
-        await newNurse.save();
+        await newPharmacist.save();
 
 
-        const accessToken = newNurse.generateAccessToken();
-        const refreshToken = newNurse.generateRefreshToken();
+        const accessToken = newPharmacist.generateAccessToken();
+        const refreshToken = newPharmacist.generateRefreshToken();
 
         res.status(201).json({
-            message: "Nurse registered successfully",
-            Nurse: {
-                id: newNurse._id,
-                name: newNurse.name,
-                email: newNurse.email,
-                phoneNumber: newNurse.phoneNumber,
-                role: newNurse.role,
-                nurseId: newNurse.nurseId
+            message: "Pharmacist registered successfully",
+            Pharmacist: {
+                id: newPharmacist._id,
+                name: newPharmacist.name,
+                email: newPharmacist.email,
+                phoneNumber: newPharmacist.phoneNumber,
+                role: newPharmacist.role,
+                pharmacistId: newPharmacist.pharmacistId
             },
             accessToken,
             refreshToken,
         });
     } catch (error) {
-        console.error("❌ Error in registerNurse:", error);
+        console.error("❌ Error in registerPharmacist:", error);
 
 
         if (error.code === 11000) {
@@ -80,8 +79,8 @@ const registerNurse = async (req, res) => {
     }
 };
 
-// ====== Login Nurse ======
-const loginNurse = async (req, res) => {
+// ====== Login Pharmacist ======
+const loginPharmacist = async (req, res) => {
     const { email, password } = req.body;
 
     try {
@@ -95,41 +94,41 @@ const loginNurse = async (req, res) => {
         }
 
 
-        const nurse = await Nurse.findOne({ email });
-        if (!nurse) {
+        const pharmacist = await Pharmacist.findOne({ email });
+        if (!pharmacist) {
             return res.status(400).json({ message: "Invalid email or password" });
         }
 
 
-        const isMatch = await nurse.isPasswordCorrect(password);
+        const isMatch = await pharmacist.isPasswordCorrect(password);
         if (!isMatch) {
             return res.status(400).json({ message: "Invalid email or password" });
         }
 
 
-        const accessToken = nurse.generateAccessToken();
-        const refreshToken = nurse.generateRefreshToken();
+        const accessToken = pharmacist.generateAccessToken();
+        const refreshToken = pharmacist.generateRefreshToken();
 
         res.status(200).json({
             message: "Login successful",
-            Nurse: {
-                id: nurse._id,
-                name: nurse.name,
-                email: nurse.email,
-                phoneNumber: nurse.phoneNumber,
-                role: nurse.role,
-                nurseId: nurse.nurseId
+            Pharmacist: {
+                id: pharmacist._id,
+                name: pharmacist.name,
+                email: pharmacist.email,
+                phoneNumber: pharmacist.phoneNumber,
+                role: pharmacist.role,
+                pharmacistId: pharmacist.pharmacistId
             },
             accessToken,
             refreshToken,
         });
     } catch (error) {
-        console.error("❌ Error in loginNurse:", error);
+        console.error("❌ Error in loginPharmacist:", error);
         res.status(500).json({ message: "Server error" });
     }
 };
 // unckecked api
-const allNurses = async (req, res) => {
+const allPharmacists = async (req, res) => {
     try {
         let { page = 1, limit = 10, search = "" } = req.query;
 
@@ -146,10 +145,10 @@ const allNurses = async (req, res) => {
         }
 
         // Count total documents
-        const total = await Nurse.countDocuments(query);
+        const total = await Pharmacist.countDocuments(query);
 
         // Pagination + sorting (newest first)
-        const nurses = await Nurse.find(query)
+        const pharmacists = await Pharmacist.find(query)
             .sort({ createdAt: -1 })
             .skip((page - 1) * limit)
             .limit(limit);
@@ -159,39 +158,39 @@ const allNurses = async (req, res) => {
             total,
             page,
             totalPages: Math.ceil(total / limit),
-            nurses
+            pharmacists
         });
     } catch (error) {
-        console.error("Error fetching Nurses:", error);
+        console.error("Error fetching Pharmacists:", error);
         res.status(500).json({
             success: false,
-            message: "Server error while fetching Nurses",
+            message: "Server error while fetching Pharmacists",
         });
     }
 };
-const fetchNurseById = async (req, res) => {
+const fetchPharmacistById = async (req, res) => {
     try {
         const { id } = req.params;
 
-        const nurse = await Nurse.findById(id);
-        if (!nurse) {
+        const pharmacist = await Pharmacist.findById(id);
+        if (!pharmacist) {
             return res.status(404).json({
                 success: false,
-                message: "Nurse not found",
+                message: "Pharmacist not found",
             });
         }
 
         res.status(200).json({
             success: true,
-            nurse,
+            pharmacist,
         });
     } catch (error) {
-        console.error("Error fetching Nurse by ID:", error);
+        console.error("Error fetching Pharmacist by ID:", error);
         res.status(500).json({
             success: false,
-            message: "Server error while fetching Nurse by ID",
+            message: "Server error while fetching Pharmacist by ID",
         });
     }
 };
 
-export { registerNurse, loginNurse, allNurses, fetchNurseById };
+export { registerPharmacist, loginPharmacist, allPharmacists, fetchPharmacistById };
