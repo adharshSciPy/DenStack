@@ -8,7 +8,6 @@ import doctorAuthRouter from "./routes/doctorRoute.js";
 import nurseAuthRouter from "./routes/nurseRouter.js";
 import pharmacistAuthRouter from "./routes/pharmacistRouter.js";
 import accountantAuthRouter from "./routes/accountantRouter.js";
-import receptionAuthRouter from "./routes/receptionRoute.js";
 import technicianAuthRouter from "./routes/technicianRouter.js";
 import receptionAuthRouter from "./routes/receptionRoute.js";
 
@@ -35,7 +34,6 @@ app.use("/api/v1/auth/accountant", accountantAuthRouter)
 app.use("/api/v1/auth/receptionist", receptionAuthRouter)
 app.use("/api/v1/auth/technician", technicianAuthRouter)
 
-app.use("/api/v1/auth/reception", receptionAuthRouter)
 
 const PORT = process.env.PORT || 8001;
 app.listen(PORT, () => {

@@ -29,7 +29,8 @@ const appointmentSchema = new mongoose.Schema({
   updatedBy: {
     type: mongoose.Schema.Types.ObjectId,
     
-  }
+  },
+    opNumber: { type: Number, required: true } 
 }, { timestamps: true });
 
 appointmentSchema.index({ patientId: 1, appointmentDate: -1 });
