@@ -219,4 +219,28 @@ const getClinicStaffs = async (req, res) => {
   }
 };
 
-export { registerClinic, loginClinic, viewAllClinics, viewClinicById, editClinic,getClinicStaffs }
+const getTheme=async (req, res) => {
+  try {
+    const clinic = await Clinic.findById(req.params.clinicId).select("theme");
+    if (!clinic) return res.status(404).json({ message: "Clinic not found" });
+    res.json(clinic.theme);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
+const editTheme=async (req, res) => {
+  try {
+    const { startColor, endColor, primaryForeground, sidebarForeground,secondary } = req.body;
+    const clinic = await Clinic.findByIdAndUpdate(
+      req.params.clinicId,
+      { theme: { startColor, endColor, primaryForeground, sidebarForeground ,secondary} },
+      { new: true }
+    );
+    res.json({ message: "Theme updated successfully", theme: clinic.theme });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
+export { registerClinic, loginClinic, viewAllClinics, viewClinicById, editClinic,getClinicStaffs ,getTheme,editTheme};

@@ -1,13 +1,16 @@
 import { Router } from "express";
 import { createProduct, productDetails, getProduct, updateProduct, deleteProduct } from "../Controller/productController.js";
+import { verifyAuthToken, authorizeRoles } from "../middlewares/authmiddleware.js";
 import upload from "../middlewares/upload.js";
+
+const SUPER_ADMIN = process.env.SUPERADMIN_ROLE
 
 const productRoute = Router();
 
-productRoute.post("/createProduct", upload.single("image"), createProduct);
-productRoute.route("/productsDetails").get(productDetails);
-productRoute.route("/getProduct/:id").get(getProduct);
-productRoute.put("/updateProduct/:id", upload.single("image"), updateProduct);
-productRoute.route("/deleteProduct/:id").delete(deleteProduct)
+productRoute.post("/createProduct", verifyAuthToken, authorizeRoles(SUPER_ADMIN), upload.single("image"), createProduct);
+productRoute.get("/productsDetails", verifyAuthToken, authorizeRoles(SUPER_ADMIN), productDetails);
+productRoute.get("/getProduct/:id", verifyAuthToken, authorizeRoles(SUPER_ADMIN), getProduct);
+productRoute.put("/updateProduct/:id", verifyAuthToken, authorizeRoles(SUPER_ADMIN), upload.single("image"), updateProduct);
+productRoute.delete("/deleteProduct/:id", verifyAuthToken, authorizeRoles(SUPER_ADMIN), deleteProduct)
 
 export default productRoute;
