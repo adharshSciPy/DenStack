@@ -50,6 +50,10 @@ const patientSchema = new mongoose.Schema({
   role:{type:String,default:PATIENT_ROLE},
   // patientHistory:[{type:mongoose.Schema.Types.ObjectId,ref:"PatientHistory"}],
   createdBy: { type: String },
+  visitHistory: [
+  { type: mongoose.Schema.Types.ObjectId, ref: "PatientHistory" }
+],
+
   createdAt: { type: Date, default: Date.now }
 });
 

@@ -30,6 +30,10 @@ const appointmentSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     
   },
+    visitId: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: "PatientHistory" 
+  },
     opNumber: { type: Number, required: true } 
 }, { timestamps: true });
 

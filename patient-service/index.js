@@ -4,6 +4,7 @@ import cors from "cors";
 import connectDB from "./mongoDB/connectDb.js";
 import patientRegisterRouter from "./routes/patientRegisterRoutes.js";
 import patientAppointmentRouter from "./routes/patientAppointmentRoute.js";
+import doctorConsultationRouter from "./routes/doctorConsultationRoute.js";
 
 
 dotenv.config();
@@ -22,6 +23,8 @@ app.get("/", (req, res) => {
 
 app.use("/api/v1/patient-service/patient",patientRegisterRouter)
 app.use("/api/v1/patient-service/appointment",patientAppointmentRouter)
+app.use("/api/v1/patient-service/consultation",doctorConsultationRouter)
+
 
 
 
