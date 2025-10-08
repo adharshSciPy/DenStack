@@ -89,7 +89,7 @@ const updateProduct = async (req, res) => {
 
         // 🔹 Handle new image upload (if provided)
         if (req.file) {
-            product.images = [`/uploads/${req.file.filename}`]; // replace existing image
+            product.image = [`/uploads/${req.file.filename}`]; // replace existing image
         }
 
         // 🔹 Update other fields (only if provided)
