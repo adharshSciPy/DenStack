@@ -1,0 +1,90 @@
+import Order from "../Model/OrderSchema.js";
+import Product from "../Model/ProductSchema.js";
+
+const createOrder = async (req, res) => {
+    try {
+        const { userId, items } = req.body;
+
+        // Validate items
+        if (!items || items.length === 0)
+            return res.status(400).json({ message: "No items provided" });
+
+        // Fetch product prices from DB (to prevent tampering)
+        let totalAmount = 0;
+        const orderItems = [];
+
+        for (const item of items) {
+            const product = await Product.findById(item.productId);
+            if (!product)
+                return res.status(404).json({ message: `Product not found: ${item.productId}` });
+
+            if (product.stock < item.quantity)
+                return res.status(400).json({ message: `Not enough stock for ${product.name}` });
+
+            totalAmount += product.price * item.quantity;
+            orderItems.push({
+                productId: product._id,
+                quantity: item.quantity,
+                price: product.price,
+            });
+
+            // (Optional) Reduce stock
+            product.stock -= item.quantity;
+            await product.save();
+        }
+
+        // Create order
+        const newOrder = new Order({
+            userId,
+            items: orderItems,
+            totalAmount,
+            paymentStatus: "PENDING",
+            orderStatus: "PROCESSING",
+        });
+
+        await newOrder.save();
+        res.status(201).json({ message: "Order created successfully", order: newOrder });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Server error" });
+    }
+};
+
+// ✅ GET ALL ORDERS (SuperAdmin or for Admin Dashboard)
+const getAllOrders = async (req, res) => {
+    try {
+        const orders = await Order.find()
+            .populate("items.productId", "name price")
+            .sort({ createdAt: -1 });
+
+        res.status(200).json({ success: true, orders });
+    } catch (error) {
+        console.error("Get Orders Error:", error);
+        res.status(500).json({ success: false, message: "Server Error" });
+    }
+};
+
+// ✅ GET ORDERS FOR A SPECIFIC USER (Clinic or Customer)
+const getUserOrders = async (req, res) => {
+    try {
+        const { userId } = req.params;
+
+        const orders = await Order.find({ userId })
+            .populate("items.productId", "name price images")
+            .sort({ createdAt: -1 });
+
+        if (!orders.length) {
+            return res.status(404).json({ success: false, message: "No orders found" });
+        }
+
+        res.status(200).json({ success: true, orders });
+    } catch (error) {
+        console.error("Get User Orders Error:", error);
+        res.status(500).json({ success: false, message: "Server Error" });
+    }
+};
+
+
+export {
+    createOrder, getAllOrders, getUserOrders
+}
