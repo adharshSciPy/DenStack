@@ -4,9 +4,7 @@ import cors from "cors";
 import connectDB from "./mongoDB/connectDB.js";
 import labRouter from "./routes/labRoutes.js";
 import labUserRouter from "./routes/labUserRoute.js";
-import path from "path";
-import { fileURLToPath } from "url";
-
+import labOrderRouter from "./routes/labOrderRoutes.js";
 
 
 dotenv.config();
@@ -28,6 +26,8 @@ app.get("/", (req, res) => {
 });
 app.use("/api/v1/lab",labRouter)
 app.use("/api/v1/lab-user",labUserRouter)
+app.use("/api/v1/lab-order",labOrderRouter)
+
 
 
 
