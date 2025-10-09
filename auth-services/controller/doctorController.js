@@ -5,6 +5,7 @@ import {
   passwordValidator,
   phoneValidator,
 } from "../utils/validators.js";
+import mongoose from "mongoose";
 const generateDoctorId = () => {
   const randomNum = Math.floor(100000 + Math.random() * 900000); // 6-digit random
   return `DCS-DR-${randomNum}`;
@@ -196,11 +197,21 @@ const allDoctors = async (req, res) => {
     });
   }
 };
- const fetchDoctorById = async (req, res) => {
+const fetchDoctorById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const doctor = await Doctor.findById(id);
+    // ✅ Validate ID
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid doctor ID format",
+      });
+    }
+
+    // ✅ Fetch doctor with only needed fields
+    const doctor = await Doctor.findById(id).lean();
+
     if (!doctor) {
       return res.status(404).json({
         success: false,
@@ -208,18 +219,20 @@ const allDoctors = async (req, res) => {
       });
     }
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
-      doctor,
+      data: doctor,
     });
   } catch (error) {
-    console.error("Error fetching doctor by ID:", error);
-    res.status(500).json({
+    console.error("❌ Error fetching doctor by ID:", error);
+    return res.status(500).json({
       success: false,
-      message: "Server error while fetching doctor by ID",
+      message: "Server error while fetching doctor details",
+      error: error.message,
     });
   }
 };
+
 const fetchDoctorByUniqueId = async (req, res) => {
   try {
     const {id: uniqueId } = req.params;

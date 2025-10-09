@@ -3,6 +3,7 @@ import { configDotenv } from "dotenv";
 import axios from "axios";
 import Patient from "../model/patientSchema.js";
 import Appointment from "../model/appointmentSchema.js";
+import PatientHistory from "../model/patientHistorySchema.js";
 
 configDotenv();
 const AUTH_SERVICE_BASE_URL = process.env.AUTH_SERVICE_BASE_URL;
@@ -226,8 +227,94 @@ const getAppointmentById = async (req, res) => {
     });
   }
 };
+const getPatientHistory = async (req, res) => {
+  try {
+    const { id: patientId } = req.params;
+    const { clinicId } = req.body;
+
+    // ✅ 1. Validate IDs
+    if (!mongoose.Types.ObjectId.isValid(patientId)) {
+      return res.status(400).json({ success: false, message: "Invalid patientId" });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(clinicId)) {
+      return res.status(400).json({ success: false, message: "Invalid clinicId" });
+    }
+
+    // ✅ 2. Fetch patient history (lean + sorted descending by visitDate)
+    const history = await PatientHistory.find(
+      { patientId, clinicId },
+      {
+        _id: 1,
+        visitDate: 1,
+        doctorId: 1,
+        appointmentId: 1,
+        symptoms: 1,
+        diagnosis: 1,
+        prescriptions: 1,
+        notes: 1,
+        files: 1,
+        referrals: 1,
+        status: 1,
+        createdAt: 1,
+      }
+    )
+      .sort({ visitDate: -1 })
+      .lean();
+
+    if (!history.length) {
+      return res.status(404).json({ success: false, message: "No patient history found" });
+    }
+
+    // ✅ 3. Extract unique doctor IDs
+    const doctorIds = [...new Set(history.map(h => h.doctorId?.toString()).filter(Boolean))];
+
+    // ✅ 4. Fetch doctor details from microservice in parallel
+    const doctorMap = {};
+  await Promise.all(
+  doctorIds.map(async (doctorId) => {
+    try {
+      const { data } = await axios.get(
+        `${process.env.AUTH_SERVICE_BASE_URL}/doctor/details/${doctorId}`
+      );
+
+      // Corrected access
+      if (data?.success && data?.data) {
+        doctorMap[doctorId] = {
+          name: data.data.name,
+          phoneNumber: data.data.phoneNumber,
+          specialization: data.data.specialization || null,
+        };
+      }
+    } catch (err) {
+      console.warn(`⚠️ Failed to fetch doctor ${doctorId}:`, err.message);
+    }
+  })
+);
 
 
+    // ✅ 5. Merge doctor info into each patient history record
+    const enrichedHistory = history.map(h => ({
+      ...h,
+      doctor: doctorMap[h.doctorId?.toString()] || null,
+    }));
+
+    // ✅ 6. Respond
+    return res.status(200).json({
+      success: true,
+      count: enrichedHistory.length,
+      data: enrichedHistory,
+    });
+
+  } catch (error) {
+    console.error("getPatientHistory error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error while fetching patient history",
+      error: error.message,
+    });
+  }
+};
 
 
-export { createAppointment ,getTodaysAppointments,getAppointmentById };
+export { createAppointment ,getTodaysAppointments,getAppointmentById, getPatientHistory};

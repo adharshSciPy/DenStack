@@ -74,6 +74,4 @@ console.log("Comparison:", appointment.doctorId?.toString() === doctorId?.toStri
     });
   }
 };
-
-
 export{ consultPatient };
