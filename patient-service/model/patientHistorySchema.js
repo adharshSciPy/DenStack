@@ -50,15 +50,12 @@ const patientHistorySchema = new mongoose.Schema(
       }
     ],
 
-    // ✅ Referrals
-    referrals: [
-      {
-        type: { type: String, enum: ["lab", "pharmacy", "specialist"], required: true },
-        referenceId: { type: mongoose.Schema.Types.ObjectId }, // e.g., LabRequest, Prescription, or referred Doctor
-        notes: String,
-        createdAt: { type: Date, default: Date.now },
-      }
-    ],
+   labHistory: [
+  {
+    type: mongoose.Schema.Types.ObjectId,
+  }
+],
+
 
     status: { type: String, enum: ["pending", "completed"], default: "completed" },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "Doctor", required: true },

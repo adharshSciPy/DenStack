@@ -315,6 +315,43 @@ const getPatientHistory = async (req, res) => {
     });
   }
 };
+const addLabOrderToPatientHistory = async (req, res) => {
+  try {
+    const { id: historyId } = req.params;
+    const { labOrderId } = req.body;
 
+    if (!mongoose.Types.ObjectId.isValid(historyId)) {
+      return res.status(400).json({ success: false, message: "Invalid patientHistory ID" });
+    }
 
-export { createAppointment ,getTodaysAppointments,getAppointmentById, getPatientHistory};
+    if (!labOrderId || !mongoose.Types.ObjectId.isValid(labOrderId)) {
+      return res.status(400).json({ success: false, message: "Invalid or missing labOrderId" });
+    }
+
+    // Push only the labOrderId since labHistory is an array of ObjectIds
+    const updatedHistory = await PatientHistory.findByIdAndUpdate(
+      historyId,
+      { $push: { labHistory: labOrderId } },
+      { new: true }
+    );
+
+    if (!updatedHistory) {
+      return res.status(404).json({ success: false, message: "Patient history not found" });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Lab order added successfully",
+      labHistory: updatedHistory.labHistory,
+    });
+  } catch (error) {
+    console.error("Error adding lab order:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error while adding lab order",
+      error: error.message,
+    });
+  }
+};
+
+export { createAppointment ,getTodaysAppointments,getAppointmentById, getPatientHistory, addLabOrderToPatientHistory };
