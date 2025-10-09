@@ -225,5 +225,38 @@ const getAllPatients = async (req, res) => {
     return res.status(500).json({ success: false, message: "Server error", error: err.message });
   }
 };
+const patientCheck = async (req, res) => {
+  try {
+    const { clinicId, patientId } = req.body;
 
-export{registerPatient,getPatientWithUniqueId,getAllPatients}
+    // Validate IDs
+    if (!clinicId || !mongoose.Types.ObjectId.isValid(clinicId)) {
+      return res.status(400).json({ success: false, message: "Invalid clinicId" });
+    }
+    if (!patientId || !mongoose.Types.ObjectId.isValid(patientId)) {
+      return res.status(400).json({ success: false, message: "Invalid patientId" });
+    }
+
+    // Efficient lookup
+    const patient = await Patient.findOne(
+      { _id: patientId, clinicId },
+      { _id: 1, name: 1, patientUniqueId: 1 } // only fetch minimal fields
+    ).lean();
+
+    if (!patient) {
+      return res.status(404).json({ success: false, message: "Patient not found in this clinic" });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Patient exists in the clinic",
+      data: patient
+    });
+
+  } catch (error) {
+    console.error("Patient verify error:", error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+export{registerPatient,getPatientWithUniqueId,getAllPatients,patientCheck}
