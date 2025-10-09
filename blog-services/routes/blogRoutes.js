@@ -1,5 +1,4 @@
 import { Router } from "express";
-import multer from "multer";
 import { verifyDoctor } from "../middleware/verifyDoctor.js";
 import {upload} from "../middleware/upload.js";
 import {
