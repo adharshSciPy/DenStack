@@ -7,12 +7,12 @@ import bcrypt from "bcrypt";
 import jwt from 'jsonwebtoken'
 dotenv.config();
 
-const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const AUTH_SERVICE_BASE_URL = process.env.AUTH_SERVICE_BASE_URL;
 
 const onboardDoctor = async (req, res) => {
   try {
-    const { clinicId, doctorUniqueId, roleInClinic, clinicEmail, clinicPassword, createdBy } = req.body;
+    const { clinicId, doctorUniqueId, roleInClinic, clinicEmail, clinicPassword, standardConsultationFee, createdBy } = req.body;
 
     // Validate required fields
     if (!mongoose.Types.ObjectId.isValid(clinicId))
@@ -21,6 +21,8 @@ const onboardDoctor = async (req, res) => {
       return res.status(400).json({ success: false, message: "doctorUniqueId is required" });
     if (!clinicEmail || !clinicPassword)
       return res.status(400).json({ success: false, message: "Clinic email/password are required" });
+    if (!standardConsultationFee || standardConsultationFee < 0)
+      return res.status(400).json({ success: false, message: "Invalid standardConsultationFee" });
 
     // Fetch doctor from auth-service
     let doctor;
@@ -55,6 +57,7 @@ const onboardDoctor = async (req, res) => {
         email: clinicEmail,
         password: hashedPassword, // ✅ store only hashed password
       },
+      standardConsultationFee,
       createdBy: createdBy || undefined,
     });
 
@@ -68,6 +71,8 @@ const onboardDoctor = async (req, res) => {
         doctorId: newMapping.doctorId,
         clinicId: newMapping.clinicId,
         roleInClinic: newMapping.roleInClinic,
+        status: newMapping.status,
+        standardConsultationFee: newMapping.standardConsultationFee,
         clinicLogin: {
           email: newMapping.clinicLogin.email,
         },
