@@ -11,11 +11,13 @@ import axios from "axios";
       patientId,
       orderType,
       toothNumbers,
+      consultationId,
       expectedDeliveryDate,
+
     } = req.body;
 
     // ✅ 1. Basic input validation
-    if (!labId || !clinicId || !doctorId || !patientId || !orderType) {
+    if (!labId || !clinicId || !doctorId || !patientId || !orderType || !consultationId) {
       return res.status(400).json({ message: "Missing required fields" });
     }
 
@@ -56,6 +58,7 @@ import axios from "axios";
       patientId,
       orderType,
       toothNumbers,
+      consultationId,
       expectedDeliveryDate,
       statusHistory: [{ status: "Pending", note: "Order created by doctor" }],
     });
@@ -79,17 +82,15 @@ import axios from "axios";
     const { status, note } = req.body;
 
     const order = await LabOrder.findById(orderId);
-    if (!order) return res.status(404).json({ message: "Order not found" });
-
-    // Push new status to history
+    if (!order) return res.status(404).json({ message: "Order not found" });    
+    const consultationId = order.consultationId;
     order.statusHistory.push({ status, note });
     order.status = status;
     await order.save();
 
-    // 🔗 If status is "Delivered", notify Patient Service
     if (status === "Delivered") {
       try {
-        await axios.post(`${process.env.PATIENT_SERVICE_URL}/api/v1/patient-service/patient/add-lab-report`, {
+        await axios.patch(`${process.env.PATIENT_SERVICE_URL}/api/v1/patient-service/appointment/lab-details/${consultationId}`, {
           labOrderId: order._id,
         });
       } catch (err) {
