@@ -9,7 +9,7 @@ const labOrderSchema = new mongoose.Schema(
     patientId: { type: String, required: true }, // coming from patient microservice
     orderType: { type: String, required: true },
     toothNumbers: [{ type: String }],
-
+    consultationId: { type: mongoose.Schema.Types.ObjectId, ref: "Consultation" },
     status: {
       type: String,
       enum: [
