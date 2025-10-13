@@ -1,0 +1,70 @@
+import Vendor from "../Model/VendorSchema.js";
+
+const createVendor = async (req, res) => {
+    try {
+        const { name, companyName, email, phoneNumber, address, contactHistory } = req.body;
+        const vendor = await Vendor.create({
+            name, companyName, email, phoneNumber, address, contactHistory
+        })
+        res.status(200).json({ message: "Successfully Created", data: vendor })
+    } catch (error) {
+        res.status(500).json({ message: "Internal Server Error", error: error.message })
+    }
+}
+
+const vendorDetails = async (req, res) => {
+    try {
+        const details = await Vendor.find();
+        res.status(200).json({ message: "Details Fetched", data: details });
+    } catch (error) {
+        res.status(500).json({ message: "Internal Server Error", error: error.message })
+    }
+}
+
+const editVendor = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { name, companyName, email, phoneNumber, address, contactHistory } = req.body;
+
+        // 🧠 Prepare update data
+        const updateData = { name, companyName, email, phoneNumber, address };
+
+        // 🗂️ If there’s new contact history, append it instead of replacing
+        if (contactHistory && contactHistory.length > 0) {
+            await Vendor.findByIdAndUpdate(
+                id,
+                { $push: { contactHistory: { $each: contactHistory } } }
+            );
+        }
+
+        // 🧾 Update the rest of the vendor details
+        const vendor = await Vendor.findByIdAndUpdate(id, updateData, { new: true });
+
+        res.status(200).json({
+            success: true,
+            message: "Vendor updated successfully",
+            data: vendor,
+        });
+    } catch (error) {
+        console.error("Error editing vendor:", error);
+        res.status(500).json({
+            success: false,
+            message: "Internal Server Error",
+            error: error.message,
+        });
+    }
+};
+
+const deleteVendor = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const deleteVendor = await Vendor.findByIdAndDelete(id);
+        res.status(200).json({ message: "Deleted Successfully", data: deleteVendor })
+    } catch (error) {
+        res.status(500).json({ message: "Internal Server Error", error: error.message })
+    }
+}
+
+export {
+    createVendor, vendorDetails, editVendor, deleteVendor
+}

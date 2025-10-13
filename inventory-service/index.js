@@ -7,6 +7,7 @@ import connectDB from "./mongoDB/config.js";
 import categoryRoute from "./Routes/categoryRouter.js";
 import productRoute from "./Routes/productRouter.js";
 import orderRouter from "./Routes/orderRouter.js";
+import vendorRouter from "./Routes/vendorRouter.js";
 
 dotenv.config();
 connectDB();
@@ -34,6 +35,7 @@ app.get("/", (req, res) => {
 app.use("/api/v1/category", categoryRoute);
 app.use("/api/v1/product", productRoute);
 app.use("/api/v1/order", orderRouter);
+app.use("/api/v1/vendor", vendorRouter)
 
 
 
