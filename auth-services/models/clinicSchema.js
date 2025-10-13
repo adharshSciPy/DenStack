@@ -84,16 +84,43 @@ const clinicSchema = new Schema(
       default: CLINIC_ROLE,
     },
 
-    subscription: {
-      package: {
-        type: String,
-        enum: ["basic", "standard", "premium"],
-        default: "basic",
-      },
-      startDate: { type: Date, default: Date.now },
-      endDate: { type: Date },
-      isActive: { type: Boolean, default: true },
-    },
+   subscription: {
+  package: {
+    type: String,
+    enum: ["basic", "standard", "premium"],
+    default: "basic",
+  },
+  type: {
+    type: String,
+    enum: ["monthly", "annual"],
+    default: "monthly",
+  },
+  price: {
+    type: Number,
+    default: 0,
+  },
+  startDate: {
+    type: Date,
+    default: Date.now,
+  },
+  endDate: {
+    type: Date,
+  },
+  isActive: {
+    type: Boolean,
+    default: true,
+  },
+  nextBillingDate: {
+    type: Date,
+  },
+  lastPaymentDate: {
+    type: Date,
+  },
+  transactionId: {
+    type: String, // useful if using Razorpay, Stripe, etc.
+  },
+},
+
 
     isActive: {
       type: Boolean,
@@ -166,7 +193,39 @@ clinicSchema.methods.generateRefreshToken = function (role = CLINIC_ROLE) {
     { expiresIn: process.env.REFRESH_TOKEN_EXPIRY }
   );
 };
+clinicSchema.methods.activateSubscription = function (type = "monthly", pkg = "basic", price = 0) {
+  const now = new Date();
+  const endDate = new Date(now);
 
+  if (type === "monthly") {
+    endDate.setMonth(now.getMonth() + 1);
+  } else if (type === "annual") {
+    endDate.setFullYear(now.getFullYear() + 1);
+  }
+
+  this.subscription = {
+    package: pkg,
+    type,
+    price,
+    startDate: now,
+    endDate,
+    isActive: true,
+    nextBillingDate: endDate,
+  };
+
+  return this.subscription;
+};
+
+
+clinicSchema.methods.isSubscriptionValid = function () {
+  return this.subscription?.isActive && new Date() < new Date(this.subscription.endDate);
+};
+
+clinicSchema.methods.cancelSubscription = function () {
+  this.subscription.isActive = false;
+  this.subscription.endDate = new Date();
+  return this.subscription;
+};
 const Clinic = mongoose.model("Clinic", clinicSchema);
 
 export default Clinic;
