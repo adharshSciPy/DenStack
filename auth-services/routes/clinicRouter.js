@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { editTheme, getTheme, loginClinic, registerClinic, viewAllClinics, viewClinicById, editClinic, getClinicStaffs } from "../controller/clinicController.js";
+import { editTheme, getTheme, loginClinic, registerClinic, viewAllClinics, viewClinicById, editClinic, getClinicStaffs, subscribeClinic } from "../controller/clinicController.js";
 
 const clinicAuthRoutes = Router();
 clinicAuthRoutes.route("/register").post(registerClinic);
@@ -12,5 +12,6 @@ clinicAuthRoutes.route("/all-staffs/:id").get(getClinicStaffs);
 
 clinicAuthRoutes.route("/gettheme/:clinicId").get(getTheme)
 clinicAuthRoutes.route("/updateTheme/:clinicId").patch(editTheme)
+clinicAuthRoutes.route("/subscribe/:id").post(subscribeClinic);//id:clinicId
 
 export default clinicAuthRoutes

@@ -242,5 +242,26 @@ const editTheme=async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 }
+const subscribeClinic = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { type, package: pkg, price } = req.body;
 
-export { registerClinic, loginClinic, viewAllClinics, viewClinicById, editClinic,getClinicStaffs ,getTheme,editTheme};
+    const clinic = await Clinic.findById(id);
+    if (!clinic) return res.status(404).json({ success: false, message: "Clinic not found" });
+
+    const subscription = clinic.activateSubscription(type, pkg, price);
+    await clinic.save();
+
+    res.status(200).json({
+      success: true,
+      message: `Clinic subscribed to ${pkg} plan (${type}) successfully`,
+      subscription,
+    });
+  } catch (error) {
+    console.error("Error subscribing clinic:", error);
+    res.status(500).json({ success: false, message: "Server error", error: error.message });
+  }
+};
+
+export { registerClinic, loginClinic, viewAllClinics, viewClinicById, editClinic,getClinicStaffs ,getTheme,editTheme,subscribeClinic};
