@@ -1,9 +1,8 @@
-import PharmacyOrder from "../models/PharmacyOrder.js";
+
 
 // Create Pharmacy Order
-import PharmacyOrder from "../models/PharmacyOrder.js";
-import Patient from "../models/Patient.js";
-import Medicine from "../models/Medicine.js";
+import PharmacyOrder from "../model/PharmacyOrder.js"
+import Medicine from "../model/medicineSchema.js"
 
 // 🧾 Create Pharmacy Order with Stock Management
 export const createPharmacyOrder = async (req, res) => {
@@ -19,14 +18,27 @@ export const createPharmacyOrder = async (req, res) => {
       if (!medicine) {
         return res.status(404).json({ message: `Medicine not found` });
       }
+      
+      if (medicine.expiryDate) {
+        const today = new Date();
+        const expiryDate = new Date(medicine.expiryDate);
+        const diffInDays = Math.ceil((expiryDate - today) / (1000 * 60 * 60 * 24));
 
-      if (medicine.stockQuantity < item.quantity) {
-        return res
-          .status(400)
-          .json({ message: `Insufficient stock for ${medicine.name}` });
+        if (diffInDays <= 7) {
+          return res.status(400).json({
+            message: `Cannot order ${medicine.name}, it expires in ${diffInDays} day(s).`,
+          });
+        }
       }
 
-      // Reduce stock
+      // 🧮 Check stock
+      if (medicine.stockQuantity < item.quantity) {
+        return res.status(400).json({
+          message: `Insufficient stock for ${medicine.name}`,
+        });
+      }
+
+      // 📉 Reduce stock
       medicine.stockQuantity -= item.quantity;
       if (medicine.stockQuantity <= 0) medicine.status = "out-of-stock";
       await medicine.save();
@@ -38,32 +50,27 @@ export const createPharmacyOrder = async (req, res) => {
         medicineName: medicine.name,
         dosage: item.dosage,
         quantity: item.quantity,
-        pricePerUnit: medicine.pricePerUnit,
-        totalPrice,
+        price: totalPrice,
       });
     }
 
-    // Create order
+    // 🧾 Create order
     const order = new PharmacyOrder({
       patientId,
       doctorId,
       vendorId,
       prescriptionItems,
       totalAmount,
-      status: "pending",
     });
 
     await order.save();
-
-    await Patient.findByIdAndUpdate(patientId, {
-      $push: { pharmacyOrders: order._id },
-    });
 
     res.status(201).json({ message: "Pharmacy order created", order });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
+
 
 
 // Get All Orders
