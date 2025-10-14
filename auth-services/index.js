@@ -10,6 +10,7 @@ import pharmacistAuthRouter from "./routes/pharmacistRouter.js";
 import accountantAuthRouter from "./routes/accountantRouter.js";
 import technicianAuthRouter from "./routes/technicianRouter.js";
 import receptionAuthRouter from "./routes/receptionRoute.js";
+import clinicSubscriptionCron from "./utils/clinicSubscriptionCron.js";
 
 dotenv.config();
 connectDB();
@@ -24,7 +25,8 @@ app.use(express.json());
 app.get("/", (req, res) => {
   res.send("🚀 API is running...");
 });
-
+//cron jobs
+clinicSubscriptionCron()
 app.use("/api/v1/auth/super-admin", superAdminAuthRoutes)
 app.use("/api/v1/auth/clinic", clinicAuthRoutes)
 app.use("/api/v1/auth/doctor", doctorAuthRouter)

@@ -353,5 +353,4 @@ const addLabOrderToPatientHistory = async (req, res) => {
     });
   }
 };
-
 export { createAppointment ,getTodaysAppointments,getAppointmentById, getPatientHistory, addLabOrderToPatientHistory };

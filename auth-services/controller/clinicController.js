@@ -5,6 +5,7 @@ import {
   passwordValidator,
   phoneValidator,
 } from "../utils/validators.js";
+import mongoose from "mongoose";
 const registerClinic = async (req, res) => {
   const { name, type, email, phoneNumber, password, address, description, } = req.body;
 
@@ -242,5 +243,111 @@ const editTheme=async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 }
+const subscribeClinic = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { type, package: pkg, price } = req.body;
 
-export { registerClinic, loginClinic, viewAllClinics, viewClinicById, editClinic,getClinicStaffs ,getTheme,editTheme};
+    const clinic = await Clinic.findById(id);
+    if (!clinic) return res.status(404).json({ success: false, message: "Clinic not found" });
+
+    const subscription = clinic.activateSubscription(type, pkg, price);
+    await clinic.save();
+
+    res.status(200).json({
+      success: true,
+      message: `Clinic subscribed to ${pkg} plan (${type}) successfully`,
+      subscription,
+    });
+  } catch (error) {
+    console.error("Error subscribing clinic:", error);
+    res.status(500).json({ success: false, message: "Server error", error: error.message });
+  }
+};
+
+const getClinicDashboardDetails = async (req, res) => {
+  try {
+    const { id: clinicId } = req.params;
+
+    if (!clinicId || !mongoose.Types.ObjectId.isValid(clinicId)) {
+      return res.status(400).json({ success: false, message: "Invalid clinicId" });
+    }
+
+    // 1️⃣ Fetch clinic info with staffs
+    const clinic = await Clinic.findById(clinicId)
+      .populate("staffs.nurses")
+      .populate("staffs.receptionists")
+      .populate("staffs.pharmacists")
+      .populate("staffs.accountants")
+      .populate("staffs.technicians")
+      .lean();
+
+    if (!clinic) {
+      return res.status(404).json({ success: false, message: "Clinic not found" });
+    }
+
+    // 2️⃣ Fetch all patients of this clinic
+    const patients = await Patient.find({ clinicId })
+      .select("name phone email patientUniqueId visitHistory")
+      .lean();
+
+    // 3️⃣ Fetch today's appointments
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
+
+    const appointments = await Appointment.find({
+      clinicId,
+      appointmentDate: todayStr,
+      status: "scheduled"
+    })
+      .populate("patientId", "name phone email patientUniqueId")
+      .sort({ appointmentTime: 1 })
+      .lean();
+
+    // 4️⃣ Fetch active doctors
+    const activeDoctors = await DoctorClinic.find({ clinicId, status: "active" })
+      .select("doctorId roleInClinic clinicLogin status")
+      .lean();
+
+    const doctorDetailsPromises = activeDoctors.map(doc =>
+      axios
+        .get(`${AUTH_SERVICE_BASE_URL}/doctor/details/${doc.doctorId}`)
+        .then(res => ({
+          ...doc,
+          doctor: res.data?.doctor || { _id: doc.doctorId, name: "Unknown Doctor" }
+        }))
+        .catch(() => ({ ...doc, doctor: { _id: doc.doctorId, name: "Unknown Doctor" } }))
+    );
+
+    const doctorsWithDetails = await Promise.all(doctorDetailsPromises);
+
+    // 5️⃣ Send response
+    return res.status(200).json({
+      success: true,
+      clinic: {
+        id: clinic._id,
+        name: clinic.name,
+        staffs: clinic.staffs,
+        subscription: clinic.subscription,
+      },
+      patients,
+      todaysAppointments: appointments,
+      activeDoctors: doctorsWithDetails.map(d => ({
+        doctorId: d.doctorId,
+        roleInClinic: d.roleInClinic,
+        clinicLogin: d.clinicLogin?.email,
+        status: d.status,
+        doctor: d.doctor,
+      })),
+    });
+
+  } catch (error) {
+    console.error("getClinicDashboardDetails error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error while fetching clinic dashboard",
+      error: error.message,
+    });
+  }
+};
+export { registerClinic, loginClinic, viewAllClinics, viewClinicById, editClinic,getClinicStaffs ,getTheme,editTheme,subscribeClinic,getClinicDashboardDetails};
