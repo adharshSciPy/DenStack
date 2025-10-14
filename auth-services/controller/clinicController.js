@@ -330,26 +330,35 @@ const getClinicDashboardDetails = async (req, res) => {
         return [];
       }
     };
-    const fetchPendingLabOrders=async(req,res)=>{
-      try {       
-        const response = await axios.get(
-          `${LAB_SERVICE_BASE_URL}/lab/orders/clinic/${clinicId}/status/pending`
-        );
-        return response.data?.data || [];
-      } catch (err) {
-        console.error("❌ Error fetching pending lab orders:", err.message);
-        return [];
-      } 
 
-    }
+  const fetchPendingLabOrders = async () => {
+  try {
+    const response = await axios.get(
+      `${LAB_SERVICE_BASE_URL}/api/v1/lab-order/pending-orders/${clinicId}`
+    );
+    // console.log("1212",response);
+    
+    return {
+      count: response.data?.count || 0,
+      orders: response.data?.pendingOrders || [],
+    };
+  } catch (err) {
+    console.error("❌ Error fetching pending lab orders:", err.message);
+    return { count: 0, orders: [] };
+  }
+};
 
-    // ✅ Run all 3 external requests in parallel to speed things up
-    const [patients, todaysAppointments, activeDoctors] = await Promise.all([
+
+    // ✅ Run all 4 external requests in parallel
+    const [patients, todaysAppointments, activeDoctors, pendingLabOrders] = await Promise.all([
       fetchPatients(),
       fetchAppointments(),
       fetchActiveDoctors(),
+      fetchPendingLabOrders(),
     ]);
-        const totalStaffCount =
+
+    // ✅ Calculate total staff count
+    const totalStaffCount =
       (clinic.staffs.nurses?.length || 0) +
       (clinic.staffs.receptionists?.length || 0) +
       (clinic.staffs.pharmacists?.length || 0) +
@@ -365,13 +374,14 @@ const getClinicDashboardDetails = async (req, res) => {
         name: clinic.name,
         staffs: clinic.staffs,
         subscription: clinic.subscription,
-        totalStaffCount, 
+        totalStaffCount,
       },
       patients,
       todaysAppointments,
       activeDoctors,
+      pendingLabOrders: pendingLabOrders.orders,
+      pendingLabOrdersCount: pendingLabOrders.count,
     });
-
   } catch (error) {
     console.error("getClinicDashboardDetails error:", error);
     return res.status(500).json({
@@ -381,4 +391,5 @@ const getClinicDashboardDetails = async (req, res) => {
     });
   }
 };
+
 export { registerClinic, loginClinic, viewAllClinics, viewClinicById, editClinic,getClinicStaffs ,getTheme,editTheme,subscribeClinic,getClinicDashboardDetails};
