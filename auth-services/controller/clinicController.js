@@ -12,6 +12,7 @@ import { response } from "express";
 config();
 const CLINIC_SERVICE_BASE_URL = process.env.CLINIC_SERVICE_BASE_URL || "http://localhost:8003/api/v1/clinic-service";
 const PATIENT_SERVICE_BASE_URL = process.env.PATIENT_SERVICE_BASE_URL || "http://localhost:8002/api/v1/patient-service";
+const LAB_SERVICE_BASE_URL = process.env.LAB_SERVICE_BASE_URL || "http://localhost:8006";
 const registerClinic = async (req, res) => {
   const { name, type, email, phoneNumber, password, address, description, } = req.body;
 
@@ -329,6 +330,18 @@ const getClinicDashboardDetails = async (req, res) => {
         return [];
       }
     };
+    const fetchPendingLabOrders=async(req,res)=>{
+      try {       
+        const response = await axios.get(
+          `${LAB_SERVICE_BASE_URL}/lab/orders/clinic/${clinicId}/status/pending`
+        );
+        return response.data?.data || [];
+      } catch (err) {
+        console.error("❌ Error fetching pending lab orders:", err.message);
+        return [];
+      } 
+
+    }
 
     // ✅ Run all 3 external requests in parallel to speed things up
     const [patients, todaysAppointments, activeDoctors] = await Promise.all([
