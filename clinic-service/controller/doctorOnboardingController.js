@@ -534,6 +534,7 @@ const getDoctorsWithAvailability = async (req, res) => {
 const getAllActiveDoctorsOnClinic = async (req, res) => {
   const { clinicId, page = 1, limit = 10 } = req.query;
 
+  // 🧩 Validate clinicId
   if (!clinicId) {
     return res.status(400).json({ success: false, message: "clinicId is required" });
   }
@@ -544,7 +545,7 @@ const getAllActiveDoctorsOnClinic = async (req, res) => {
   const skip = (Number(page) - 1) * Number(limit);
 
   try {
-    // Step 1: Fetch active onboarded doctors from DoctorClinic
+    // 1️⃣ Fetch active onboarded doctors for clinic
     const onboarded = await DoctorClinic.find({
       clinicId: new mongoose.Types.ObjectId(clinicId),
       status: "active",
@@ -554,38 +555,52 @@ const getAllActiveDoctorsOnClinic = async (req, res) => {
       .lean();
 
     if (!onboarded.length) {
-      return res.status(404).json({
-        success: false,
+      return res.status(200).json({
+        success: true,
+        clinicId,
+        totalDoctors: 0,
+        doctors: [],
         message: "No active doctors found for this clinic",
       });
     }
 
+    // 2️⃣ Count total doctors (for pagination)
     const totalDoctors = await DoctorClinic.countDocuments({
       clinicId: new mongoose.Types.ObjectId(clinicId),
       status: "active",
     });
 
-    // Step 2: Fetch doctor details from auth-service
-    const doctorPromises = onboarded.map((doc) =>
-      axios
-        .get(`${AUTH_SERVICE_BASE_URL}/doctor/details/${doc.doctorId}`)
-        .then((response) => {
-          if (response.data?.success && response.data.doctor) {
-            return {
-              ...doc,
-              doctor: response.data.doctor,
-            };
-          }
-          return { ...doc, doctor: { _id: doc.doctorId, name: "Unknown Doctor" } };
-        })
-        .catch((err) => {
-          console.error(`Error fetching doctor ${doc.doctorId}:`, err.message);
-          return { ...doc, doctor: { _id: doc.doctorId, name: "Unknown Doctor" } };
-        })
-    );
+    // 3️⃣ Fetch doctor details from AUTH service (parallel + fallback)
+    const doctorPromises = onboarded.map(async (doc) => {
+      try {
+        const response = await axios.get(`${AUTH_SERVICE_BASE_URL}/doctor/details/${doc.doctorId}`);
+        const doctorData = response.data?.data || { _id: doc.doctorId, name: "Unknown Doctor" };
+
+        return {
+          ...doc,
+          doctor: {
+            _id: doctorData._id,
+            name: doctorData.name,
+            email: doctorData.email,
+            phoneNumber: doctorData.phoneNumber,
+            specialization: doctorData.specialization,
+            licenseNumber: doctorData.licenseNumber,
+            approve: doctorData.approve,
+            uniqueId: doctorData.uniqueId,
+          },
+        };
+      } catch (err) {
+        console.error(`Error fetching doctor ${doc.doctorId}:`, err.message);
+        return {
+          ...doc,
+          doctor: { _id: doc.doctorId, name: "Unknown Doctor" },
+        };
+      }
+    });
 
     const doctorsWithDetails = await Promise.all(doctorPromises);
 
+    // 4️⃣ Return response
     return res.status(200).json({
       success: true,
       clinicId,
@@ -597,7 +612,7 @@ const getAllActiveDoctorsOnClinic = async (req, res) => {
         roleInClinic: d.roleInClinic,
         clinicLogin: { email: d.clinicLogin?.email },
         status: d.status,
-        doctor: d.doctor, // full doctor details from auth-service
+        doctor: d.doctor,
       })),
     });
   } catch (error) {
@@ -609,6 +624,7 @@ const getAllActiveDoctorsOnClinic = async (req, res) => {
     });
   }
 };
+
 
 const clinicDoctorLogin = async (req, res) => {
   const { clinicEmail, clinicPassword } = req.body;
