@@ -42,6 +42,7 @@ const productSchema = new Schema(
             enum: ["Available", "Out of Stock", "Discontinued", "Expired"],
             default: "Available",
         },
+        isLowStock: { type: Boolean, default: false }
     },
     { timestamps: true }
 );

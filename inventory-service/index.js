@@ -9,6 +9,9 @@ import productRoute from "./Routes/productRouter.js";
 import orderRouter from "./Routes/orderRouter.js";
 import vendorRouter from "./Routes/vendorRouter.js";
 
+
+import lowStockAlertsCron from "./middlewares/lowStockCron.js";
+
 dotenv.config();
 connectDB();
 
@@ -31,6 +34,10 @@ app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 app.get("/", (req, res) => {
   res.send("🚀 API is running...");
 });
+
+//lowStock alerts
+lowStockAlertsCron()
+
 
 app.use("/api/v1/category", categoryRoute);
 app.use("/api/v1/product", productRoute);
