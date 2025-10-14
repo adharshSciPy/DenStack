@@ -105,4 +105,26 @@ import axios from "axios";
   }
 };
 
-export { createLabOrder,updateOrderStatus };
+const getPendingLabOrders = async (req, res) => {
+  try {
+    // Find all lab orders where status is 'Pending'
+    const pendingOrders = await LabOrder.find({ status: "Pending" })
+      .populate("patientId" ) // optional: include patient details
+      .sort({ createdAt: -1 }); // newest first
+
+    if (!pendingOrders.length) {
+      return res.status(404).json({ message: "No pending lab orders found" });
+    }
+
+    res.status(200).json({
+      message: "Pending lab orders fetched successfully",
+      count: pendingOrders.length,
+      pendingOrders,
+    });
+  } catch (error) {
+    console.error("Error fetching pending lab orders:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+export { createLabOrder,updateOrderStatus,getPendingLabOrders };
