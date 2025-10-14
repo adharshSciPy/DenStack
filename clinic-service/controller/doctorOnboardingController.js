@@ -612,6 +612,7 @@ const getAllActiveDoctorsOnClinic = async (req, res) => {
         roleInClinic: d.roleInClinic,
         clinicLogin: { email: d.clinicLogin?.email },
         status: d.status,
+        standardConsultationFee: d.standardConsultationFee,
         doctor: d.doctor,
       })),
     });

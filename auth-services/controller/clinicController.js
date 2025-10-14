@@ -336,6 +336,13 @@ const getClinicDashboardDetails = async (req, res) => {
       fetchAppointments(),
       fetchActiveDoctors(),
     ]);
+        const totalStaffCount =
+      (clinic.staffs.nurses?.length || 0) +
+      (clinic.staffs.receptionists?.length || 0) +
+      (clinic.staffs.pharmacists?.length || 0) +
+      (clinic.staffs.accountants?.length || 0) +
+      (clinic.staffs.technicians?.length || 0) +
+      (activeDoctors?.length || 0);
 
     // ✅ Respond with combined dashboard data
     return res.status(200).json({
@@ -345,6 +352,7 @@ const getClinicDashboardDetails = async (req, res) => {
         name: clinic.name,
         staffs: clinic.staffs,
         subscription: clinic.subscription,
+        totalStaffCount, 
       },
       patients,
       todaysAppointments,
