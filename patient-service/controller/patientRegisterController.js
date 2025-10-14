@@ -258,5 +258,22 @@ const patientCheck = async (req, res) => {
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
+const getPatientsByClinic = async (req ,res) => {
+  try {
+    const { id: clinicId } = req.params;
 
-export{registerPatient,getPatientWithUniqueId,getAllPatients,patientCheck}
+    if (!clinicId) {
+      return res.status(400).json({ success: false, message: "Clinic ID is required" });
+    }
+
+    const patients = await Patient.find({ clinicId }).lean();
+
+    return res.status(200).json({ success: true, count: patients.length, data: patients });
+  } catch (error) {
+    console.error("getPatientsByClinic error:", error);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+
+export{registerPatient,getPatientWithUniqueId,getAllPatients,patientCheck,getPatientsByClinic}
