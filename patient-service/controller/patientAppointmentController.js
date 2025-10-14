@@ -353,4 +353,83 @@ const addLabOrderToPatientHistory = async (req, res) => {
     });
   }
 };
-export { createAppointment ,getTodaysAppointments,getAppointmentById, getPatientHistory, addLabOrderToPatientHistory };
+const getAppointmentsByClinic = async (req, res) => {
+  try {
+    const { id: clinicId } = req.params;
+    const { startDate, endDate, search, limit = 10, lastId } = req.query;
+
+    if (!clinicId || !mongoose.Types.ObjectId.isValid(clinicId)) {
+      return res.status(400).json({ success: false, message: "Invalid clinicId" });
+    }
+
+    const query = { clinicId };
+
+    // ✅ Handle date filters
+    if (startDate && endDate) {
+      query.appointmentDate = { $gte: startDate, $lte: endDate };
+    } else if (startDate) {
+      query.appointmentDate = startDate;
+    } else {
+      const today = new Date();
+      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(
+        2,
+        "0"
+      )}-${String(today.getDate()).padStart(2, "0")}`;
+      query.appointmentDate = todayStr;
+    }
+
+    // ✅ Cursor-based pagination
+    if (lastId && mongoose.Types.ObjectId.isValid(lastId)) {
+      query._id = { $lt: new mongoose.Types.ObjectId(lastId) };
+    }
+
+    // ✅ If there's a search term, find matching patient IDs first
+    let patientFilter = {};
+    if (search) {
+      const matchingPatients = await Patient.find(
+        {
+          clinicId,
+          name: { $regex: search, $options: "i" },
+        },
+        { _id: 1 }
+      ).lean();
+
+      const matchingIds = matchingPatients.map((p) => p._id);
+      query.patientId = { $in: matchingIds.length ? matchingIds : [null] }; // ensures no false matches
+    }
+
+    // ✅ Fetch appointments with populated patient info
+    const appointments = await Appointment.find(query)
+      .populate({
+        path: "patientId",
+        select: "name phone email age gender patientUniqueId",
+      })
+      .sort({ _id: -1 })
+      .limit(parseInt(limit))
+      .lean();
+
+    // ✅ Total count
+    const totalAppointments = await Appointment.countDocuments({
+      clinicId,
+      appointmentDate: query.appointmentDate,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Appointments fetched successfully",
+      count: appointments.length,
+      totalAppointments,
+      data: appointments,
+      nextCursor: appointments.length ? appointments[appointments.length - 1]._id : null,
+    });
+  } catch (error) {
+    console.error("getAppointmentsByClinic error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error while fetching appointments",
+      error: error.message,
+    });
+  }
+};
+
+export { createAppointment ,getTodaysAppointments,getAppointmentById, getPatientHistory, addLabOrderToPatientHistory,getAppointmentsByClinic};

@@ -6,6 +6,12 @@ import {
   phoneValidator,
 } from "../utils/validators.js";
 import mongoose from "mongoose";
+import { config } from "dotenv";
+import axios from "axios";
+import { response } from "express";
+config();
+const CLINIC_SERVICE_BASE_URL = process.env.CLINIC_SERVICE_BASE_URL || "http://localhost:8003/api/v1/clinic-service";
+const PATIENT_SERVICE_BASE_URL = process.env.PATIENT_SERVICE_BASE_URL || "http://localhost:8002/api/v1/patient-service";
 const registerClinic = async (req, res) => {
   const { name, type, email, phoneNumber, password, address, description, } = req.body;
 
@@ -269,11 +275,12 @@ const getClinicDashboardDetails = async (req, res) => {
   try {
     const { id: clinicId } = req.params;
 
+    // ✅ Validate clinic ID
     if (!clinicId || !mongoose.Types.ObjectId.isValid(clinicId)) {
       return res.status(400).json({ success: false, message: "Invalid clinicId" });
     }
 
-    // 1️⃣ Fetch clinic info with staffs
+    // ✅ Fetch clinic info (only DB call — can't parallelize easily)
     const clinic = await Clinic.findById(clinicId)
       .populate("staffs.nurses")
       .populate("staffs.receptionists")
@@ -286,42 +293,58 @@ const getClinicDashboardDetails = async (req, res) => {
       return res.status(404).json({ success: false, message: "Clinic not found" });
     }
 
-    // 2️⃣ Fetch all patients of this clinic
-    const patients = await Patient.find({ clinicId })
-      .select("name phone email patientUniqueId visitHistory")
-      .lean();
+    // ✅ Define async functions for each external API
+    const fetchPatients = async () => {
+      try {
+        const response = await axios.get(
+          `${PATIENT_SERVICE_BASE_URL}/patient/clinic-patients/${clinicId}`
+        );
+        return response.data?.data || [];
+      } catch (err) {
+        console.error("❌ Error fetching patients:", err.message);
+        return [];
+      }
+    };
 
-    // 3️⃣ Fetch today's appointments
-    const today = new Date();
-    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
+    const fetchAppointments = async () => {
+      try {
+        const response = await axios.get(
+          `${PATIENT_SERVICE_BASE_URL}/appointment/clinic-appointments/${clinicId}`
+        );
+        return response.data?.data || [];
+      } catch (err) {
+        console.error("❌ Error fetching appointments:", err.message);
+        return [];
+      }
+    };
 
-    const appointments = await Appointment.find({
-      clinicId,
-      appointmentDate: todayStr,
-      status: "scheduled"
-    })
-      .populate("patientId", "name phone email patientUniqueId")
-      .sort({ appointmentTime: 1 })
-      .lean();
+    const fetchActiveDoctors = async () => {
+      try {
+        const response = await axios.get(
+          `${CLINIC_SERVICE_BASE_URL}/active-doctors?clinicId=${clinicId}`
+        );
+        return response.data?.doctors || [];
+      } catch (err) {
+        console.error("❌ Error fetching active doctors:", err.message);
+        return [];
+      }
+    };
 
-    // 4️⃣ Fetch active doctors
-    const activeDoctors = await DoctorClinic.find({ clinicId, status: "active" })
-      .select("doctorId roleInClinic clinicLogin status")
-      .lean();
+    // ✅ Run all 3 external requests in parallel to speed things up
+    const [patients, todaysAppointments, activeDoctors] = await Promise.all([
+      fetchPatients(),
+      fetchAppointments(),
+      fetchActiveDoctors(),
+    ]);
+        const totalStaffCount =
+      (clinic.staffs.nurses?.length || 0) +
+      (clinic.staffs.receptionists?.length || 0) +
+      (clinic.staffs.pharmacists?.length || 0) +
+      (clinic.staffs.accountants?.length || 0) +
+      (clinic.staffs.technicians?.length || 0) +
+      (activeDoctors?.length || 0);
 
-    const doctorDetailsPromises = activeDoctors.map(doc =>
-      axios
-        .get(`${AUTH_SERVICE_BASE_URL}/doctor/details/${doc.doctorId}`)
-        .then(res => ({
-          ...doc,
-          doctor: res.data?.doctor || { _id: doc.doctorId, name: "Unknown Doctor" }
-        }))
-        .catch(() => ({ ...doc, doctor: { _id: doc.doctorId, name: "Unknown Doctor" } }))
-    );
-
-    const doctorsWithDetails = await Promise.all(doctorDetailsPromises);
-
-    // 5️⃣ Send response
+    // ✅ Respond with combined dashboard data
     return res.status(200).json({
       success: true,
       clinic: {
@@ -329,16 +352,11 @@ const getClinicDashboardDetails = async (req, res) => {
         name: clinic.name,
         staffs: clinic.staffs,
         subscription: clinic.subscription,
+        totalStaffCount, 
       },
       patients,
-      todaysAppointments: appointments,
-      activeDoctors: doctorsWithDetails.map(d => ({
-        doctorId: d.doctorId,
-        roleInClinic: d.roleInClinic,
-        clinicLogin: d.clinicLogin?.email,
-        status: d.status,
-        doctor: d.doctor,
-      })),
+      todaysAppointments,
+      activeDoctors,
     });
 
   } catch (error) {
