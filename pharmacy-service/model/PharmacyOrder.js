@@ -20,6 +20,7 @@ const pharmacyOrderSchema = new mongoose.Schema({
       dosage: String,
       quantity: Number,
       duration: String,
+      price: Number,
     }
   ],
   orderDate: {
@@ -33,6 +34,11 @@ const pharmacyOrderSchema = new mongoose.Schema({
   },
   notes: String,
   deliveredAt: Date,
+  totalAmount: {
+    type: Number,
+    required: true,
+    default: 0,
+  },
 }, { timestamps: true });
 
 export default mongoose.model("PharmacyOrder", pharmacyOrderSchema);
