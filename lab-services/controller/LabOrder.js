@@ -107,13 +107,22 @@ import axios from "axios";
 
 const getPendingLabOrders = async (req, res) => {
   try {
-    // Find all lab orders where status is 'Pending'
-    const pendingOrders = await LabOrder.find({ status: "Pending" })
-      .populate("patientId" ) // optional: include patient details
-      .sort({ createdAt: -1 }); // newest first
+    const { clinicId } = req.params;
+
+    if (!clinicId) {
+      return res.status(400).json({ message: "Clinic ID is required" });
+    }
+
+    // Find all lab orders where status is 'Pending' and clinicId matches
+    const pendingOrders = await LabOrder.find({
+      status: "Pending",
+      clinicId: clinicId,
+    })
+      .populate("patientId")
+      .sort({ createdAt: -1 });
 
     if (!pendingOrders.length) {
-      return res.status(404).json({ message: "No pending lab orders found" });
+      return res.status(404).json({ message: "No pending lab orders found for this clinic" });
     }
 
     res.status(200).json({
@@ -126,5 +135,6 @@ const getPendingLabOrders = async (req, res) => {
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
+
 
 export { createLabOrder,updateOrderStatus,getPendingLabOrders };

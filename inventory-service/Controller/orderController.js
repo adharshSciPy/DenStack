@@ -21,12 +21,29 @@ const createOrder = async (req, res) => {
             if (product.stock < item.quantity)
                 return res.status(400).json({ message: `Not enough stock for ${product.name}` });
 
+            // ⚡ Check if product is expired
+            const now = new Date();
+            if (product.expiryDate && product.expiryDate < now) {
+                return res.status(400).json({ message: `Product expired: ${product.name}` });
+            }
+
             totalAmount += product.price * item.quantity;
             orderItems.push({
                 productId: product._id,
                 quantity: item.quantity,
                 price: product.price,
             });
+
+            // ✅ Update low-stock flag immediately
+            if (product.stock < 10) {
+                product.isLowStock = true;
+            } else {
+                product.isLowStock = false;
+            }
+
+            // Update low-stock flag immediately
+            product.isLowStock = product.stock - item.quantity < 10;
+
 
             // (Optional) Reduce stock
             product.stock -= item.quantity;
