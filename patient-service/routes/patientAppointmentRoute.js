@@ -6,7 +6,7 @@ patientAppointmentRouter.route("/book/:id").post(createAppointment)
 patientAppointmentRouter.route("/fetch").get(authClinicDoctor,getTodaysAppointments)
 patientAppointmentRouter.route("/fetch/:id").get(getAppointmentById)
 patientAppointmentRouter.route("/patient-history/:id").get(getPatientHistory);
-patientAppointmentRouter.route("/lab-details/:id").patch(addLabOrderToPatientHistory);//id:patientHistoryId this api is used to add lab order details to patient history
-patientAppointmentRouter.route("/clinic-appointments/:id").get(getAppointmentsByClinic);//id:clinicId
+patientAppointmentRouter.route("/lab-details/:id").patch(addLabOrderToPatientHistory);
+patientAppointmentRouter.route("/clinic-appointments/:id").get(getAppointmentsByClinic);
 
 export default patientAppointmentRouter
