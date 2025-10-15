@@ -9,6 +9,11 @@ import mongoose from "mongoose";
 import { config } from "dotenv";
 import axios from "axios";
 import { response } from "express";
+import Pharmacist from "../models/pharmacistSchema.js";
+import Nurse from "../models/nurseSchema.js";
+import Receptionist from "../models/receptionSchema.js";
+import Accountant from "../models/accountantSchema.js";
+import Technician from "../models/technicianSchema.js";
 config();
 const CLINIC_SERVICE_BASE_URL = process.env.CLINIC_SERVICE_BASE_URL || "http://localhost:8003/api/v1/clinic-service";
 const PATIENT_SERVICE_BASE_URL = process.env.PATIENT_SERVICE_BASE_URL || "http://localhost:8002/api/v1/patient-service";
@@ -391,5 +396,62 @@ const getClinicDashboardDetails = async (req, res) => {
     });
   }
 };
+const addShiftToStaff = async (req, res) => {
+  try {
+    const { id, } = req.params;
+    let { startTime, endTime, startDate, endDate,role } = req.body;
 
-export { registerClinic, loginClinic, viewAllClinics, viewClinicById, editClinic,getClinicStaffs ,getTheme,editTheme,subscribeClinic,getClinicDashboardDetails};
+    // Convert date strings to ISO if needed
+    if (typeof startDate === "string") startDate = formatDate(startDate);
+    if (typeof endDate === "string") endDate = formatDate(endDate);
+
+    let Model;
+    switch (role) {
+      case "nurse":
+        Model = Nurse;
+        break;
+      case "pharmacist":
+        Model = Pharmacist;
+        break;
+      case "receptionist":
+        Model = Receptionist;
+        break;
+        case "accountant":
+        Model = Accountant;
+        break;
+        case "technician":
+        Model = Technician;
+        break;
+      default:
+        return res.status(400).json({ success: false, message: "Invalid role" });
+    }
+
+    const staff = await Model.findById(id);
+    if (!staff) return res.status(404).json({ success: false, message: "Staff not found" });
+
+    // Optional: deactivate overlapping shifts
+    staff.shifts = staff.shifts.map(shift => {
+      if (shift.isActive && shift.endDate < new Date()) {
+        shift.isActive = false;
+        shift.archivedAt = new Date();
+      }
+      return shift;
+    });
+
+    // Add new shift
+    staff.shifts.push({ startTime, endTime, startDate, endDate, isActive: true });
+    await staff.save();
+
+    res.status(200).json({ success: true, message: "Shift added", shifts: staff.shifts });
+  } catch (error) {
+    console.error("addShiftToStaff error:", error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+const formatDate = (dateStr) => {
+  const [day, month, year] = dateStr.split("-");
+  return new Date(`${year}-${month}-${day}`);
+};
+
+export { registerClinic, loginClinic, viewAllClinics, viewClinicById, editClinic,getClinicStaffs ,getTheme,editTheme,subscribeClinic,getClinicDashboardDetails, addShiftToStaff };

@@ -11,6 +11,7 @@ import accountantAuthRouter from "./routes/accountantRouter.js";
 import technicianAuthRouter from "./routes/technicianRouter.js";
 import receptionAuthRouter from "./routes/receptionRoute.js";
 import clinicSubscriptionCron from "./utils/clinicSubscriptionCron.js";
+import staffShiftCron from "./utils/staffShiftCron.js";
 
 dotenv.config();
 connectDB();
@@ -27,6 +28,7 @@ app.get("/", (req, res) => {
 });
 //cron jobs
 clinicSubscriptionCron()
+staffShiftCron()
 app.use("/api/v1/auth/super-admin", superAdminAuthRoutes)
 app.use("/api/v1/auth/clinic", clinicAuthRoutes)
 app.use("/api/v1/auth/doctor", doctorAuthRouter)
