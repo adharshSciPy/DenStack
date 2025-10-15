@@ -84,6 +84,69 @@ const consultPatient = async (req, res) => {
     });
   }
 };
+const startTreatmentPlan = async (req, res) => {
+  try {
+    const { id:patientId } = req.params;
+    const doctorId = req.doctorClinic?.doctorId;
+    const clinicId = req.doctorClinic?.clinicId;
+    const { planName, description, stages = [] } = req.body;
 
+    // ✅ Validate required fields
+    if (!doctorId || !clinicId) {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized: Doctor or clinic not found in request context",
+      });
+    }
 
-export{ consultPatient };
+    if (!planName) {
+      return res.status(400).json({ success: false, message: "Plan name is required" });
+    }
+
+    // ✅ Validate patient
+    const patient = await Patient.findById(patientId);
+    if (!patient) {
+      return res.status(404).json({ success: false, message: "Patient not found" });
+    }
+
+    // ✅ Ensure patient belongs to the same clinic
+    if (patient.clinicId.toString() !== clinicId.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: "Patient does not belong to this clinic",
+      });
+    }
+
+    // ✅ Create treatment plan
+    const newPlan = new TreatmentPlan({
+      patientId,
+      clinicId,
+      doctorId,
+      planName,
+      description,
+      stages,
+    });
+
+    await newPlan.save();
+
+    // ✅ Link treatment plan to patient
+    if (!Array.isArray(patient.treatmentPlans)) patient.treatmentPlans = [];
+    patient.treatmentPlans.push(newPlan._id);
+    await patient.save();
+
+    return res.status(201).json({
+      success: true,
+      message: "Treatment plan started successfully",
+      treatmentPlan: newPlan,
+    });
+  } catch (error) {
+    console.error("startTreatmentPlan error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error while starting treatment plan",
+      error: error.message,
+    });
+  }
+};
+
+export{ consultPatient , startTreatmentPlan};

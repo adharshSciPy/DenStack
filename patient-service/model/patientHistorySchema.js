@@ -52,12 +52,17 @@
         type: mongoose.Schema.Types.ObjectId,
       }
     ],
-    consultationFee: { type: Number, default: 0 }, // standard consultation fee
+    treatmentPlanId: {
+  type: mongoose.Schema.Types.ObjectId,
+  ref: "TreatmentPlan"
+},
+
+    consultationFee: { type: Number, default: 0 }, 
         procedures: [
           {
             name: { type: String, required: true },
             description: { type: String },
-            fee: { type: Number, required: true, min: 0 }, // each procedure has its own fee
+            fee: { type: Number, required: true, min: 0 }, 
           },
         ],
         totalAmount: { type: Number, default: 0 }, 

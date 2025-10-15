@@ -56,6 +56,12 @@ const patientSchema = new mongoose.Schema({
 
   otpToken: { type: String, select: false },
   otpTokenExpiry: { type: Date, select: false },
+  treatmentPlans: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "TreatmentPlan"
+    }
+  ],
 
 
   createdAt: { type: Date, default: Date.now }
