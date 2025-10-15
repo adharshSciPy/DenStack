@@ -4,6 +4,69 @@ import jwt from "jsonwebtoken";
 
 const NURSE_ROLE = process.env.NURSE_ROLE || "300";
 
+const shiftSchema = new Schema(
+  {
+    startTime: {
+      type: String,
+      required: [true, "Start time is required"],
+      validate: {
+        validator: function (value) {
+          // Accepts "09:00", "21:30", "09:00 AM", "11:15 PM"
+          return /^([01]\d|2[0-3]):([0-5]\d)(\s?(AM|PM|am|pm))?$/.test(value);
+        },
+        message:
+          "Invalid startTime format. Use 'HH:mm' (24-hour) or 'hh:mm AM/PM' format.",
+      },
+    },
+    endTime: {
+      type: String,
+      required: [true, "End time is required"],
+      validate: {
+        validator: function (value) {
+          return /^([01]\d|2[0-3]):([0-5]\d)(\s?(AM|PM|am|pm))?$/.test(value);
+        },
+        message:
+          "Invalid endTime format. Use 'HH:mm' (24-hour) or 'hh:mm AM/PM' format.",
+      },
+    },
+    startDate: {
+      type: Date,
+      required: true,
+      default: Date.now,
+      validate: {
+        validator: function (value) {
+          return !isNaN(new Date(value).getTime());
+        },
+        message: "Invalid startDate. Please provide a valid date.",
+      },
+    },
+    endDate: {
+      type: Date,
+      required: true,
+      validate: {
+        validator: function (value) {
+          return !isNaN(new Date(value).getTime());
+        },
+        message: "Invalid endDate. Please provide a valid date.",
+      },
+    },
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
+     archivedAt: { type: Date, default: null },
+  },
+  { _id: false }
+);
+
+// Validate that endDate >= startDate
+shiftSchema.pre("validate", function (next) {
+  if (this.endDate < this.startDate) {
+    this.invalidate("endDate", "End date must be after start date");
+  }
+  next();
+});
+
 const nurseSchema = new Schema(
     {
         // hospitalId: {
@@ -46,29 +109,7 @@ const nurseSchema = new Schema(
             type: String,
             default: NURSE_ROLE,
         },
-        // department: {
-        //     type: String,
-        //     required: true,
-        // },
-        // shift: {
-        //     type: String,
-        //     enum: ["Morning", "Afternoon", "Night", "Rotational"],
-        //     default: "Morning",
-        // },
-        // qualification: {
-        //     type: String,
-        // },
-        // experienceYears: {
-        //     type: Number,
-        //     default: 0,
-        // },
-        // assignedWard: {
-        //     type: String,
-        // },
-        // isActive: {
-        //     type: Boolean,
-        //     default: true,
-        // },
+        shifts: [shiftSchema],
         createdAt: {
             type: Date,
             default: Date.now,
