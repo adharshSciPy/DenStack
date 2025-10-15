@@ -53,6 +53,13 @@ const patientSchema = new mongoose.Schema({
   visitHistory: [
   { type: mongoose.Schema.Types.ObjectId, ref: "PatientHistory" }
 ],
+treatmentPlans: [
+  {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "TreatmentPlan"
+  }
+],
+
 
   createdAt: { type: Date, default: Date.now }
 });
