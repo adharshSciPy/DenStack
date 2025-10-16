@@ -76,25 +76,28 @@ export const createPharmacyOrder = async (req, res) => {
 // Get All Orders
 export const getAllPharmacyOrders = async (req, res) => {
   try {
-    const orders = await PharmacyOrder.find()
-      .populate("patientId", "name age")
-      .populate("doctorId", "name specialization")
-      .populate("vendorId", "name");
+    const orders = await PharmacyOrder.find().lean();
     res.json(orders);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
 
-// Get Single Order
+// Get Single Order - FIXED
 export const getPharmacyOrderById = async (req, res) => {
   try {
-    const order = await PharmacyOrder.findById(req.params.id)
-      .populate("patientId")
-      .populate("doctorId")
-      .populate("vendorId");
+    console.log("🔍 Fetching order:", req.params.id);
+    
+    const order = await PharmacyOrder.findById(req.params.id).lean();
+    
+    if (!order) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+    
+    console.log("✅ Order found, returning data");
     res.json(order);
   } catch (error) {
+    console.error("❌ Error:", error.message);
     res.status(500).json({ message: error.message });
   }
 };

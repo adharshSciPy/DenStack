@@ -111,6 +111,31 @@ const registerPatient = async (req, res) => {
     });
   }
 };
+export const getPatientById = async (req, res) => {
+  try {
+    const { id } = req.params;  // Gets from URL: /patient/68e496a097514f58b13e6112
+    
+    const patient = await Patient.findById(id);  // Finds by MongoDB _id
+    
+    if (!patient) {
+      return res.status(404).json({
+        success: false,
+        message: "Patient not found"
+      });
+    }
+    
+    res.status(200).json({
+      success: true,
+      patient
+    });
+  } catch (error) {
+    console.error("Error fetching patient:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
 const getPatientWithUniqueId = async (req, res) => {
   const { id: uniqueId } = req.body;
 

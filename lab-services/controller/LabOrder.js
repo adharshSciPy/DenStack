@@ -149,7 +149,19 @@ const getPendingLabOrders = async (req, res) => {
 const getLabOrdersbyClinicId = async (req, res) => {
   try {
     const { clinicId } = req.params;
+    
+    // Extract query parameters
+    const { 
+      cursor, // cursor for pagination (typically the _id or createdAt of last item)
+      limit = 10, 
+      status, 
+      search 
+    } = req.query;
 
+    // Convert limit to number
+    const limitNum = parseInt(limit);
+    
+    // Find lab
     const lab = await LabVendor.findOne({ clinicId });
     if (!lab) {
       return res.status(404).json({
@@ -157,19 +169,52 @@ const getLabOrdersbyClinicId = async (req, res) => {
       });
     }
 
-    const labOrders = await LabOrder.find({ labId: lab._id })
-      .sort({ createdAt: -1 });
+    // Build filter query
+    const filterQuery = { labId: lab._id };
+    
+    // Add cursor condition (for next page)
+    if (cursor) {
+      // Assuming cursor is based on createdAt timestamp
+      // For descending order (newest first), we want documents older than cursor
+      filterQuery.createdAt = { $lt: new Date(cursor) };
+    }
+    
+    // Add status filter if provided and not "all"
+    if (status && status !== 'all') {
+      filterQuery.status = status;
+    }
 
-    if (!labOrders.length) {
-      return res.status(404).json({
+    // Add search filter if provided
+    if (search) {
+      filterQuery.$or = [
+        { orderType: { $regex: search, $options: 'i' } },
+        // Add more searchable fields as needed
+      ];
+    }
+
+    // Fetch lab orders with limit + 1 to check if there are more results
+    const labOrders = await LabOrder.find(filterQuery)
+      .sort({ createdAt: -1 })
+      .limit(limitNum + 1);
+
+    // Check if there are more results
+    const hasNextPage = labOrders.length > limitNum;
+    
+    // Remove the extra document if it exists
+    const results = hasNextPage ? labOrders.slice(0, limitNum) : labOrders;
+
+    if (!results.length) {
+      return res.status(200).json({
         message: "No lab orders found for this lab",
-        count: 0,
         labOrders: [],
+        hasNextPage: false,
+        nextCursor: null,
       });
     }
 
-    // Extract all patient IDs
-    const patientIds = labOrders.map(order => order.patientId);
+    // Extract all patient IDs and doctor IDs
+    const patientIds = results.map(order => order.patientId);
+    const doctorIds = results.map(order => order.doctorId);
 
     // Fetch patient details from patient microservice
     const patientResponses = await Promise.all(
@@ -177,28 +222,47 @@ const getLabOrdersbyClinicId = async (req, res) => {
         axios
           .get(`${process.env.PATIENT_SERVICE_URL}/api/v1/patient-service/patient/details/${id}`)
           .then(res => res.data)
-          .catch(() => null) // handle if one fails
+          .catch(() => null)
       )
     );
 
-    console.log(patientResponses);
+    // Fetch doctor details from doctor microservice
+    const doctorResponse = await Promise.all(
+      doctorIds.map(id =>
+        axios
+          .get(`${process.env.DOCTOR_SERVICE_URL}/api/v1/auth/doctor/details/${id}`)
+          .then(res => res.data)
+          .catch(() => null)
+      )
+    );
+
     // Filter out failed ones
     const patientData = patientResponses.filter(Boolean);
+    const doctorData = doctorResponse.filter(Boolean);
 
-    // Merge patient names into labOrders
-    const enrichedOrders = labOrders.map(order => {
-      const patient = patientData.find(p => p._id === order.patientId.toString());
+    // Merge patient and doctor names into labOrders
+    const enrichedOrders = results.map(order => {
+      const patient = patientData.find(p => p.data._id === order.patientId.toString());
+      const doctor = doctorData.find(d => d.data._id === order.doctorId.toString());
       
       return {
-        ...order.toObject(),
-        patientName:  patient ,
+        ...order.toObject(),  
+        patientName: patient ? patient.data.name : "Unknown",
+        doctorName: doctor ? doctor.data.name : "Unknown"
       };
     });
 
+    // Generate next cursor (use createdAt of last item)
+    const nextCursor = hasNextPage 
+      ? results[results.length - 1].createdAt.toISOString() 
+      : null;
+
     res.status(200).json({
       message: "Lab orders fetched successfully",
-      count: enrichedOrders.length,
+      count: results.length,
       labOrders: enrichedOrders,
+      hasNextPage,
+      nextCursor,
     });
   } catch (error) {
     console.error("Error fetching lab orders:", error);
