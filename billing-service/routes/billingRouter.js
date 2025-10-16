@@ -10,7 +10,11 @@ import {
   addPaymentToBill,
   cancelBill,
   getBillById,
-  getBillByNumber
+  getBillByNumber,
+  // ✅ NEW: Consultation billing functions
+  syncConsultationToBilling,
+  markConsultationAsPaid,
+  getUnpaidConsultations
 } from "../controller/billingController.js";
 
 const billingRouter = Router();
@@ -30,6 +34,9 @@ billingRouter.route("/clinic/:clinicId/all-bills").get(getAllPatientsBillsByClin
 // Get billing records from billing database (with filters)
 billingRouter.route("/patient/:patientId/records").get(getPatientBillingRecords);
 
+// ✅ NEW: Get unpaid consultations for a patient
+billingRouter.route("/patient/:patientId/unpaid-consultations").get(getUnpaidConsultations);
+
 // Get single bill by ID
 billingRouter.route("/:billId").get(getBillById);
 
@@ -42,6 +49,12 @@ billingRouter.route("/number/:billNumber").get(getBillByNumber);
 
 // Sync pharmacy order to billing database
 billingRouter.route("/sync-pharmacy/:orderId").post(syncPharmacyOrderToBilling);
+
+// ✅ NEW: Sync consultation/visit to billing database
+billingRouter.route("/sync-consultation/:patientHistoryId").post(syncConsultationToBilling);
+
+// ✅ NEW: Mark consultation as paid (auto-syncs if needed)
+billingRouter.route("/mark-paid/:patientHistoryId").post(markConsultationAsPaid);
 
 // Add payment to a bill (supports multiple payments)
 billingRouter.route("/:billId/add-payment").post(addPaymentToBill);

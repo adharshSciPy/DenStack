@@ -609,7 +609,348 @@ export const updatePaymentStatus = async (req, res) => {
     });
   }
 };
+export const syncConsultationToBilling = async (req, res) => {
+  try {
+    const { patientHistoryId } = req.params;
 
+    console.log(`🔄 Syncing consultation: ${patientHistoryId}`);
+
+    // Fetch PatientHistory from patient service
+    const response = await axios.get(
+      `${PATIENT_SERVICE_BASE_URL}/patients/history/${patientHistoryId}`,
+      { timeout: 10000 }
+    );
+
+    const visit = response.data?.data || response.data;
+
+    if (!visit) {
+      return res.status(404).json({
+        success: false,
+        message: "Patient history not found"
+      });
+    }
+
+    console.log(`✅ Patient history fetched successfully`);
+
+    // Check if billing record already exists
+    const existingBill = await Billing.findOne({
+      referenceId: patientHistoryId,
+      billType: "consultation"
+    });
+
+    if (existingBill) {
+      return res.status(400).json({
+        success: false,
+        message: "Billing record already exists for this consultation",
+        data: existingBill
+      });
+    }
+
+    // Build items array from consultation and procedures
+    const items = [];
+
+    // Add consultation fee as an item
+    if (visit.consultationFee && visit.consultationFee > 0) {
+      items.push({
+        name: "Consultation Fee",
+        description: `Doctor: ${visit.doctor?.name || "N/A"}`,
+        quantity: 1,
+        unitPrice: visit.consultationFee,
+        totalPrice: visit.consultationFee
+      });
+    }
+
+    // Add procedures as items
+    if (visit.procedures && visit.procedures.length > 0) {
+      visit.procedures.forEach(proc => {
+        items.push({
+          name: proc.name,
+          description: proc.description || "",
+          quantity: 1,
+          unitPrice: proc.fee || 0,
+          totalPrice: proc.fee || 0
+        });
+      });
+    }
+
+    // Calculate totals
+    const subtotal = visit.totalAmount || visit.consultationFee || 0;
+
+    // Generate bill number
+    const count = await Billing.countDocuments({ clinicId: visit.clinicId });
+    const date = new Date();
+    const year = date.getFullYear().toString().slice(-2);
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const generatedBillNumber = `BILL-${year}${month}-${String(count + 1).padStart(6, "0")}`;
+
+    console.log(`📋 Generated bill number: ${generatedBillNumber}`);
+
+    // Create billing record
+    const billingRecord = new Billing({
+      patientId: visit.patientId,
+      clinicId: visit.clinicId,
+      billNumber: generatedBillNumber,
+      billType: "consultation",
+      referenceId: patientHistoryId,
+      items,
+      subtotal,
+      totalAmount: subtotal,
+      doctorId: visit.doctorId,
+      billDate: visit.visitDate || visit.createdAt || new Date(),
+      paymentStatus: visit.isPaid ? "paid" : "pending",
+      paidAmount: visit.isPaid ? subtotal : 0,
+      pendingAmount: visit.isPaid ? 0 : subtotal,
+      notes: visit.notes || ""
+    });
+
+    // If already paid, add payment record
+    if (visit.isPaid) {
+      billingRecord.payments.push({
+        amount: subtotal,
+        method: "cash", // default, can be updated later
+        paidAt: visit.updatedAt || new Date(),
+        notes: "Payment recorded during consultation"
+      });
+      billingRecord.paymentDate = visit.updatedAt || new Date();
+    }
+
+    await billingRecord.save();
+
+    console.log(`✅ Billing record created: ${billingRecord.billNumber}`);
+
+    res.status(201).json({
+      success: true,
+      message: "Consultation synced to billing",
+      data: billingRecord
+    });
+
+  } catch (error) {
+    if (error.response) {
+      console.error("Service error:", {
+        status: error.response.status,
+        data: error.response.data,
+      });
+      
+      return res.status(error.response.status).json({
+        success: false,
+        message: "Error fetching data from service",
+        error: error.response.data
+      });
+    }
+    
+    if (error.request) {
+      console.error("No response from service");
+      return res.status(503).json({
+        success: false,
+        message: "Service unavailable"
+      });
+    }
+
+    console.error("Sync error:", error.message);
+    res.status(500).json({
+      success: false,
+      message: "Failed to sync consultation",
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Mark consultation as paid and sync to billing
+ * POST /api/v1/billing/mark-paid/:patientHistoryId
+ */
+export const markConsultationAsPaid = async (req, res) => {
+  try {
+    const { patientHistoryId } = req.params;
+    const { amount, method, transactionId, receivedBy, notes } = req.body;
+
+    // First sync to billing if not already synced
+    let bill = await Billing.findOne({
+      referenceId: patientHistoryId,
+      billType: "consultation"
+    });
+
+    if (!bill) {
+      // Fetch and create billing record first
+      const response = await axios.get(
+        `${PATIENT_SERVICE_BASE_URL}/patients/history/${patientHistoryId}`,
+        { timeout: 10000 }
+      );
+
+      const visit = response.data?.data || response.data;
+
+      if (!visit) {
+        return res.status(404).json({
+          success: false,
+          message: "Patient history not found"
+        });
+      }
+
+      // Create billing record (similar to syncConsultationToBilling)
+      const items = [];
+      
+      if (visit.consultationFee > 0) {
+        items.push({
+          name: "Consultation Fee",
+          description: `Doctor: ${visit.doctor?.name || "N/A"}`,
+          quantity: 1,
+          unitPrice: visit.consultationFee,
+          totalPrice: visit.consultationFee
+        });
+      }
+
+      if (visit.procedures && visit.procedures.length > 0) {
+        visit.procedures.forEach(proc => {
+          items.push({
+            name: proc.name,
+            description: proc.description || "",
+            quantity: 1,
+            unitPrice: proc.fee || 0,
+            totalPrice: proc.fee || 0
+          });
+        });
+      }
+
+      const subtotal = visit.totalAmount || visit.consultationFee || 0;
+      const count = await Billing.countDocuments({ clinicId: visit.clinicId });
+      const date = new Date();
+      const year = date.getFullYear().toString().slice(-2);
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      
+      bill = new Billing({
+        patientId: visit.patientId,
+        clinicId: visit.clinicId,
+        billNumber: `BILL-${year}${month}-${String(count + 1).padStart(6, "0")}`,
+        billType: "consultation",
+        referenceId: patientHistoryId,
+        items,
+        subtotal,
+        totalAmount: subtotal,
+        doctorId: visit.doctorId,
+        billDate: visit.visitDate || visit.createdAt || new Date(),
+        paymentStatus: "pending",
+        paidAmount: 0,
+        pendingAmount: subtotal
+      });
+    }
+
+    // Add payment
+    const paymentAmount = amount || bill.pendingAmount;
+    
+    await bill.addPayment({
+      amount: paymentAmount,
+      method: method || "cash",
+      transactionId,
+      receivedBy,
+      notes
+    });
+
+    // Update PatientHistory isPaid flag
+    try {
+      await axios.patch(
+        `${PATIENT_SERVICE_BASE_URL}/patients/history/${patientHistoryId}/mark-paid`,
+        { isPaid: bill.paymentStatus === "paid" }
+      );
+    } catch (err) {
+      console.error("Warning: Could not update PatientHistory isPaid flag:", err.message);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Payment recorded successfully",
+      data: {
+        billId: bill._id,
+        billNumber: bill.billNumber,
+        paymentStatus: bill.paymentStatus,
+        totalAmount: bill.totalAmount,
+        paidAmount: bill.paidAmount,
+        pendingAmount: bill.pendingAmount,
+        payments: bill.payments
+      }
+    });
+
+  } catch (error) {
+    console.error("Error marking consultation as paid:", error.message);
+    res.status(500).json({
+      success: false,
+      message: "Failed to record payment",
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Get unpaid consultations for a patient
+ * GET /api/v1/billing/patient/:patientId/unpaid-consultations
+ */
+export const getUnpaidConsultations = async (req, res) => {
+  try {
+    const { patientId } = req.params;
+    const { clinicId } = req.query;
+
+    // Get unpaid bills from billing service
+    const unpaidBills = await Billing.find({
+      patientId,
+      billType: "consultation",
+      paymentStatus: { $in: ["pending", "partial"] }
+    }).sort({ billDate: -1 });
+
+    // Also check PatientHistory for visits not yet synced to billing
+    let unsyncedVisits = [];
+    if (clinicId) {
+      try {
+        const response = await axios.post(
+          `${PATIENT_SERVICE_BASE_URL}/patients/patient-history/${patientId}`,
+          { clinicId },
+          { timeout: 10000 }
+        );
+
+        const visits = response.data?.data || [];
+        
+        // Find visits that are unpaid and not in billing
+        const syncedReferenceIds = new Set(unpaidBills.map(b => b.referenceId));
+        
+        unsyncedVisits = visits
+          .filter(v => !v.isPaid && !syncedReferenceIds.has(v._id.toString()))
+          .map(v => ({
+            visitId: v._id,
+            visitDate: v.visitDate || v.createdAt,
+            consultationFee: v.consultationFee || 0,
+            procedures: v.procedures,
+            totalAmount: v.totalAmount || v.consultationFee || 0,
+            doctor: v.doctor?.name,
+            needsSync: true
+          }));
+      } catch (err) {
+        console.error("Error fetching unsynced visits:", err.message);
+      }
+    }
+
+    const total = unpaidBills.reduce((sum, b) => sum + b.pendingAmount, 0) +
+                  unsyncedVisits.reduce((sum, v) => sum + v.totalAmount, 0);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        syncedUnpaidBills: unpaidBills,
+        unsyncedVisits,
+        summary: {
+          totalUnpaidBills: unpaidBills.length,
+          totalUnsyncedVisits: unsyncedVisits.length,
+          totalPendingAmount: total
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error("Error fetching unpaid consultations:", error.message);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch unpaid consultations",
+      error: error.message
+    });
+  }
+};
 /**
  * Add payment to bill (supports multiple payments)
  * POST /api/v1/billing/:billId/add-payment
