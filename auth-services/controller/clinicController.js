@@ -9,9 +9,15 @@ import mongoose from "mongoose";
 import { config } from "dotenv";
 import axios from "axios";
 import { response } from "express";
+import Pharmacist from "../models/pharmacistSchema.js";
+import Nurse from "../models/nurseSchema.js";
+import Receptionist from "../models/receptionSchema.js";
+import Accountant from "../models/accountantSchema.js";
+import Technician from "../models/technicianSchema.js";
 config();
 const CLINIC_SERVICE_BASE_URL = process.env.CLINIC_SERVICE_BASE_URL || "http://localhost:8003/api/v1/clinic-service";
 const PATIENT_SERVICE_BASE_URL = process.env.PATIENT_SERVICE_BASE_URL || "http://localhost:8002/api/v1/patient-service";
+const LAB_SERVICE_BASE_URL = process.env.LAB_SERVICE_BASE_URL || "http://localhost:8006";
 const registerClinic = async (req, res) => {
   const { name, type, email, phoneNumber, password, address, description, } = req.body;
 
@@ -330,13 +336,34 @@ const getClinicDashboardDetails = async (req, res) => {
       }
     };
 
-    // ✅ Run all 3 external requests in parallel to speed things up
-    const [patients, todaysAppointments, activeDoctors] = await Promise.all([
+  const fetchPendingLabOrders = async () => {
+  try {
+    const response = await axios.get(
+      `${LAB_SERVICE_BASE_URL}/api/v1/lab-order/pending-orders/${clinicId}`
+    );
+    // console.log("1212",response);
+    
+    return {
+      count: response.data?.count || 0,
+      orders: response.data?.pendingOrders || [],
+    };
+  } catch (err) {
+    console.error("❌ Error fetching pending lab orders:", err.message);
+    return { count: 0, orders: [] };
+  }
+};
+
+
+    // ✅ Run all 4 external requests in parallel
+    const [patients, todaysAppointments, activeDoctors, pendingLabOrders] = await Promise.all([
       fetchPatients(),
       fetchAppointments(),
       fetchActiveDoctors(),
+      fetchPendingLabOrders(),
     ]);
-        const totalStaffCount =
+
+    // ✅ Calculate total staff count
+    const totalStaffCount =
       (clinic.staffs.nurses?.length || 0) +
       (clinic.staffs.receptionists?.length || 0) +
       (clinic.staffs.pharmacists?.length || 0) +
@@ -352,13 +379,14 @@ const getClinicDashboardDetails = async (req, res) => {
         name: clinic.name,
         staffs: clinic.staffs,
         subscription: clinic.subscription,
-        totalStaffCount, 
+        totalStaffCount,
       },
       patients,
       todaysAppointments,
       activeDoctors,
+      pendingLabOrders: pendingLabOrders.orders,
+      pendingLabOrdersCount: pendingLabOrders.count,
     });
-
   } catch (error) {
     console.error("getClinicDashboardDetails error:", error);
     return res.status(500).json({
@@ -368,4 +396,62 @@ const getClinicDashboardDetails = async (req, res) => {
     });
   }
 };
-export { registerClinic, loginClinic, viewAllClinics, viewClinicById, editClinic,getClinicStaffs ,getTheme,editTheme,subscribeClinic,getClinicDashboardDetails};
+const addShiftToStaff = async (req, res) => {
+  try {
+    const { id, } = req.params;
+    let { startTime, endTime, startDate, endDate,role } = req.body;
+
+    // Convert date strings to ISO if needed
+    if (typeof startDate === "string") startDate = formatDate(startDate);
+    if (typeof endDate === "string") endDate = formatDate(endDate);
+
+    let Model;
+    switch (role) {
+      case "nurse":
+        Model = Nurse;
+        break;
+      case "pharmacist":
+        Model = Pharmacist;
+        break;
+      case "receptionist":
+        Model = Receptionist;
+        break;
+        case "accountant":
+        Model = Accountant;
+        break;
+        case "technician":
+        Model = Technician;
+        break;
+      default:
+        return res.status(400).json({ success: false, message: "Invalid role" });
+    }
+
+    const staff = await Model.findById(id);
+    if (!staff) return res.status(404).json({ success: false, message: "Staff not found" });
+
+    // Optional: deactivate overlapping shifts
+    staff.shifts = staff.shifts.map(shift => {
+      if (shift.isActive && shift.endDate < new Date()) {
+        shift.isActive = false;
+        shift.archivedAt = new Date();
+      }
+      return shift;
+    });
+
+    // Add new shift
+    staff.shifts.push({ startTime, endTime, startDate, endDate, isActive: true });
+    await staff.save();
+
+    res.status(200).json({ success: true, message: "Shift added", shifts: staff.shifts });
+  } catch (error) {
+    console.error("addShiftToStaff error:", error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+const formatDate = (dateStr) => {
+  const [day, month, year] = dateStr.split("-");
+  return new Date(`${year}-${month}-${day}`);
+};
+
+export { registerClinic, loginClinic, viewAllClinics, viewClinicById, editClinic,getClinicStaffs ,getTheme,editTheme,subscribeClinic,getClinicDashboardDetails, addShiftToStaff };

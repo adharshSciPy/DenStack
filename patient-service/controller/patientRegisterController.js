@@ -3,6 +3,11 @@ import axios from "axios";
 import dotenv from "dotenv";
 import mongoose from "mongoose";
 import { emailValidator, passwordValidator, nameValidator, phoneValidator } from "../utils/validator.js";
+import crypto from "crypto";
+import twilio from "twilio";
+import bcrypt from "bcrypt";
+import jwt from "jsonwebtoken";
+
 dotenv.config();
 const AUTH_SERVICE_BASE_URL = process.env.AUTH_SERVICE_BASE_URL;
 
@@ -283,7 +288,8 @@ const patientCheck = async (req, res) => {
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
-const getPatientsByClinic = async (req ,res) => {
+
+const getPatientsByClinic = async (req, res) => {
   try {
     const { id: clinicId } = req.params;
 
@@ -300,5 +306,108 @@ const getPatientsByClinic = async (req ,res) => {
   }
 };
 
+const getPatientById = async (req, res) => {
+  const { id } = req.params;
 
-export{registerPatient,getPatientWithUniqueId,getAllPatients,patientCheck,getPatientsByClinic}
+  if (!id) {
+    return res.status(400).json({ success: false, message: " ID is required" });
+  }
+
+  try {
+    const patient = await Patient.findById(id)
+
+
+    if (!patient) {
+      return res.status(404).json({ success: false, message: "Patient not found" });
+    }
+
+    res.status(200).json({ success: true, data: patient });
+  } catch (error) {
+    console.error("Error fetching patient:", error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+
+const sendSMSLink = async (req, res) => {
+  try {
+    const { phone } = req.body;
+
+    const patient = await Patient.findOne({ phone });
+    if (!patient) {
+      return res.status(404).json({ success: false, message: "Patient not found" });
+    }
+
+    const token = crypto.randomBytes(32).toString("hex");
+    patient.otpToken = token;
+    patient.otpTokenExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 min validity
+    await patient.save();
+
+    const link = `https://yourfrontend.com/set-password/${token}`;
+
+    const client = twilio(process.env.TWILIO_SID, process.env.TWILIO_AUTH_TOKEN);
+    await client.messages.create({
+      from: process.env.TWILIO_PHONE,
+      to: `+91${phone}`,
+      body: `Click this secure link to set your password: ${link} (valid for 10 minutes)`,
+    });
+
+    res.json({ success: true, message: "Secure link sent via SMS" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: "Failed to send link" });
+  }
+};
+
+const setPassword = async (req, res) => {
+  try {
+    const { token, password } = req.body;
+
+    const patient = await Patient.findOne({
+      otpToken: token,
+      otpTokenExpiry: { $gt: new Date() },
+    }).select("+otpToken +otpTokenExpiry");
+
+    if (!patient) {
+      return res.status(400).json({ success: false, message: "Invalid or expired link" });
+    }
+
+    // Hash new password
+    const hashed = await bcrypt.hash(password, 10);
+    patient.password = hashed;
+    patient.otpToken = undefined;
+    patient.otpTokenExpiry = undefined;
+    await patient.save();
+
+    const authToken = jwt.sign(
+      { id: patient._id, role: patient.role },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    res.json({ success: true, token: authToken, message: "Password set successfully" });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Error setting password" });
+  }
+};
+
+const login = async (req, res) => {
+  try {
+    const { phone, password } = req.body;
+    const patient = await Patient.findOne({ phone }).select("+password");
+    if (!patient) return res.status(404).json({ message: "Patient not found" });
+
+    const valid = await bcrypt.compare(password, patient.password);
+    if (!valid) return res.status(400).json({ message: "Invalid credentials" });
+
+    const token = jwt.sign({ id: patient._id }, process.env.JWT_SECRET, { expiresIn: "7d" });
+    res.json({ success: true, token });
+  } catch (error) {
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+
+
+
+export { registerPatient, getPatientWithUniqueId, getAllPatients, patientCheck, getPatientsByClinic, getPatientById, sendSMSLink, setPassword, login }

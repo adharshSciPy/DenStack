@@ -3,32 +3,32 @@ import axios from "axios";
 import dotenv from "dotenv";
 dotenv.config();
 const AUTH_SERVICE_BASE_URL = process.env.AUTH_SERVICE_BASE_URL;
-const PATIENT_ROLE=process.env.PATIENT_ROLE;
+const PATIENT_ROLE = process.env.PATIENT_ROLE;
 
 const patientSchema = new mongoose.Schema({
-  clinicId: { 
-    type: mongoose.Schema.Types.ObjectId, 
-    ref: "Clinic", 
-    required: true 
+  clinicId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Clinic",
+    required: true
   },
-  name: { 
-    type: String, 
+  name: {
+    type: String,
     required: [true, "Name is required"],
     minlength: [2, "Name must be at least 2 characters"],
     maxlength: [100, "Name cannot exceed 100 characters"]
   },
-  phone: { 
-    type: Number, 
-    required: [true, "Phone number is required"], 
+  phone: {
+    type: Number,
+    required: [true, "Phone number is required"],
     match: [/^\d{10}$/, "Phone number must be 10 digits"]
   },
-  email: { 
-    type: String, 
+  email: {
+    type: String,
     unique: true,
     sparse: true,
     match: [/^\S+@\S+\.\S+$/, "Please enter a valid email address"]
   },
-  password: { 
+  password: {
     type: String,
     minlength: [8, "Password must be at least 8 characters"],
     maxlength: [64, "Password cannot exceed 64 characters"],
@@ -44,21 +44,31 @@ const patientSchema = new mongoose.Schema({
     familyHistory: [String]
   },
 
-  patientUniqueId: { type: String, unique: true}, 
- parentPatient: { type: mongoose.Schema.Types.ObjectId, ref: "Patient" },
+  patientUniqueId: { type: String, unique: true },
+  parentPatient: { type: mongoose.Schema.Types.ObjectId, ref: "Patient" },
   linkedPatients: [{ type: mongoose.Schema.Types.ObjectId, ref: "Patient" }],
-  role:{type:String,default:PATIENT_ROLE},
+  role: { type: String, default: PATIENT_ROLE },
   // patientHistory:[{type:mongoose.Schema.Types.ObjectId,ref:"PatientHistory"}],
   createdBy: { type: String },
   visitHistory: [
-  { type: mongoose.Schema.Types.ObjectId, ref: "PatientHistory" }
-],
+    { type: mongoose.Schema.Types.ObjectId, ref: "PatientHistory" }
+  ],
+
+  otpToken: { type: String, select: false },
+  otpTokenExpiry: { type: Date, select: false },
+  treatmentPlans: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "TreatmentPlan"
+    }
+  ],
+
 
   createdAt: { type: Date, default: Date.now }
 });
 
 // Generate OP number before saving
-patientSchema.pre("save", async function(next) {
+patientSchema.pre("save", async function (next) {
   if (this.patientUniqueId) return next();
 
   try {
@@ -68,7 +78,7 @@ patientSchema.pre("save", async function(next) {
     const clinicRes = await axios.get(url);
     // console.log("Clinic fetch response:", clinicRes.data);
 
-    let prefix = "DEN-CLC"; 
+    let prefix = "DEN-CLC";
     if (clinicRes?.data?.data?.name) {
       const rawName = clinicRes.data.data.name.replace(/[^a-zA-Z]/g, "");
       prefix = rawName.substring(0, 3).toUpperCase() || "DEN";
@@ -89,10 +99,10 @@ patientSchema.pre("save", async function(next) {
 
 
 // Good indexes for large-scale reads:
-patientSchema.index({ clinicId: 1, createdAt: -1 });   
-patientSchema.index({ clinicId: 1, name: 1 });     
-patientSchema.index({ clinicId: 1, patientUniqueId: 1 }, { unique: true }); 
-patientSchema.index({ clinicId: 1, phone: 1 }, { unique: true }); 
+patientSchema.index({ clinicId: 1, createdAt: -1 });
+patientSchema.index({ clinicId: 1, name: 1 });
+patientSchema.index({ clinicId: 1, patientUniqueId: 1 }, { unique: true });
+patientSchema.index({ clinicId: 1, phone: 1 }, { unique: true });
 
 
 
