@@ -18,6 +18,10 @@ config();
 const CLINIC_SERVICE_BASE_URL = process.env.CLINIC_SERVICE_BASE_URL || "http://localhost:8003/api/v1/clinic-service";
 const PATIENT_SERVICE_BASE_URL = process.env.PATIENT_SERVICE_BASE_URL || "http://localhost:8002/api/v1/patient-service";
 const LAB_SERVICE_BASE_URL = process.env.LAB_SERVICE_BASE_URL || "http://localhost:8006";
+const formatDate = (dateStr) => {
+  const [day, month, year] = dateStr.split("-");
+  return new Date(`${year}-${month}-${day}`);
+};
 const registerClinic = async (req, res) => {
   const { name, type, email, phoneNumber, password, address, description, } = req.body;
 
@@ -170,7 +174,6 @@ const viewAllClinics = async (req, res) => {
     });
   }
 };
-
 
 const viewClinicById = async (req, res) => {
   try {
@@ -396,6 +399,7 @@ const getClinicDashboardDetails = async (req, res) => {
     });
   }
 };
+
 const addShiftToStaff = async (req, res) => {
   try {
     const { id, } = req.params;
@@ -448,10 +452,54 @@ const addShiftToStaff = async (req, res) => {
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
+const removeStaffFromClinic = async (req, res) => {
+  try {
+    const { id: clinicId } = req.params;
+    const { staffId, role } = req.body;
 
-const formatDate = (dateStr) => {
-  const [day, month, year] = dateStr.split("-");
-  return new Date(`${year}-${month}-${day}`);
+    if (!staffId || !role) {
+      return res.status(400).json({ success: false, message: "staffId and role are required" });
+    }
+
+    let Model;
+    switch (role) {
+      case "nurse": Model = Nurse; break;
+      case "pharmacist": Model = Pharmacist; break;
+      case "receptionist": Model = Receptionist; break;
+      case "accountant": Model = Accountant; break;
+      case "technician": Model = Technician; break;
+      default: return res.status(400).json({ success: false, message: "Invalid role" });
+    }
+
+    const staff = await Model.findById(staffId);
+    if (!staff) return res.status(404).json({ success: false, message: "Staff not found" });
+
+    const clinic = await Clinic.findById(clinicId);
+    if (!clinic) return res.status(404).json({ success: false, message: "Clinic not found" });
+
+    const staffArray = clinic.staffs[`${role}s`] || [];
+    if (!staffArray.some(id => id.toString() === staffId)) {
+      return res.status(400).json({ success: false, message: "Staff does not belong to this clinic" });
+    }
+
+    // Remove staff reference from clinic
+    await Clinic.findByIdAndUpdate(clinicId, {
+      $pull: { [`staffs.${role}s`]: staff._id }
+    });
+
+    // Delete staff from DB
+    await Model.findByIdAndDelete(staffId);
+
+    res.status(200).json({
+      success: true,
+      message: `${role.charAt(0).toUpperCase() + role.slice(1)} removed and deleted successfully`
+    });
+  } catch (error) {
+    console.error("removeStaffFromClinic error:", error);
+    res.status(500).json({ success: false, message: "Server error", error: error.message });
+  }
 };
 
-export { registerClinic, loginClinic, viewAllClinics, viewClinicById, editClinic,getClinicStaffs ,getTheme,editTheme,subscribeClinic,getClinicDashboardDetails, addShiftToStaff };
+
+
+export { registerClinic, loginClinic, viewAllClinics, viewClinicById, editClinic,getClinicStaffs ,getTheme,editTheme,subscribeClinic,getClinicDashboardDetails, addShiftToStaff,removeStaffFromClinic };

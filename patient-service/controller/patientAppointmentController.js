@@ -431,5 +431,45 @@ const getAppointmentsByClinic = async (req, res) => {
     });
   }
 };
+const clearDoctorFromAppointments = async (req, res) => {
+  try {
+    const { clinicId, doctorId } = req.body;
 
-export { createAppointment ,getTodaysAppointments,getAppointmentById, getPatientHistory, addLabOrderToPatientHistory,getAppointmentsByClinic};
+    if (!clinicId || !doctorId) {
+      return res.status(400).json({
+        success: false,
+        message: "clinicId and doctorId are required",
+      });
+    }
+
+    // ✅ Update only scheduled appointments for this doctor in this clinic
+    const result = await Appointment.updateMany(
+      { clinicId, doctorId, status: "scheduled" },
+      { $unset: { doctorId: "" } } // removes doctorId field
+    );
+
+    // ✅ Fetch the updated scheduled appointments
+    const updatedAppointments = await Appointment.find({
+      clinicId,
+      doctorId: { $exists: false },
+      status: "scheduled", // only include scheduled ones
+    })
+      .select("_id appointmentDate appointmentTime status patientId")
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      message: `Doctor removed from ${result.modifiedCount} scheduled appointment(s)`,
+      updatedAppointments,
+    });
+  } catch (error) {
+    console.error("❌ clearDoctorFromAppointments error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error while clearing doctor from appointments",
+      error: error.message,
+    });
+  }
+};
+
+export { createAppointment ,getTodaysAppointments,getAppointmentById, getPatientHistory, addLabOrderToPatientHistory,getAppointmentsByClinic,clearDoctorFromAppointments};
