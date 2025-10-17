@@ -12,7 +12,7 @@ const AUTH_SERVICE_BASE_URL = process.env.AUTH_SERVICE_BASE_URL;
 const PATIENT_SERVICE_BASE_URL = process.env.PATIENT_SERVICE_BASE_URL;
 const onboardDoctor = async (req, res) => {
   try {
-    const { clinicId, doctorUniqueId, roleInClinic, clinicEmail, clinicPassword, standardConsultationFee, createdBy } = req.body;
+    const { clinicId, doctorUniqueId, roleInClinic, clinicEmail, clinicPassword, standardConsultationFee,specialization, createdBy } = req.body;
 
     // Validate required fields
     if (!mongoose.Types.ObjectId.isValid(clinicId))
@@ -23,6 +23,8 @@ const onboardDoctor = async (req, res) => {
       return res.status(400).json({ success: false, message: "Clinic email/password are required" });
     if (!standardConsultationFee || standardConsultationFee < 0)
       return res.status(400).json({ success: false, message: "Invalid standardConsultationFee" });
+if (!specialization || !Array.isArray(specialization) || specialization.length === 0) 
+      return res.status(400).json({ success: false, message: "At least one specialization is required" });    
 
     // Fetch doctor from auth-service
     let doctor;
@@ -58,6 +60,7 @@ const onboardDoctor = async (req, res) => {
         password: hashedPassword, // ✅ store only hashed password
       },
       standardConsultationFee,
+      specializations: specialization,
       createdBy: createdBy || undefined,
     });
 
@@ -72,6 +75,7 @@ const onboardDoctor = async (req, res) => {
         clinicId: newMapping.clinicId,
         roleInClinic: newMapping.roleInClinic,
         status: newMapping.status,
+        specializations: newMapping.specializations,
         standardConsultationFee: newMapping.standardConsultationFee,
         clinicLogin: {
           email: newMapping.clinicLogin.email,
