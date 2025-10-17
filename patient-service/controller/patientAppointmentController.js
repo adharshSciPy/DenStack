@@ -471,5 +471,69 @@ const clearDoctorFromAppointments = async (req, res) => {
     });
   }
 };
+const appointmentReschedule = async (req, res) => {
+  try {
+    const {id: appointmentId } = req.params;
+    const { newDate, newTime, doctorId } = req.body;
 
-export { createAppointment ,getTodaysAppointments,getAppointmentById, getPatientHistory, addLabOrderToPatientHistory,getAppointmentsByClinic,clearDoctorFromAppointments};
+    // ✅ Validate appointmentId
+    if (!appointmentId || !mongoose.Types.ObjectId.isValid(appointmentId)) {
+      return res.status(400).json({ success: false, message: "Invalid appointmentId" });
+    }
+
+    // ✅ Validate date
+    if (!newDate || !/^\d{4}-\d{2}-\d{2}$/.test(newDate)) {
+      return res.status(400).json({ success: false, message: "Invalid newDate format (use YYYY-MM-DD)" });
+    }
+
+    // ✅ Validate time
+    if (!newTime || !/^\d{2}:\d{2}$/.test(newTime)) {
+      return res.status(400).json({ success: false, message: "Invalid newTime format (use HH:mm)" });
+    }
+
+    // ✅ Fetch appointment
+    const appointment = await Appointment.findById(appointmentId);
+    if (!appointment) {
+      return res.status(404).json({ success: false, message: "Appointment not found" });
+    }
+
+    // ✅ Only scheduled appointments can be rescheduled
+    if (appointment.status !== "scheduled") {
+      return res.status(400).json({ success: false, message: "Only scheduled appointments can be rescheduled" });
+    }
+
+    // ✅ If appointment currently has no doctor, require one in body
+    if (!appointment.doctorId && !doctorId) {
+      return res.status(400).json({ success: false, message: "This appointment has no assigned doctor. Please provide a doctorId to assign." });
+    }
+
+    // ✅ If doctorId is provided, validate and assign
+    if (doctorId) {
+      if (!mongoose.Types.ObjectId.isValid(doctorId)) {
+        return res.status(400).json({ success: false, message: "Invalid doctorId" });
+      }
+      appointment.doctorId = doctorId; // update doctor (if new or same)
+    }
+
+    // ✅ Update date and time
+    appointment.date = newDate;
+    appointment.time = newTime;
+
+    await appointment.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Appointment rescheduled successfully",
+      appointment,
+    });
+  } catch (error) {
+    console.error("❌ appointmentReschedule error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error while rescheduling appointment",
+      error: error.message,
+    });
+  }
+};
+
+export { createAppointment ,getTodaysAppointments,getAppointmentById, getPatientHistory, addLabOrderToPatientHistory,getAppointmentsByClinic,clearDoctorFromAppointments,appointmentReschedule};
