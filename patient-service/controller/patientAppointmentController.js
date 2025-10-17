@@ -48,31 +48,38 @@ const createAppointment = async (req, res) => {
     if (!patient)
       return res.status(404).json({ success: false, message: "Patient not found in this clinic" });
 
-    // 4️⃣ Verify receptionist belongs to this clinic via Auth Service
-    try {
-      const staffRes = await axios.get(`${AUTH_SERVICE_BASE_URL}/clinic/all-staffs/${clinicId}`);
-      const clinic = staffRes.data?.clinic;
+   // 4️⃣ Verify receptionist belongs to this clinic via Auth Service
+try {
+  const staffRes = await axios.get(`${AUTH_SERVICE_BASE_URL}/clinic/all-staffs/${clinicId}`);
+  const clinic = staffRes.data?.clinic;
+  const staff = staffRes.data?.staff; // <-- important fix
 
-      if (!clinic || !clinic.staffs)
-        return res.status(404).json({ success: false, message: "Clinic or staff data unavailable" });
+  if (!clinic || !staff) {
+    return res.status(404).json({
+      success: false,
+      message: "Clinic or staff data unavailable",
+    });
+  }
 
-      const receptionistList = clinic.staffs.receptionists || [];
-      const isReceptionistInClinic = receptionistList.some(
-        (rec) => rec._id.toString() === receptionistId.toString()
-      );
+  const receptionistList = staff.receptionists || [];
+  const isReceptionistInClinic = receptionistList.some(
+    (rec) => rec._id.toString() === receptionistId.toString()
+  );
 
-      if (!isReceptionistInClinic)
-        return res.status(403).json({
-          success: false,
-          message: "Receptionist does not belong to this clinic",
-        });
-    } catch (err) {
-      return res.status(503).json({
-        success: false,
-        message: "Unable to verify receptionist from Auth Service",
-        error: err.response?.data?.message || err.message,
-      });
-    }
+  if (!isReceptionistInClinic) {
+    return res.status(403).json({
+      success: false,
+      message: "Receptionist does not belong to this clinic",
+    });
+  }
+} catch (err) {
+  return res.status(503).json({
+    success: false,
+    message: "Unable to verify receptionist from Auth Service",
+    error: err.response?.data?.message || err.message,
+  });
+}
+
 
     // 5️⃣ Fetch doctor availability from Clinic Service
     let availabilities = [];

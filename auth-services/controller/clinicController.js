@@ -216,15 +216,12 @@ const getClinicStaffs = async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid clinicId" });
     }
 
-    const clinic = await Clinic.findById(clinicId)
-      .select("name staffs")
-      .lean();
-
+    const clinic = await Clinic.findById(clinicId).select("name staffs").lean();
     if (!clinic) {
       return res.status(404).json({ success: false, message: "Clinic not found" });
     }
 
-    // ✅ Role mapping
+    // Role map
     const roleMap = {
       nurse: "nurses",
       receptionist: "receptionists",
@@ -232,69 +229,49 @@ const getClinicStaffs = async (req, res) => {
       accountant: "accountants",
     };
 
-    let staffsToFetch = [];
-
-    // ✅ Determine which staffs to return
-    if (role && roleMap[role]) {
-      staffsToFetch = clinic.staffs[roleMap[role]] || [];
-    } else {
-      // return all roles if no role filter
-      staffsToFetch = [
-        ...clinic.staffs.nurses,
-        ...clinic.staffs.receptionists,
-        ...clinic.staffs.pharmacists,
-        ...clinic.staffs.accountants,
-      ];
-    }
-
-    // ✅ Apply cursor-based pagination
-    let query = { _id: { $in: staffsToFetch } };
-    if (cursor && mongoose.Types.ObjectId.isValid(cursor)) {
-      query._id.$lt = cursor; // fetch next page
-    }
-
-    // ✅ Detect which model to use based on role
-    const modelMap = {
-      nurse: Nurse,
-      receptionist: Receptionist,
-      pharmacist: Pharmacist,
-      accountant: Accountant,
+    // Prepare empty staff object
+    const staffResult = {
+      nurses: [],
+      receptionists: [],
+      pharmacists: [],
+      accountants: [],
     };
 
-    // If a specific role is passed, use that model; otherwise use Nurse as default and merge results
-    let staffData = [];
+    // Fetch staff by role
+    for (const [key, modelName] of Object.entries(roleMap)) {
+      let staffIds = clinic.staffs[modelName] || [];
+      let query = { _id: { $in: staffIds } };
 
-    if (role && modelMap[role]) {
-      staffData = await modelMap[role]
+      if (role && role !== key) continue; // skip other roles if role filter applied
+
+      if (cursor && mongoose.Types.ObjectId.isValid(cursor)) {
+        query._id.$lt = cursor;
+      }
+
+      const ModelMap = {
+        nurse: Nurse,
+        receptionist: Receptionist,
+        pharmacist: Pharmacist,
+        accountant: Accountant,
+      };
+
+      const staffData = await ModelMap[key]
         .find(query)
         .sort({ _id: -1 })
-        .limit(Number(limit) + 1)
+        .limit(Number(limit))
         .lean();
-    } else {
-      // Fetch all roles in parallel
-      const [n, r, p, a] = await Promise.all([
-        Nurse.find(query).sort({ _id: -1 }).limit(Number(limit) + 1).lean(),
-        Receptionist.find(query).sort({ _id: -1 }).limit(Number(limit) + 1).lean(),
-        Pharmacist.find(query).sort({ _id: -1 }).limit(Number(limit) + 1).lean(),
-        Accountant.find(query).sort({ _id: -1 }).limit(Number(limit) + 1).lean(),
-      ]);
-      staffData = [...n, ...r, ...p, ...a].slice(0, Number(limit));
-    }
 
-    // ✅ Handle next cursor
-    const hasMore = staffData.length > limit;
-    const nextCursor = hasMore ? staffData[limit - 1]?._id : null;
+      staffResult[modelName] = staffData;
+    }
 
     res.status(200).json({
       success: true,
-      message: `Clinic ${role ? role : "staff"} fetched successfully`,
+      message: "Clinic staff fetched successfully",
       clinic: {
         id: clinic._id,
         name: clinic.name,
       },
-      staff: staffData.slice(0, limit),
-      nextCursor,
-      hasMore,
+      staff: staffResult,
     });
   } catch (error) {
     console.error("❌ Error in getClinicStaffs:", error);
@@ -305,6 +282,7 @@ const getClinicStaffs = async (req, res) => {
     });
   }
 };
+
 
 const getTheme=async (req, res) => {
   try {
