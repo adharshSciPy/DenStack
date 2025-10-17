@@ -639,14 +639,14 @@ const clinicDoctorLogin = async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid clinicId" });
     }
 
-    // ✅ Find doctor-clinic mapping with this clinic email
+  
     const doctorClinic = await DoctorClinic.findOne({ "clinicLogin.email": clinicEmail });
 
     if (!doctorClinic) {
       return res.status(404).json({ success: false, message: "Invalid email or password" });
     }
 
-    // ✅ Compare password (assuming hashed in DB)
+    
     const isMatch = await bcrypt.compare(clinicPassword, doctorClinic.clinicLogin.password);
     if (!isMatch) {
       return res.status(401).json({ success: false, message: "Invalid email or password" });
