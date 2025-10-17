@@ -208,30 +208,101 @@ const editClinic = async (req, res) => {
   }
 }
 const getClinicStaffs = async (req, res) => {
-  const {id: clinicId } = req.params;
-
   try {
-    const clinic = await Clinic.findById(clinicId)
-      .populate("staffs.nurses")
-      .populate("staffs.receptionists", )
-      .populate("staffs.pharmacists", )
-      .populate("staffs.accountants",);
+    const { id: clinicId } = req.params;
+    const { role, cursor, limit = 10 } = req.query;
 
-    if (!clinic) {
-      return res.status(404).json({ message: "Clinic not found" });
+    if (!clinicId || !mongoose.Types.ObjectId.isValid(clinicId)) {
+      return res.status(400).json({ success: false, message: "Invalid clinicId" });
     }
 
+    const clinic = await Clinic.findById(clinicId)
+      .select("name staffs")
+      .lean();
+
+    if (!clinic) {
+      return res.status(404).json({ success: false, message: "Clinic not found" });
+    }
+
+    // ✅ Role mapping
+    const roleMap = {
+      nurse: "nurses",
+      receptionist: "receptionists",
+      pharmacist: "pharmacists",
+      accountant: "accountants",
+    };
+
+    let staffsToFetch = [];
+
+    // ✅ Determine which staffs to return
+    if (role && roleMap[role]) {
+      staffsToFetch = clinic.staffs[roleMap[role]] || [];
+    } else {
+      // return all roles if no role filter
+      staffsToFetch = [
+        ...clinic.staffs.nurses,
+        ...clinic.staffs.receptionists,
+        ...clinic.staffs.pharmacists,
+        ...clinic.staffs.accountants,
+      ];
+    }
+
+    // ✅ Apply cursor-based pagination
+    let query = { _id: { $in: staffsToFetch } };
+    if (cursor && mongoose.Types.ObjectId.isValid(cursor)) {
+      query._id.$lt = cursor; // fetch next page
+    }
+
+    // ✅ Detect which model to use based on role
+    const modelMap = {
+      nurse: Nurse,
+      receptionist: Receptionist,
+      pharmacist: Pharmacist,
+      accountant: Accountant,
+    };
+
+    // If a specific role is passed, use that model; otherwise use Nurse as default and merge results
+    let staffData = [];
+
+    if (role && modelMap[role]) {
+      staffData = await modelMap[role]
+        .find(query)
+        .sort({ _id: -1 })
+        .limit(Number(limit) + 1)
+        .lean();
+    } else {
+      // Fetch all roles in parallel
+      const [n, r, p, a] = await Promise.all([
+        Nurse.find(query).sort({ _id: -1 }).limit(Number(limit) + 1).lean(),
+        Receptionist.find(query).sort({ _id: -1 }).limit(Number(limit) + 1).lean(),
+        Pharmacist.find(query).sort({ _id: -1 }).limit(Number(limit) + 1).lean(),
+        Accountant.find(query).sort({ _id: -1 }).limit(Number(limit) + 1).lean(),
+      ]);
+      staffData = [...n, ...r, ...p, ...a].slice(0, Number(limit));
+    }
+
+    // ✅ Handle next cursor
+    const hasMore = staffData.length > limit;
+    const nextCursor = hasMore ? staffData[limit - 1]?._id : null;
+
     res.status(200).json({
-      message: "Clinic staff fetched successfully",
+      success: true,
+      message: `Clinic ${role ? role : "staff"} fetched successfully`,
       clinic: {
         id: clinic._id,
         name: clinic.name,
-        staffs: clinic.staffs,
       },
+      staff: staffData.slice(0, limit),
+      nextCursor,
+      hasMore,
     });
   } catch (error) {
     console.error("❌ Error in getClinicStaffs:", error);
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({
+      success: false,
+      message: "Server error while fetching clinic staff",
+      error: error.message,
+    });
   }
 };
 

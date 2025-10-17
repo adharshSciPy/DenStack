@@ -8,7 +8,7 @@ patientAppointmentRouter.route("/fetch/:id").get(getAppointmentById)
 patientAppointmentRouter.route("/patient-history/:id").get(getPatientHistory);
 patientAppointmentRouter.route("/lab-details/:id").patch(addLabOrderToPatientHistory);
 patientAppointmentRouter.route("/clinic-appointments/:id").get(getAppointmentsByClinic);
-patientAppointmentRouter.route("/remove/doctor").patch(clearDoctorFromAppointments);
+patientAppointmentRouter.route("/clear-doctor-from-appointments").patch(clearDoctorFromAppointments);
 patientAppointmentRouter.route("/reschedule/:id").patch(appointmentReschedule);
 
 export default patientAppointmentRouter

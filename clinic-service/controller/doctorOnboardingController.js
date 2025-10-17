@@ -9,7 +9,7 @@ dotenv.config();
 
 // const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const AUTH_SERVICE_BASE_URL = process.env.AUTH_SERVICE_BASE_URL;
-
+const PATIENT_SERVICE_BASE_URL = process.env.PATIENT_SERVICE_BASE_URL;
 const onboardDoctor = async (req, res) => {
   try {
     const { clinicId, doctorUniqueId, roleInClinic, clinicEmail, clinicPassword, standardConsultationFee, createdBy } = req.body;
@@ -628,12 +628,15 @@ const getAllActiveDoctorsOnClinic = async (req, res) => {
 
 
 const clinicDoctorLogin = async (req, res) => {
-  const { clinicEmail, clinicPassword } = req.body;
+  const { clinicEmail, clinicPassword,clinicId } = req.body;
 
   try {
     // ✅ Validate input
-    if (!clinicEmail || !clinicPassword) {
-      return res.status(400).json({ success: false, message: "Email and password are required" });
+    if (!clinicEmail || !clinicPassword || !clinicId) {
+      return res.status(400).json({ success: false, message: "Email, password, and clinicId are required" });
+    }
+    if (!mongoose.Types.ObjectId.isValid(clinicId)) {
+      return res.status(400).json({ success: false, message: "Invalid clinicId" });
     }
 
     // ✅ Find doctor-clinic mapping with this clinic email
@@ -647,6 +650,9 @@ const clinicDoctorLogin = async (req, res) => {
     const isMatch = await bcrypt.compare(clinicPassword, doctorClinic.clinicLogin.password);
     if (!isMatch) {
       return res.status(401).json({ success: false, message: "Invalid email or password" });
+    }
+    if(doctorClinic.clinicId.toString()!==clinicId){
+      return res.status(403).json({ success: false, message: "Doctor not associated with this clinic" });
     }
 
     // ✅ Generate JWT
@@ -693,5 +699,56 @@ const refreshToken = jwt.sign(
   }
 };
 
+const removeDoctorFromClinic = async (req, res) => {
+  try {
+    const { clinicId, doctorId } = req.body;
 
-export{onboardDoctor,addDoctorAvailability,getAvailability,clinicDoctorLogin,getDoctorsBasedOnDepartment,getDoctorsWithAvailability,getAllActiveDoctorsOnClinic}
+    // ✅ Validate inputs
+    if (!clinicId || !mongoose.Types.ObjectId.isValid(clinicId)) {
+      return res.status(400).json({ success: false, message: "Invalid clinicId" });
+    }
+    if (!doctorId || !mongoose.Types.ObjectId.isValid(doctorId)) {
+      return res.status(400).json({ success: false, message: "Invalid doctorId" });
+    }
+
+    // ✅ Check mapping
+    const mapping = await DoctorClinic.findOne({ clinicId, doctorId });
+    if (!mapping) {
+      return res.status(404).json({ success: false, message: "Doctor not onboarded in this clinic" });
+    }
+
+    // ✅ Delete doctor-clinic record
+    await DoctorClinic.findByIdAndDelete(mapping._id);
+
+    // ✅ Call Appointment Service to clear doctor references
+    let updatedAppointments = [];
+    try {
+      const response = await axios.put(`${PATIENT_SERVICE_BASE_URL}/appointment/clear-doctor-from-appointments`, {
+        clinicId,
+        doctorId,
+      });
+      updatedAppointments = response.data?.updatedAppointments || [];
+    } catch (err) {
+      console.error("❌ Error updating appointments:", err.response?.data || err.message);
+    }
+
+    // ✅ Respond
+    return res.status(200).json({
+      success: true,
+      message: "Doctor removed from clinic successfully",
+      deletedMappingId: mapping._id,
+      affectedAppointments: updatedAppointments.length,
+      updatedAppointments,
+    });
+  } catch (error) {
+    console.error("❌ removeDoctorFromClinic error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error while removing doctor from clinic",
+      error: error.message,
+    });
+  }
+};
+
+
+export{onboardDoctor,addDoctorAvailability,getAvailability,clinicDoctorLogin,getDoctorsBasedOnDepartment,getDoctorsWithAvailability,getAllActiveDoctorsOnClinic,removeDoctorFromClinic};
