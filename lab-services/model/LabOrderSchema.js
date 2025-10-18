@@ -15,7 +15,7 @@ const labOrderSchema = new mongoose.Schema(
       enum: [
         "Pending", // order created but not yet accepted
         "Accepted", // lab accepted the order
-        "In Progress", // work started
+        "in-progress", // work started
         "Ready for Delivery", // completed, waiting for pickup/delivery
         "Delivered", // delivered back to clinic
         "Rejected",
@@ -29,7 +29,7 @@ const labOrderSchema = new mongoose.Schema(
         note: String,
       },
     ],
-
+    patientname:{type:String},
     expectedDeliveryDate: { type: Date },
     createdAt: { type: Date, default: Date.now },
   },

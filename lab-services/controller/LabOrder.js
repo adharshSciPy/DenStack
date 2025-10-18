@@ -17,7 +17,7 @@ import axios from "axios";
     } = req.body;
 
     // ✅ 1. Basic input validation
-    if (!labId || !clinicId || !doctorId || !patientId || !orderType || !consultationId) {
+    if (!labId || !clinicId || !doctorId || !patientId || !orderType || !consultationId ) {
       return res.status(400).json({ message: "Missing required fields" });
     }
 
@@ -28,6 +28,7 @@ import axios from "axios";
         message: "Invalid lab selection — lab does not belong to this clinic",
       });
     }
+  let patientname = "";
 
     // ✅ 3. Verify patient belongs to the same clinic (via Patient microservice)
     try {
@@ -35,14 +36,16 @@ import axios from "axios";
         `${process.env.PATIENT_SERVICE_URL}/api/v1/patient-service/patient/verify`,
         { patientId, clinicId }
       );
-      console.log("Patient verification response:", verifyResponse.data);
       
+      console.log("hbn",verifyResponse.data?.data.name|| "");
       // Check the microservice response
       if (!verifyResponse.data?.success) {
         return res.status(404).json({
           message: "Patient not found in this clinic",
         });
       }
+      
+      patientname = verifyResponse.data?.data.name || "";
     } catch (error) {
       console.error("Patient verification error:", error.response?.data || error.message);
       return res.status(400).json({
@@ -60,6 +63,7 @@ import axios from "axios";
       toothNumbers,
       consultationId,
       expectedDeliveryDate,
+      patientname,
       statusHistory: [{ status: "Pending", note: "Order created by doctor" }],
     });
 
@@ -188,6 +192,7 @@ const getLabOrdersbyClinicId = async (req, res) => {
     if (search) {
       filterQuery.$or = [
         { orderType: { $regex: search, $options: 'i' } },
+        { patientname: { $regex: search, $options: "i" } },
         // Add more searchable fields as needed
       ];
     }
@@ -213,18 +218,18 @@ const getLabOrdersbyClinicId = async (req, res) => {
     }
 
     // Extract all patient IDs and doctor IDs
-    const patientIds = results.map(order => order.patientId);
+    // const patientIds = results.map(order => order.patientId);
     const doctorIds = results.map(order => order.doctorId);
 
     // Fetch patient details from patient microservice
-    const patientResponses = await Promise.all(
-      patientIds.map(id =>
-        axios
-          .get(`${process.env.PATIENT_SERVICE_URL}/api/v1/patient-service/patient/details/${id}`)
-          .then(res => res.data)
-          .catch(() => null)
-      )
-    );
+    // const patientResponses = await Promise.all(
+    //   patientIds.map(id =>
+    //     axios
+    //       .get(`${process.env.PATIENT_SERVICE_URL}/api/v1/patient-service/patient/details/${id}`)
+    //       .then(res => res.data)
+    //       .catch(() => null)
+    //   )
+    // );
 
     // Fetch doctor details from doctor microservice
     const doctorResponse = await Promise.all(
@@ -237,17 +242,17 @@ const getLabOrdersbyClinicId = async (req, res) => {
     );
 
     // Filter out failed ones
-    const patientData = patientResponses.filter(Boolean);
+    // const patientData = patientResponses.filter(Boolean);
     const doctorData = doctorResponse.filter(Boolean);
 
     // Merge patient and doctor names into labOrders
     const enrichedOrders = results.map(order => {
-      const patient = patientData.find(p => p.data._id === order.patientId.toString());
+      // const patient = patientData.find(p => p.data._id === order.patientId.toString());
       const doctor = doctorData.find(d => d.data._id === order.doctorId.toString());
       
       return {
         ...order.toObject(),  
-        patientName: patient ? patient.data.name : "Unknown",
+        // patientName: patient ? patient.data.name : "Unknown",
         doctorName: doctor ? doctor.data.name : "Unknown"
       };
     });
