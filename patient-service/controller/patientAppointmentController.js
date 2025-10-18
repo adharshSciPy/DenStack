@@ -384,58 +384,76 @@ const getAppointmentsByClinic = async (req, res) => {
     // ✅ Construct base query
     const query = { clinicId };
 
-    // ✅ Handle date filters efficiently
+    // ✅ Handle date filters
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(
+      2,
+      "0"
+    )}-${String(today.getDate()).padStart(2, "0")}`;
+
     if (startDate && endDate) {
       query.appointmentDate = { $gte: startDate, $lte: endDate };
     } else if (startDate) {
       query.appointmentDate = startDate;
     } else {
-      const today = new Date();
-      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(
-        today.getDate()
-      ).padStart(2, "0")}`;
       query.appointmentDate = todayStr;
     }
 
-    // ✅ Add pagination filter
+    // ✅ Cursor-based pagination
     if (lastId && mongoose.Types.ObjectId.isValid(lastId)) {
       query._id = { $lt: new mongoose.Types.ObjectId(lastId) };
     }
 
-    // ✅ Fast patient name search — only do it if search is provided
+    // ✅ Optional patient search
     if (search?.trim()) {
       const matchingIds = await Patient.find(
         { clinicId, name: { $regex: search, $options: "i" } },
         { _id: 1 }
       )
         .lean()
-        .limit(50) // limit to reduce lookup load
+        .limit(50)
         .then((res) => res.map((p) => p._id));
-
       query.patientId = matchingIds.length ? { $in: matchingIds } : { $in: [] };
     }
 
-    // ✅ Fetch data and total count in parallel
-    const [appointments, totalAppointments] = await Promise.all([
+    // ✅ Fetch appointments (with pagination) and counts in parallel
+    const [appointments, counts] = await Promise.all([
       Appointment.find(query)
         .sort({ opNumber: 1 })
         .limit(Number(limit))
         .populate("patientId", "name phone email age gender patientUniqueId")
         .select("patientId appointmentDate appointmentTime opNumber status createdAt")
         .lean(),
-      Appointment.countDocuments({
-        clinicId,
-        appointmentDate: query.appointmentDate,
-      }),
+
+      // Aggregation for counts
+      Appointment.aggregate([
+        { $match: { clinicId: new mongoose.Types.ObjectId(clinicId), appointmentDate: query.appointmentDate } },
+        {
+          $group: {
+            _id: null,
+            totalAppointments: { $sum: 1 },
+            completedCount: { $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] } },
+            cancelledCount: { $sum: { $cond: [{ $eq: ["$status", "cancelled"] }, 1, 0] } },
+            scheduledCount: { $sum: { $cond: [{ $eq: ["$status", "scheduled"] }, 1, 0] } },
+          },
+        },
+      ]),
     ]);
+
+    const stats = counts[0] || {
+      totalAppointments: 0,
+      completedCount: 0,
+      cancelledCount: 0,
+      scheduledCount: 0,
+    };
 
     return res.status(200).json({
       success: true,
       message: "Appointments fetched successfully",
       count: appointments.length,
-      totalAppointments,
       data: appointments,
       nextCursor: appointments.length ? appointments[appointments.length - 1]._id : null,
+      stats,
     });
   } catch (error) {
     console.error("getAppointmentsByClinic error:", error);
@@ -645,5 +663,49 @@ const appointmentReschedule = async (req, res) => {
     });
   }
 };
+const cancelAppointment = async (req, res) => {
+  try {
+    const { id: appointmentId } = req.params;
+    const { cancelledBy } = req.body; 
 
-export { createAppointment ,getTodaysAppointments,getAppointmentById, getPatientHistory, addLabOrderToPatientHistory,getAppointmentsByClinic,clearDoctorFromAppointments,appointmentReschedule};
+    // ✅ Validate appointmentId
+    if (!appointmentId || !mongoose.Types.ObjectId.isValid(appointmentId)) {
+      return res.status(400).json({ success: false, message: "Invalid appointmentId" });
+    }
+
+    // ✅ Fetch appointment
+    const appointment = await Appointment.findById(appointmentId);
+    if (!appointment) {
+      return res.status(404).json({ success: false, message: "Appointment not found" });
+    }
+
+    // ✅ Check if already cancelled or completed
+    if (appointment.status !== "scheduled") {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot cancel an appointment with status "${appointment.status}"`,
+      });
+    }
+
+    // ✅ Update status to cancelled
+    appointment.status = "cancelled";
+    appointment.updatedBy = cancelledBy || null;
+
+    await appointment.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Appointment cancelled successfully",
+      appointment,
+    });
+  } catch (error) {
+    console.error("❌ cancelAppointment error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error while cancelling appointment",
+      error: error.message,
+    });
+  }
+};
+
+export { createAppointment ,getTodaysAppointments,getAppointmentById, getPatientHistory, addLabOrderToPatientHistory,getAppointmentsByClinic,clearDoctorFromAppointments,appointmentReschedule, cancelAppointment};

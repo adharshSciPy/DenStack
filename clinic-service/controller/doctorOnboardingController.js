@@ -753,6 +753,51 @@ const removeDoctorFromClinic = async (req, res) => {
     });
   }
 };
+const getSingleDoctorWithinClinic = async (req, res) => {
+  try {
+    const { clinicId, doctorId } = req.params;
+
+    // Validate IDs
+    if (!clinicId || !mongoose.Types.ObjectId.isValid(clinicId))
+      return res.status(400).json({ success: false, message: "Invalid clinicId" });
+
+    if (!doctorId || !mongoose.Types.ObjectId.isValid(doctorId))
+      return res.status(400).json({ success: false, message: "Invalid doctorId" });
+
+    // Fetch the DoctorClinic entry
+    const doctorClinic = await DoctorClinic.findOne({ clinicId, doctorId }).lean();
+
+    if (!doctorClinic)
+      return res.status(404).json({ success: false, message: "Doctor not found in this clinic" });
+
+    // Fetch only the doctor’s name from Auth service
+    const doctorRes = await axios.get(`${AUTH_SERVICE_BASE_URL}/doctor/details/${doctorId}`);
+    const doctorData = doctorRes.data?.data;
+
+    if (!doctorData)
+      return res.status(404).json({ success: false, message: "Doctor details not found in Auth Service" });
+
+    // Combine doctor name with all DoctorClinic details
+    const responseData = {
+      ...doctorClinic, // all fields from DoctorClinic
+      name: doctorData.name, // override/add doctor name
+    };
+
+    return res.status(200).json({
+      success: true,
+      message: "Doctor details fetched successfully",
+      data: responseData,
+    });
+  } catch (error) {
+    console.error("❌ getSingleDoctorWithinClinic error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error while fetching doctor",
+      error: error.message,
+    });
+  }
+};
 
 
-export{onboardDoctor,addDoctorAvailability,getAvailability,clinicDoctorLogin,getDoctorsBasedOnDepartment,getDoctorsWithAvailability,getAllActiveDoctorsOnClinic,removeDoctorFromClinic};
+
+export{onboardDoctor,addDoctorAvailability,getAvailability,clinicDoctorLogin,getDoctorsBasedOnDepartment,getDoctorsWithAvailability,getAllActiveDoctorsOnClinic,removeDoctorFromClinic,getSingleDoctorWithinClinic};
