@@ -145,7 +145,10 @@ try {
 
     // 8️⃣ Generate daily OP number per clinic per date
     const lastAppointmentToday = await Appointment.findOne({ clinicId, appointmentDate }).sort({ opNumber: -1 });
-    const nextOpNumber = lastAppointmentToday ? lastAppointmentToday.opNumber + 1 : 1;
+   const nextOpNumber = lastAppointmentToday
+  ? Number(lastAppointmentToday.opNumber) + 1
+  : 1;
+
 
     // 9️⃣ Create appointment
     const appointment = new Appointment({
@@ -181,29 +184,38 @@ const getTodaysAppointments = async (req, res) => {
     const { doctorId, clinicId } = req.doctorClinic;
 
     const today = new Date();
-    const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
 
     const appointments = await Appointment.find({
       doctorId,
       clinicId,
       appointmentDate: todayStr,
-      status: "scheduled"
+      status: "scheduled",
     })
-    .populate("patientId", "name phone email")
-    .sort({ appointmentTime: 1 });
+      .populate("patientId", "name phone email age gender patientUniqueId")
+      .sort({ opNumber: 1 })
+      .lean(); 
+
+    appointments.sort((a, b) => a.opNumber - b.opNumber);
 
     return res.status(200).json({
       success: true,
-      message: `Appointments for today (${todayStr})`,
-      doctorId,
-      clinicId,
-      appointments
+      message: "Appointments fetched successfully",
+      count: appointments.length,
+      totalAppointments: appointments.length,
+      data: appointments,
+      nextCursor: appointments?.length ? appointments[appointments.length - 1]._id : null,
     });
   } catch (err) {
     console.error("getTodaysAppointments error:", err);
-    return res.status(500).json({ success: false, message: "Server error", error: err.message });
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: err.message,
+    });
   }
 };
+
 const getAppointmentById = async (req, res) => {
   try {
     const { id: appointmentId } = req.params;
@@ -369,57 +381,53 @@ const getAppointmentsByClinic = async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid clinicId" });
     }
 
+    // ✅ Construct base query
     const query = { clinicId };
 
-    // ✅ Handle date filters
+    // ✅ Handle date filters efficiently
     if (startDate && endDate) {
       query.appointmentDate = { $gte: startDate, $lte: endDate };
     } else if (startDate) {
       query.appointmentDate = startDate;
     } else {
       const today = new Date();
-      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(
-        2,
-        "0"
-      )}-${String(today.getDate()).padStart(2, "0")}`;
+      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(
+        today.getDate()
+      ).padStart(2, "0")}`;
       query.appointmentDate = todayStr;
     }
 
-    // ✅ Cursor-based pagination
+    // ✅ Add pagination filter
     if (lastId && mongoose.Types.ObjectId.isValid(lastId)) {
       query._id = { $lt: new mongoose.Types.ObjectId(lastId) };
     }
 
-    // ✅ If there's a search term, find matching patient IDs first
-    let patientFilter = {};
-    if (search) {
-      const matchingPatients = await Patient.find(
-        {
-          clinicId,
-          name: { $regex: search, $options: "i" },
-        },
+    // ✅ Fast patient name search — only do it if search is provided
+    if (search?.trim()) {
+      const matchingIds = await Patient.find(
+        { clinicId, name: { $regex: search, $options: "i" } },
         { _id: 1 }
-      ).lean();
+      )
+        .lean()
+        .limit(50) // limit to reduce lookup load
+        .then((res) => res.map((p) => p._id));
 
-      const matchingIds = matchingPatients.map((p) => p._id);
-      query.patientId = { $in: matchingIds.length ? matchingIds : [null] }; // ensures no false matches
+      query.patientId = matchingIds.length ? { $in: matchingIds } : { $in: [] };
     }
 
-    // ✅ Fetch appointments with populated patient info
-    const appointments = await Appointment.find(query)
-      .populate({
-        path: "patientId",
-        select: "name phone email age gender patientUniqueId",
-      })
-      .sort({ _id: -1 })
-      .limit(parseInt(limit))
-      .lean();
-
-    // ✅ Total count
-    const totalAppointments = await Appointment.countDocuments({
-      clinicId,
-      appointmentDate: query.appointmentDate,
-    });
+    // ✅ Fetch data and total count in parallel
+    const [appointments, totalAppointments] = await Promise.all([
+      Appointment.find(query)
+        .sort({ opNumber: 1 })
+        .limit(Number(limit))
+        .populate("patientId", "name phone email age gender patientUniqueId")
+        .select("patientId appointmentDate appointmentTime opNumber status createdAt")
+        .lean(),
+      Appointment.countDocuments({
+        clinicId,
+        appointmentDate: query.appointmentDate,
+      }),
+    ]);
 
     return res.status(200).json({
       success: true,
@@ -438,6 +446,7 @@ const getAppointmentsByClinic = async (req, res) => {
     });
   }
 };
+
 const clearDoctorFromAppointments = async (req, res) => {
   try {
     const { clinicId, doctorId } = req.body;
