@@ -257,6 +257,10 @@ const getPatientHistory = async (req, res) => {
         referrals: 1,
         status: 1,
         createdAt: 1,
+        consultationFee: 1,      // ✅ ADDED
+        procedures: 1,            // ✅ ADDED
+        totalAmount: 1,           // ✅ ADDED
+        isPaid: 1,                // ✅ ADDED
       }
     )
       .sort({ visitDate: -1 })
@@ -271,27 +275,26 @@ const getPatientHistory = async (req, res) => {
 
     // ✅ 4. Fetch doctor details from microservice in parallel
     const doctorMap = {};
-  await Promise.all(
-  doctorIds.map(async (doctorId) => {
-    try {
-      const { data } = await axios.get(
-        `${process.env.AUTH_SERVICE_BASE_URL}/doctor/details/${doctorId}`
-      );
+    await Promise.all(
+      doctorIds.map(async (doctorId) => {
+        try {
+          const { data } = await axios.get(
+            `${process.env.AUTH_SERVICE_BASE_URL}/doctor/details/${doctorId}`
+          );
 
-      // Corrected access
-      if (data?.success && data?.data) {
-        doctorMap[doctorId] = {
-          name: data.data.name,
-          phoneNumber: data.data.phoneNumber,
-          specialization: data.data.specialization || null,
-        };
-      }
-    } catch (err) {
-      console.warn(`⚠️ Failed to fetch doctor ${doctorId}:`, err.message);
-    }
-  })
-);
-
+          // Corrected access
+          if (data?.success && data?.data) {
+            doctorMap[doctorId] = {
+              name: data.data.name,
+              phoneNumber: data.data.phoneNumber,
+              specialization: data.data.specialization || null,
+            };
+          }
+        } catch (err) {
+          console.warn(`⚠️ Failed to fetch doctor ${doctorId}:`, err.message);
+        }
+      })
+    );
 
     // ✅ 5. Merge doctor info into each patient history record
     const enrichedHistory = history.map(h => ({

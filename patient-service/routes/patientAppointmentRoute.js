@@ -5,7 +5,9 @@ const patientAppointmentRouter=Router();
 patientAppointmentRouter.route("/book/:id").post(createAppointment)
 patientAppointmentRouter.route("/fetch").get(authClinicDoctor,getTodaysAppointments)
 patientAppointmentRouter.route("/fetch/:id").get(getAppointmentById)
-patientAppointmentRouter.route("/patient-history/:id").get(getPatientHistory);
+patientAppointmentRouter.route("/patient-history/:id")
+  .get(getPatientHistory)
+  .post(getPatientHistory); 
 patientAppointmentRouter.route("/lab-details/:id").patch(addLabOrderToPatientHistory);
 patientAppointmentRouter.route("/clinic-appointments/:id").get(getAppointmentsByClinic);
 patientAppointmentRouter.route("/remove/doctor").patch(clearDoctorFromAppointments);
