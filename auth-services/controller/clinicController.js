@@ -208,32 +208,81 @@ const editClinic = async (req, res) => {
   }
 }
 const getClinicStaffs = async (req, res) => {
-  const {id: clinicId } = req.params;
-
   try {
-    const clinic = await Clinic.findById(clinicId)
-      .populate("staffs.nurses")
-      .populate("staffs.receptionists", )
-      .populate("staffs.pharmacists", )
-      .populate("staffs.accountants",);
+    const { id: clinicId } = req.params;
+    const { role, cursor, limit = 10 } = req.query;
 
+    if (!clinicId || !mongoose.Types.ObjectId.isValid(clinicId)) {
+      return res.status(400).json({ success: false, message: "Invalid clinicId" });
+    }
+
+    const clinic = await Clinic.findById(clinicId).select("name staffs").lean();
     if (!clinic) {
-      return res.status(404).json({ message: "Clinic not found" });
+      return res.status(404).json({ success: false, message: "Clinic not found" });
+    }
+
+    // Role map
+    const roleMap = {
+      nurse: "nurses",
+      receptionist: "receptionists",
+      pharmacist: "pharmacists",
+      accountant: "accountants",
+    };
+
+    // Prepare empty staff object
+    const staffResult = {
+      nurses: [],
+      receptionists: [],
+      pharmacists: [],
+      accountants: [],
+    };
+
+    // Fetch staff by role
+    for (const [key, modelName] of Object.entries(roleMap)) {
+      let staffIds = clinic.staffs[modelName] || [];
+      let query = { _id: { $in: staffIds } };
+
+      if (role && role !== key) continue; // skip other roles if role filter applied
+
+      if (cursor && mongoose.Types.ObjectId.isValid(cursor)) {
+        query._id.$lt = cursor;
+      }
+
+      const ModelMap = {
+        nurse: Nurse,
+        receptionist: Receptionist,
+        pharmacist: Pharmacist,
+        accountant: Accountant,
+      };
+
+      const staffData = await ModelMap[key]
+        .find(query)
+        .sort({ _id: -1 })
+        .limit(Number(limit))
+        .lean();
+
+      staffResult[modelName] = staffData;
     }
 
     res.status(200).json({
+      success: true,
       message: "Clinic staff fetched successfully",
       clinic: {
         id: clinic._id,
         name: clinic.name,
-        staffs: clinic.staffs,
       },
+      staff: staffResult,
     });
   } catch (error) {
     console.error("❌ Error in getClinicStaffs:", error);
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({
+      success: false,
+      message: "Server error while fetching clinic staff",
+      error: error.message,
+    });
   }
 };
+
 
 const getTheme=async (req, res) => {
   try {
@@ -500,6 +549,57 @@ const removeStaffFromClinic = async (req, res) => {
   }
 };
 
+const getClinicStaffCounts = async (req, res) => {
+  try {
+    const { id: clinicId } = req.params;
+
+    // Validate clinicId
+    if (!mongoose.Types.ObjectId.isValid(clinicId)) {
+      return res.status(400).json({ success: false, message: "Invalid clinic ID" });
+    }
+
+    const clinic = await Clinic.findById(clinicId)
+      .select("staffs")
+      .lean();
+
+    if (!clinic) {
+      return res.status(404).json({ success: false, message: "Clinic not found" });
+    }
+
+    // Base counts from clinic's staffs object
+    const staffCounts = {
+      nurses: clinic.staffs?.nurses?.length || 0,
+      receptionists: clinic.staffs?.receptionists?.length || 0,
+      pharmacists: clinic.staffs?.pharmacists?.length || 0,
+      accountants: clinic.staffs?.accountants?.length || 0,
+      technicians: clinic.staffs?.technicians?.length || 0,
+    };
+
+    
+
+    const total =
+      staffCounts.nurses +
+      staffCounts.receptionists +
+      staffCounts.pharmacists +
+      staffCounts.accountants +
+      staffCounts.technicians;
+
+    return res.status(200).json({
+      success: true,
+      message: "Clinic staff counts fetched successfully",
+      clinicId,
+      staffCounts,
+      total,
+    });
+  } catch (error) {
+    console.error("❌ Error in getClinicStaffCounts:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error while fetching staff counts",
+      error: error.message,
+    });
+  }
+};
 
 
-export { registerClinic, loginClinic, viewAllClinics, viewClinicById, editClinic,getClinicStaffs ,getTheme,editTheme,subscribeClinic,getClinicDashboardDetails, addShiftToStaff,removeStaffFromClinic };
+export { registerClinic, loginClinic, viewAllClinics, viewClinicById, editClinic,getClinicStaffs ,getTheme,editTheme,subscribeClinic,getClinicDashboardDetails, addShiftToStaff,removeStaffFromClinic,getClinicStaffCounts };

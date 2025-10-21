@@ -24,6 +24,8 @@ const doctorClinicSchema = new Schema({
     enum: ["pending", "active", "removed"],
     default: "active"
   },
+  specializations: [{ type: String, required: true }],
+
   standardConsultationFee: { type: Number, default: 0 ,required:true},
   clinicLogin: {
     email: { type: String, lowercase: true, trim: true },

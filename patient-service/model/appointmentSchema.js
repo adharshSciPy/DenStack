@@ -37,6 +37,10 @@ const appointmentSchema = new mongoose.Schema({
     opNumber: { type: Number, required: true } 
 }, { timestamps: true });
 
-appointmentSchema.index({ patientId: 1, appointmentDate: -1 });
+appointmentSchema.index(
+  { clinicId: 1, doctorId: 1, appointmentDate: 1, appointmentTime: 1, status: 1, opNumber: 1 },
+  { unique: true, partialFilterExpression: { doctorId: { $exists: true } } }
+);
+
 
 export default mongoose.model("Appointment", appointmentSchema);

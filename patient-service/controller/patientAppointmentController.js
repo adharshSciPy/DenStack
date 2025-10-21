@@ -48,31 +48,38 @@ const createAppointment = async (req, res) => {
     if (!patient)
       return res.status(404).json({ success: false, message: "Patient not found in this clinic" });
 
-    // 4️⃣ Verify receptionist belongs to this clinic via Auth Service
-    try {
-      const staffRes = await axios.get(`${AUTH_SERVICE_BASE_URL}/clinic/all-staffs/${clinicId}`);
-      const clinic = staffRes.data?.clinic;
+   // 4️⃣ Verify receptionist belongs to this clinic via Auth Service
+try {
+  const staffRes = await axios.get(`${AUTH_SERVICE_BASE_URL}/clinic/all-staffs/${clinicId}`);
+  const clinic = staffRes.data?.clinic;
+  const staff = staffRes.data?.staff; // <-- important fix
 
-      if (!clinic || !clinic.staffs)
-        return res.status(404).json({ success: false, message: "Clinic or staff data unavailable" });
+  if (!clinic || !staff) {
+    return res.status(404).json({
+      success: false,
+      message: "Clinic or staff data unavailable",
+    });
+  }
 
-      const receptionistList = clinic.staffs.receptionists || [];
-      const isReceptionistInClinic = receptionistList.some(
-        (rec) => rec._id.toString() === receptionistId.toString()
-      );
+  const receptionistList = staff.receptionists || [];
+  const isReceptionistInClinic = receptionistList.some(
+    (rec) => rec._id.toString() === receptionistId.toString()
+  );
 
-      if (!isReceptionistInClinic)
-        return res.status(403).json({
-          success: false,
-          message: "Receptionist does not belong to this clinic",
-        });
-    } catch (err) {
-      return res.status(503).json({
-        success: false,
-        message: "Unable to verify receptionist from Auth Service",
-        error: err.response?.data?.message || err.message,
-      });
-    }
+  if (!isReceptionistInClinic) {
+    return res.status(403).json({
+      success: false,
+      message: "Receptionist does not belong to this clinic",
+    });
+  }
+} catch (err) {
+  return res.status(503).json({
+    success: false,
+    message: "Unable to verify receptionist from Auth Service",
+    error: err.response?.data?.message || err.message,
+  });
+}
+
 
     // 5️⃣ Fetch doctor availability from Clinic Service
     let availabilities = [];
@@ -138,7 +145,10 @@ const createAppointment = async (req, res) => {
 
     // 8️⃣ Generate daily OP number per clinic per date
     const lastAppointmentToday = await Appointment.findOne({ clinicId, appointmentDate }).sort({ opNumber: -1 });
-    const nextOpNumber = lastAppointmentToday ? lastAppointmentToday.opNumber + 1 : 1;
+   const nextOpNumber = lastAppointmentToday
+  ? Number(lastAppointmentToday.opNumber) + 1
+  : 1;
+
 
     // 9️⃣ Create appointment
     const appointment = new Appointment({
@@ -174,29 +184,38 @@ const getTodaysAppointments = async (req, res) => {
     const { doctorId, clinicId } = req.doctorClinic;
 
     const today = new Date();
-    const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
 
     const appointments = await Appointment.find({
       doctorId,
       clinicId,
       appointmentDate: todayStr,
-      status: "scheduled"
+      status: "scheduled",
     })
-    .populate("patientId", "name phone email")
-    .sort({ appointmentTime: 1 });
+      .populate("patientId", "name phone email age gender patientUniqueId")
+      .sort({ opNumber: 1 })
+      .lean(); 
+
+    appointments.sort((a, b) => a.opNumber - b.opNumber);
 
     return res.status(200).json({
       success: true,
-      message: `Appointments for today (${todayStr})`,
-      doctorId,
-      clinicId,
-      appointments
+      message: "Appointments fetched successfully",
+      count: appointments.length,
+      totalAppointments: appointments.length,
+      data: appointments,
+      nextCursor: appointments?.length ? appointments[appointments.length - 1]._id : null,
     });
   } catch (err) {
     console.error("getTodaysAppointments error:", err);
-    return res.status(500).json({ success: false, message: "Server error", error: err.message });
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: err.message,
+    });
   }
 };
+
 const getAppointmentById = async (req, res) => {
   try {
     const { id: appointmentId } = req.params;
@@ -361,23 +380,25 @@ const getAppointmentsByClinic = async (req, res) => {
     const { id: clinicId } = req.params;
     const { startDate, endDate, search, limit = 10, lastId } = req.query;
 
+    // ✅ Validate clinicId
     if (!clinicId || !mongoose.Types.ObjectId.isValid(clinicId)) {
       return res.status(400).json({ success: false, message: "Invalid clinicId" });
     }
 
+    // ✅ Construct base query
     const query = { clinicId };
 
     // ✅ Handle date filters
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(
+      today.getDate()
+    ).padStart(2, "0")}`;
+
     if (startDate && endDate) {
       query.appointmentDate = { $gte: startDate, $lte: endDate };
     } else if (startDate) {
       query.appointmentDate = startDate;
     } else {
-      const today = new Date();
-      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(
-        2,
-        "0"
-      )}-${String(today.getDate()).padStart(2, "0")}`;
       query.appointmentDate = todayStr;
     }
 
@@ -386,44 +407,67 @@ const getAppointmentsByClinic = async (req, res) => {
       query._id = { $lt: new mongoose.Types.ObjectId(lastId) };
     }
 
-    // ✅ If there's a search term, find matching patient IDs first
-    let patientFilter = {};
-    if (search) {
-      const matchingPatients = await Patient.find(
+    // ✅ Optional patient search (by name OR patientUniqueId)
+    if (search?.trim()) {
+      const matchingIds = await Patient.find(
         {
           clinicId,
-          name: { $regex: search, $options: "i" },
+          $or: [
+            { name: { $regex: search, $options: "i" } },
+            { patientUniqueId: { $regex: search, $options: "i" } },
+          ],
         },
         { _id: 1 }
-      ).lean();
+      )
+        .lean()
+        .limit(50)
+        .then((res) => res.map((p) => p._id));
 
-      const matchingIds = matchingPatients.map((p) => p._id);
-      query.patientId = { $in: matchingIds.length ? matchingIds : [null] }; // ensures no false matches
+      query.patientId = matchingIds.length ? { $in: matchingIds } : { $in: [] };
     }
 
-    // ✅ Fetch appointments with populated patient info
-    const appointments = await Appointment.find(query)
-      .populate({
-        path: "patientId",
-        select: "name phone email age gender patientUniqueId",
-      })
-      .sort({ _id: -1 })
-      .limit(parseInt(limit))
-      .lean();
+    // ✅ Fetch appointments and statistics in parallel
+    const [appointments, counts] = await Promise.all([
+      Appointment.find(query)
+        .sort({ opNumber: 1 })
+        .limit(Number(limit))
+        .populate("patientId", "name phone email age gender patientUniqueId")
+        .select("patientId appointmentDate appointmentTime opNumber status createdAt")
+        .lean(),
 
-    // ✅ Total count
-    const totalAppointments = await Appointment.countDocuments({
-      clinicId,
-      appointmentDate: query.appointmentDate,
-    });
+      Appointment.aggregate([
+        {
+          $match: {
+            clinicId: new mongoose.Types.ObjectId(clinicId),
+            appointmentDate: query.appointmentDate,
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            totalAppointments: { $sum: 1 },
+            completedCount: { $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] } },
+            cancelledCount: { $sum: { $cond: [{ $eq: ["$status", "cancelled"] }, 1, 0] } },
+            scheduledCount: { $sum: { $cond: [{ $eq: ["$status", "scheduled"] }, 1, 0] } },
+          },
+        },
+      ]),
+    ]);
+
+    const stats = counts[0] || {
+      totalAppointments: 0,
+      completedCount: 0,
+      cancelledCount: 0,
+      scheduledCount: 0,
+    };
 
     return res.status(200).json({
       success: true,
       message: "Appointments fetched successfully",
       count: appointments.length,
-      totalAppointments,
       data: appointments,
       nextCursor: appointments.length ? appointments[appointments.length - 1]._id : null,
+      stats,
     });
   } catch (error) {
     console.error("getAppointmentsByClinic error:", error);
@@ -474,5 +518,207 @@ const clearDoctorFromAppointments = async (req, res) => {
     });
   }
 };
+const appointmentReschedule = async (req, res) => {
+  try {
+    const { id: appointmentId } = req.params;
+    const { newDate, newTime, doctorId } = req.body;
 
-export { createAppointment ,getTodaysAppointments,getAppointmentById, getPatientHistory, addLabOrderToPatientHistory,getAppointmentsByClinic,clearDoctorFromAppointments};
+    // ✅ Validate appointmentId
+    if (!appointmentId || !mongoose.Types.ObjectId.isValid(appointmentId)) {
+      return res.status(400).json({ success: false, message: "Invalid appointmentId" });
+    }
+
+    // ✅ Validate date & time format
+    if (!newDate || !/^\d{4}-\d{2}-\d{2}$/.test(newDate)) {
+      return res.status(400).json({ success: false, message: "Invalid newDate format (use YYYY-MM-DD)" });
+    }
+    if (!newTime || !/^\d{2}:\d{2}$/.test(newTime)) {
+      return res.status(400).json({ success: false, message: "Invalid newTime format (use HH:mm)" });
+    }
+
+    // ✅ Fetch appointment
+    const appointment = await Appointment.findById(appointmentId);
+    if (!appointment) {
+      return res.status(404).json({ success: false, message: "Appointment not found" });
+    }
+
+    // ✅ Only scheduled appointments can be rescheduled
+    if (appointment.status !== "scheduled") {
+      return res.status(400).json({
+        success: false,
+        message: "Only scheduled appointments can be rescheduled",
+      });
+    }
+
+    const clinicId = appointment.clinicId;
+    let updatedDoctorId = appointment.doctorId;
+
+    // ✅ If appointment has no doctorId, require a new one
+    if (!updatedDoctorId && !doctorId) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "This appointment has no assigned doctor. Please provide a doctorId to assign.",
+      });
+    }
+
+    // ✅ If doctorId provided, validate and assign it
+    if (doctorId) {
+      if (!mongoose.Types.ObjectId.isValid(doctorId)) {
+        return res.status(400).json({ success: false, message: "Invalid doctorId" });
+      }
+      updatedDoctorId = doctorId;
+    }
+
+    // ✅ Parse and validate new date/time
+    const [hour, minute] = newTime.split(":").map(Number);
+    if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+      return res.status(400).json({ success: false, message: "Invalid time values" });
+    }
+
+    const appointmentDateTime = new Date(`${newDate}T${newTime}:00`);
+    const now = new Date();
+    if (appointmentDateTime.getTime() <= now.getTime()) {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot reschedule to a past date/time",
+      });
+    }
+
+    // ✅ Fetch doctor availability from Clinic Service
+    let availabilities = [];
+    try {
+      const availRes = await axios.get(`${CLINIC_SERVICE_BASE_URL}/department-based/availability`, {
+        params: { doctorId: updatedDoctorId, clinicId },
+      });
+
+      availabilities = availRes.data?.doctors?.[0]?.availability || [];
+      if (!availabilities.length) {
+        return res.status(400).json({
+          success: false,
+          message: "Doctor has no availability in this clinic",
+        });
+      }
+    } catch (err) {
+      return res.status(503).json({
+        success: false,
+        message: "Unable to fetch doctor availability from Clinic Service",
+        error: err.response?.data?.message || err.message,
+      });
+    }
+
+    // ✅ Validate against availability schedule
+    const daysOfWeek = [
+      "Sunday", "Monday", "Tuesday", "Wednesday",
+      "Thursday", "Friday", "Saturday",
+    ];
+    const appointmentDayIndex = new Date(newDate).getDay();
+    const appointmentDay = daysOfWeek[appointmentDayIndex];
+    const appointmentMinutes = hour * 60 + minute;
+
+    const isAvailable = availabilities.some((slot) => {
+      const slotClinicId = slot.clinicId?._id || slot.clinicId;
+      if (!slotClinicId || slotClinicId.toString() !== clinicId.toString()) return false;
+
+      if (!slot.dayOfWeek || slot.dayOfWeek.toLowerCase() !== appointmentDay.toLowerCase())
+        return false;
+
+      const [startH, startM] = slot.startTime.split(":").map(Number);
+      const [endH, endM] = slot.endTime.split(":").map(Number);
+      const slotStart = startH * 60 + startM;
+      const slotEnd = endH * 60 + endM;
+
+      return appointmentMinutes >= slotStart && appointmentMinutes < slotEnd;
+    });
+
+    if (!isAvailable) {
+      return res.status(400).json({
+        success: false,
+        message: `Doctor is not available on ${appointmentDay} at ${newTime}`,
+      });
+    }
+
+    // ✅ Prevent double booking for doctor at the same time
+    const existingAppointment = await Appointment.findOne({
+      _id: { $ne: appointmentId }, // exclude current appointment
+      doctorId: updatedDoctorId,
+      clinicId,
+      appointmentDate: newDate,
+      appointmentTime: newTime,
+      status: { $in: ["scheduled", "confirmed"] },
+    });
+
+    if (existingAppointment) {
+      return res.status(400).json({
+        success: false,
+        message: "Doctor already has an appointment at this time",
+      });
+    }
+
+    // ✅ Apply updates
+    appointment.doctorId = updatedDoctorId;
+    appointment.appointmentDate = newDate;
+    appointment.appointmentTime = newTime;
+
+    await appointment.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Appointment rescheduled successfully",
+      appointment,
+    });
+  } catch (error) {
+    console.error("❌ appointmentReschedule error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error while rescheduling appointment",
+      error: error.message,
+    });
+  }
+};
+const cancelAppointment = async (req, res) => {
+  try {
+    const { id: appointmentId } = req.params;
+    const { cancelledBy } = req.body; 
+
+    // ✅ Validate appointmentId
+    if (!appointmentId || !mongoose.Types.ObjectId.isValid(appointmentId)) {
+      return res.status(400).json({ success: false, message: "Invalid appointmentId" });
+    }
+
+    // ✅ Fetch appointment
+    const appointment = await Appointment.findById(appointmentId);
+    if (!appointment) {
+      return res.status(404).json({ success: false, message: "Appointment not found" });
+    }
+
+    // ✅ Check if already cancelled or completed
+    if (appointment.status !== "scheduled") {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot cancel an appointment with status "${appointment.status}"`,
+      });
+    }
+
+    // ✅ Update status to cancelled
+    appointment.status = "cancelled";
+    appointment.updatedBy = cancelledBy || null;
+
+    await appointment.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Appointment cancelled successfully",
+      appointment,
+    });
+  } catch (error) {
+    console.error("❌ cancelAppointment error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error while cancelling appointment",
+      error: error.message,
+    });
+  }
+};
+
+export { createAppointment ,getTodaysAppointments,getAppointmentById, getPatientHistory, addLabOrderToPatientHistory,getAppointmentsByClinic,clearDoctorFromAppointments,appointmentReschedule, cancelAppointment};

@@ -9,10 +9,10 @@ dotenv.config();
 
 // const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const AUTH_SERVICE_BASE_URL = process.env.AUTH_SERVICE_BASE_URL;
-
+const PATIENT_SERVICE_BASE_URL = process.env.PATIENT_SERVICE_BASE_URL;
 const onboardDoctor = async (req, res) => {
   try {
-    const { clinicId, doctorUniqueId, roleInClinic, clinicEmail, clinicPassword, standardConsultationFee, createdBy } = req.body;
+    const { clinicId, doctorUniqueId, roleInClinic, clinicEmail, clinicPassword, standardConsultationFee,specialization, createdBy } = req.body;
 
     // Validate required fields
     if (!mongoose.Types.ObjectId.isValid(clinicId))
@@ -23,6 +23,8 @@ const onboardDoctor = async (req, res) => {
       return res.status(400).json({ success: false, message: "Clinic email/password are required" });
     if (!standardConsultationFee || standardConsultationFee < 0)
       return res.status(400).json({ success: false, message: "Invalid standardConsultationFee" });
+if (!specialization || !Array.isArray(specialization) || specialization.length === 0) 
+      return res.status(400).json({ success: false, message: "At least one specialization is required" });    
 
     // Fetch doctor from auth-service
     let doctor;
@@ -58,6 +60,7 @@ const onboardDoctor = async (req, res) => {
         password: hashedPassword, // ✅ store only hashed password
       },
       standardConsultationFee,
+      specializations: specialization,
       createdBy: createdBy || undefined,
     });
 
@@ -72,6 +75,7 @@ const onboardDoctor = async (req, res) => {
         clinicId: newMapping.clinicId,
         roleInClinic: newMapping.roleInClinic,
         status: newMapping.status,
+        specializations: newMapping.specializations,
         standardConsultationFee: newMapping.standardConsultationFee,
         clinicLogin: {
           email: newMapping.clinicLogin.email,
@@ -628,25 +632,31 @@ const getAllActiveDoctorsOnClinic = async (req, res) => {
 
 
 const clinicDoctorLogin = async (req, res) => {
-  const { clinicEmail, clinicPassword } = req.body;
+  const { clinicEmail, clinicPassword,clinicId } = req.body;
 
   try {
     // ✅ Validate input
-    if (!clinicEmail || !clinicPassword) {
-      return res.status(400).json({ success: false, message: "Email and password are required" });
+    if (!clinicEmail || !clinicPassword || !clinicId) {
+      return res.status(400).json({ success: false, message: "Email, password, and clinicId are required" });
+    }
+    if (!mongoose.Types.ObjectId.isValid(clinicId)) {
+      return res.status(400).json({ success: false, message: "Invalid clinicId" });
     }
 
-    // ✅ Find doctor-clinic mapping with this clinic email
+  
     const doctorClinic = await DoctorClinic.findOne({ "clinicLogin.email": clinicEmail });
 
     if (!doctorClinic) {
       return res.status(404).json({ success: false, message: "Invalid email or password" });
     }
 
-    // ✅ Compare password (assuming hashed in DB)
+    
     const isMatch = await bcrypt.compare(clinicPassword, doctorClinic.clinicLogin.password);
     if (!isMatch) {
       return res.status(401).json({ success: false, message: "Invalid email or password" });
+    }
+    if(doctorClinic.clinicId.toString()!==clinicId){
+      return res.status(403).json({ success: false, message: "Doctor not associated with this clinic" });
     }
 
     // ✅ Generate JWT
@@ -693,5 +703,227 @@ const refreshToken = jwt.sign(
   }
 };
 
+const removeDoctorFromClinic = async (req, res) => {
+  try {
+    const { clinicId, doctorId } = req.body;
 
-export{onboardDoctor,addDoctorAvailability,getAvailability,clinicDoctorLogin,getDoctorsBasedOnDepartment,getDoctorsWithAvailability,getAllActiveDoctorsOnClinic}
+    // ✅ Validate inputs
+    if (!clinicId || !mongoose.Types.ObjectId.isValid(clinicId)) {
+      return res.status(400).json({ success: false, message: "Invalid clinicId" });
+    }
+    if (!doctorId || !mongoose.Types.ObjectId.isValid(doctorId)) {
+      return res.status(400).json({ success: false, message: "Invalid doctorId" });
+    }
+
+    // ✅ Check mapping
+    const mapping = await DoctorClinic.findOne({ clinicId, doctorId });
+    if (!mapping) {
+      return res.status(404).json({ success: false, message: "Doctor not onboarded in this clinic" });
+    }
+
+    // ✅ Delete doctor-clinic record
+    await DoctorClinic.findByIdAndDelete(mapping._id);
+
+    // ✅ Call Appointment Service to clear doctor references
+    let updatedAppointments = [];
+    try {
+      const response = await axios.put(`${PATIENT_SERVICE_BASE_URL}/appointment/clear-doctor-from-appointments`, {
+        clinicId,
+        doctorId,
+      });
+      updatedAppointments = response.data?.updatedAppointments || [];
+    } catch (err) {
+      console.error("❌ Error updating appointments:", err.response?.data || err.message);
+    }
+
+    // ✅ Respond
+    return res.status(200).json({
+      success: true,
+      message: "Doctor removed from clinic successfully",
+      deletedMappingId: mapping._id,
+      affectedAppointments: updatedAppointments.length,
+      updatedAppointments,
+    });
+  } catch (error) {
+    console.error("❌ removeDoctorFromClinic error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error while removing doctor from clinic",
+      error: error.message,
+    });
+  }
+};
+const getSingleDoctorWithinClinic = async (req, res) => {
+  try {
+    const { clinicId, doctorId } = req.params;
+
+    // Validate IDs
+    if (!clinicId || !mongoose.Types.ObjectId.isValid(clinicId))
+      return res.status(400).json({ success: false, message: "Invalid clinicId" });
+
+    if (!doctorId || !mongoose.Types.ObjectId.isValid(doctorId))
+      return res.status(400).json({ success: false, message: "Invalid doctorId" });
+
+    // Fetch the DoctorClinic entry
+    const doctorClinic = await DoctorClinic.findOne({ clinicId, doctorId }).lean();
+
+    if (!doctorClinic)
+      return res.status(404).json({ success: false, message: "Doctor not found in this clinic" });
+
+    // Fetch only the doctor’s name from Auth service
+    const doctorRes = await axios.get(`${AUTH_SERVICE_BASE_URL}/doctor/details/${doctorId}`);
+    const doctorData = doctorRes.data?.data;
+
+    if (!doctorData)
+      return res.status(404).json({ success: false, message: "Doctor details not found in Auth Service" });
+
+    // Combine doctor name with all DoctorClinic details
+    const responseData = {
+      ...doctorClinic, // all fields from DoctorClinic
+      name: doctorData.name, // override/add doctor name
+    };
+
+    return res.status(200).json({
+      success: true,
+      message: "Doctor details fetched successfully",
+      data: responseData,
+    });
+  } catch (error) {
+    console.error("❌ getSingleDoctorWithinClinic error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error while fetching doctor",
+      error: error.message,
+    });
+  }
+};
+const editDoctorAvailability = async (req, res) => {
+  try {
+    const { id: availabilityId } = req.params; 
+    const { clinicId, doctorUniqueId, dayOfWeek, startTime, endTime, updatedBy } = req.body;
+
+    // ✅ Step 1: Basic validation
+    if (!mongoose.Types.ObjectId.isValid(availabilityId)) {
+      return res.status(400).json({ success: false, message: "Invalid availabilityId" });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(clinicId)) {
+      return res.status(400).json({ success: false, message: "Invalid clinicId" });
+    }
+
+    if (!doctorUniqueId || !dayOfWeek || !startTime || !endTime) {
+      return res.status(400).json({
+        success: false,
+        message: "doctorUniqueId, dayOfWeek, startTime, and endTime are required",
+      });
+    }
+
+    // ✅ Step 2: Fetch doctor from auth-service
+    let doctor;
+    try {
+      const url = `${AUTH_SERVICE_BASE_URL}/doctor/details-uniqueid/${doctorUniqueId}`;
+      const response = await axios.get(url);
+
+      if (response.data?.success && response.data.doctor) {
+        doctor = response.data.doctor;
+      } else {
+        return res.status(404).json({
+          success: false,
+          message: "Doctor not found in auth-service",
+        });
+      }
+    } catch (error) {
+      console.error("Axios error fetching doctor:", error.response?.data || error.message);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to fetch doctor from auth-service",
+        details: error.response?.data || error.message,
+      });
+    }
+
+    // ✅ Step 3: Check if availability exists
+    const availability = await DoctorAvailability.findById(availabilityId);
+    if (!availability) {
+      return res.status(404).json({
+        success: false,
+        message: "Doctor availability not found",
+      });
+    }
+
+    // ✅ Step 4: Verify doctor-clinic association
+    if (
+      availability.doctorId.toString() !== doctor._id.toString() ||
+      availability.clinicId.toString() !== clinicId
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "This availability does not belong to the specified doctor or clinic",
+      });
+    }
+
+    // ✅ Step 5: Validate time range
+    const toMinutes = (time) => {
+      const [h, m] = time.split(":").map(Number);
+      return h * 60 + m;
+    };
+    const newStart = toMinutes(startTime);
+    const newEnd = toMinutes(endTime);
+
+    if (newEnd <= newStart) {
+      return res.status(400).json({
+        success: false,
+        message: "End time must be later than start time",
+      });
+    }
+
+    // ✅ Step 6: Check overlapping availability (excluding current slot)
+    const existingSlots = await DoctorAvailability.find({
+      doctorId: doctor._id,
+      dayOfWeek,
+      isActive: true,
+      _id: { $ne: availabilityId },
+    });
+
+    const hasConflict = existingSlots.some((slot) => {
+      const start = toMinutes(slot.startTime);
+      const end = toMinutes(slot.endTime);
+      return newStart < end && newEnd > start; // time ranges overlap
+    });
+
+    if (hasConflict) {
+      return res.status(400).json({
+        success: false,
+        message: `Doctor already has an overlapping availability on ${dayOfWeek} (${startTime} - ${endTime})`,
+      });
+    }
+
+    // ✅ Step 7: Update availability
+    availability.dayOfWeek = dayOfWeek;
+    availability.startTime = startTime;
+    availability.endTime = endTime;
+    availability.updatedBy = updatedBy ? new mongoose.Types.ObjectId(updatedBy) : undefined;
+    availability.updatedAt = new Date();
+
+    await availability.save();
+
+    // ✅ Step 8: Return success
+    return res.status(200).json({
+      success: true,
+      message: "Doctor availability updated successfully",
+      data: availability,
+    });
+
+  } catch (error) {
+    // ✅ Global catch block for unexpected server errors
+    console.error("Unexpected error in editDoctorAvailability:", error);
+    return res.status(500).json({
+      success: false,
+      message: "An unexpected error occurred while editing doctor availability",
+      details: error.message,
+    });
+  }
+};
+
+
+
+export { onboardDoctor, addDoctorAvailability, getAvailability, clinicDoctorLogin, getDoctorsBasedOnDepartment, getDoctorsWithAvailability, getAllActiveDoctorsOnClinic, removeDoctorFromClinic, getSingleDoctorWithinClinic,editDoctorAvailability };
