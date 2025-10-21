@@ -377,6 +377,7 @@ const getAppointmentsByClinic = async (req, res) => {
     const { id: clinicId } = req.params;
     const { startDate, endDate, search, limit = 10, lastId } = req.query;
 
+    // ✅ Validate clinicId
     if (!clinicId || !mongoose.Types.ObjectId.isValid(clinicId)) {
       return res.status(400).json({ success: false, message: "Invalid clinicId" });
     }
@@ -386,10 +387,9 @@ const getAppointmentsByClinic = async (req, res) => {
 
     // ✅ Handle date filters
     const today = new Date();
-    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(
-      2,
-      "0"
-    )}-${String(today.getDate()).padStart(2, "0")}`;
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(
+      today.getDate()
+    ).padStart(2, "0")}`;
 
     if (startDate && endDate) {
       query.appointmentDate = { $gte: startDate, $lte: endDate };
@@ -404,19 +404,26 @@ const getAppointmentsByClinic = async (req, res) => {
       query._id = { $lt: new mongoose.Types.ObjectId(lastId) };
     }
 
-    // ✅ Optional patient search
+    // ✅ Optional patient search (by name OR patientUniqueId)
     if (search?.trim()) {
       const matchingIds = await Patient.find(
-        { clinicId, name: { $regex: search, $options: "i" } },
+        {
+          clinicId,
+          $or: [
+            { name: { $regex: search, $options: "i" } },
+            { patientUniqueId: { $regex: search, $options: "i" } },
+          ],
+        },
         { _id: 1 }
       )
         .lean()
         .limit(50)
         .then((res) => res.map((p) => p._id));
+
       query.patientId = matchingIds.length ? { $in: matchingIds } : { $in: [] };
     }
 
-    // ✅ Fetch appointments (with pagination) and counts in parallel
+    // ✅ Fetch appointments and statistics in parallel
     const [appointments, counts] = await Promise.all([
       Appointment.find(query)
         .sort({ opNumber: 1 })
@@ -425,9 +432,13 @@ const getAppointmentsByClinic = async (req, res) => {
         .select("patientId appointmentDate appointmentTime opNumber status createdAt")
         .lean(),
 
-      // Aggregation for counts
       Appointment.aggregate([
-        { $match: { clinicId: new mongoose.Types.ObjectId(clinicId), appointmentDate: query.appointmentDate } },
+        {
+          $match: {
+            clinicId: new mongoose.Types.ObjectId(clinicId),
+            appointmentDate: query.appointmentDate,
+          },
+        },
         {
           $group: {
             _id: null,
@@ -464,7 +475,6 @@ const getAppointmentsByClinic = async (req, res) => {
     });
   }
 };
-
 const clearDoctorFromAppointments = async (req, res) => {
   try {
     const { clinicId, doctorId } = req.body;

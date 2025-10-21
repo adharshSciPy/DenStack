@@ -797,7 +797,133 @@ const getSingleDoctorWithinClinic = async (req, res) => {
     });
   }
 };
+const editDoctorAvailability = async (req, res) => {
+  try {
+    const { id: availabilityId } = req.params; 
+    const { clinicId, doctorUniqueId, dayOfWeek, startTime, endTime, updatedBy } = req.body;
+
+    // ✅ Step 1: Basic validation
+    if (!mongoose.Types.ObjectId.isValid(availabilityId)) {
+      return res.status(400).json({ success: false, message: "Invalid availabilityId" });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(clinicId)) {
+      return res.status(400).json({ success: false, message: "Invalid clinicId" });
+    }
+
+    if (!doctorUniqueId || !dayOfWeek || !startTime || !endTime) {
+      return res.status(400).json({
+        success: false,
+        message: "doctorUniqueId, dayOfWeek, startTime, and endTime are required",
+      });
+    }
+
+    // ✅ Step 2: Fetch doctor from auth-service
+    let doctor;
+    try {
+      const url = `${AUTH_SERVICE_BASE_URL}/doctor/details-uniqueid/${doctorUniqueId}`;
+      const response = await axios.get(url);
+
+      if (response.data?.success && response.data.doctor) {
+        doctor = response.data.doctor;
+      } else {
+        return res.status(404).json({
+          success: false,
+          message: "Doctor not found in auth-service",
+        });
+      }
+    } catch (error) {
+      console.error("Axios error fetching doctor:", error.response?.data || error.message);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to fetch doctor from auth-service",
+        details: error.response?.data || error.message,
+      });
+    }
+
+    // ✅ Step 3: Check if availability exists
+    const availability = await DoctorAvailability.findById(availabilityId);
+    if (!availability) {
+      return res.status(404).json({
+        success: false,
+        message: "Doctor availability not found",
+      });
+    }
+
+    // ✅ Step 4: Verify doctor-clinic association
+    if (
+      availability.doctorId.toString() !== doctor._id.toString() ||
+      availability.clinicId.toString() !== clinicId
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "This availability does not belong to the specified doctor or clinic",
+      });
+    }
+
+    // ✅ Step 5: Validate time range
+    const toMinutes = (time) => {
+      const [h, m] = time.split(":").map(Number);
+      return h * 60 + m;
+    };
+    const newStart = toMinutes(startTime);
+    const newEnd = toMinutes(endTime);
+
+    if (newEnd <= newStart) {
+      return res.status(400).json({
+        success: false,
+        message: "End time must be later than start time",
+      });
+    }
+
+    // ✅ Step 6: Check overlapping availability (excluding current slot)
+    const existingSlots = await DoctorAvailability.find({
+      doctorId: doctor._id,
+      dayOfWeek,
+      isActive: true,
+      _id: { $ne: availabilityId },
+    });
+
+    const hasConflict = existingSlots.some((slot) => {
+      const start = toMinutes(slot.startTime);
+      const end = toMinutes(slot.endTime);
+      return newStart < end && newEnd > start; // time ranges overlap
+    });
+
+    if (hasConflict) {
+      return res.status(400).json({
+        success: false,
+        message: `Doctor already has an overlapping availability on ${dayOfWeek} (${startTime} - ${endTime})`,
+      });
+    }
+
+    // ✅ Step 7: Update availability
+    availability.dayOfWeek = dayOfWeek;
+    availability.startTime = startTime;
+    availability.endTime = endTime;
+    availability.updatedBy = updatedBy ? new mongoose.Types.ObjectId(updatedBy) : undefined;
+    availability.updatedAt = new Date();
+
+    await availability.save();
+
+    // ✅ Step 8: Return success
+    return res.status(200).json({
+      success: true,
+      message: "Doctor availability updated successfully",
+      data: availability,
+    });
+
+  } catch (error) {
+    // ✅ Global catch block for unexpected server errors
+    console.error("Unexpected error in editDoctorAvailability:", error);
+    return res.status(500).json({
+      success: false,
+      message: "An unexpected error occurred while editing doctor availability",
+      details: error.message,
+    });
+  }
+};
 
 
 
-export{onboardDoctor,addDoctorAvailability,getAvailability,clinicDoctorLogin,getDoctorsBasedOnDepartment,getDoctorsWithAvailability,getAllActiveDoctorsOnClinic,removeDoctorFromClinic,getSingleDoctorWithinClinic};
+export { onboardDoctor, addDoctorAvailability, getAvailability, clinicDoctorLogin, getDoctorsBasedOnDepartment, getDoctorsWithAvailability, getAllActiveDoctorsOnClinic, removeDoctorFromClinic, getSingleDoctorWithinClinic,editDoctorAvailability };
