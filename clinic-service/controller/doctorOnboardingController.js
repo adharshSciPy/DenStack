@@ -470,7 +470,6 @@ const getDoctorsWithAvailability = async (req, res) => {
       clinicId: new mongoose.Types.ObjectId(clinicId),
       status: "active",
     })
-      .sort({ doctorId: 1 })
       .lean();
 
     if (!doctorClinicDocs.length) {
@@ -480,14 +479,12 @@ const getDoctorsWithAvailability = async (req, res) => {
     let doctorIds = doctorClinicDocs.map((d) => d.doctorId.toString());
 
     // 2️⃣ Filter by department BEFORE pagination
-    let filteredDoctorIds = [];
     if (department) {
-      // Fetch details only for doctors that match department
       const deptPromises = doctorIds.map(async (doctorId) => {
         try {
           const doctorRes = await axios.get(`${AUTH_SERVICE_BASE_URL}/doctor/details/${doctorId}`);
-          if (doctorRes.data?.success && doctorRes.data.doctor) {
-            return doctorRes.data.doctor.specialization === department ? doctorRes.data.doctor._id : null;
+          if (doctorRes.data?.success && doctorRes.data?.data) {
+            return doctorRes.data.data.specialization === department ? doctorId : null;
           }
         } catch (err) {
           console.error(`Error fetching doctor ${doctorId}:`, err.message);
@@ -496,54 +493,63 @@ const getDoctorsWithAvailability = async (req, res) => {
       });
 
       const deptResults = await Promise.all(deptPromises);
-      filteredDoctorIds = deptResults.filter(Boolean);
+      doctorIds = deptResults.filter(Boolean);
 
-      if (!filteredDoctorIds.length) {
+      if (!doctorIds.length) {
         return res.status(404).json({ success: false, message: "No doctors found for this department" });
       }
-    } else {
-      filteredDoctorIds = doctorIds;
     }
 
-    const totalDoctors = filteredDoctorIds.length;
+    const totalDoctors = doctorIds.length;
 
     // 3️⃣ Apply pagination
-    const paginatedDoctorIds = filteredDoctorIds.slice(skip, skip + parsedLimit);
+    const paginatedDoctorIds = doctorIds.slice(skip, skip + parsedLimit);
 
-    // 4️⃣ Fetch doctor details in parallel only for paginated IDs
+    // 4️⃣ Fetch doctor details in parallel
     const doctorDetailsMap = {};
-    const detailPromises = paginatedDoctorIds.map(async (doctorId) => {
-      try {
-        const doctorRes = await axios.get(`${AUTH_SERVICE_BASE_URL}/doctor/details/${doctorId}`);
-        doctorDetailsMap[doctorId] = doctorRes.data?.success && doctorRes.data.doctor
-          ? doctorRes.data.doctor
-          : { _id: doctorId, name: "Unknown Doctor" };
-      } catch (err) {
-        console.error(`Error fetching doctor ${doctorId}:`, err.message);
-        doctorDetailsMap[doctorId] = { _id: doctorId, name: "Unknown Doctor" };
-      }
-    });
-    await Promise.all(detailPromises);
+    await Promise.all(
+      paginatedDoctorIds.map(async (doctorId) => {
+        try {
+          const doctorRes = await axios.get(`${AUTH_SERVICE_BASE_URL}/doctor/details/${doctorId}`);
+          doctorDetailsMap[doctorId] = doctorRes.data?.success && doctorRes.data?.data
+            ? doctorRes.data.data
+            : { _id: doctorId, name: "Unknown Doctor" };
+        } catch (err) {
+          console.error(`Error fetching doctor ${doctorId}:`, err.message);
+          doctorDetailsMap[doctorId] = { _id: doctorId, name: "Unknown Doctor" };
+        }
+      })
+    );
 
-    // 5️⃣ Fetch availabilities only for paginated doctors
+    // 5️⃣ Fetch availabilities for paginated doctors
     const allAvailabilities = await DoctorAvailability.find({
       doctorId: { $in: paginatedDoctorIds.map((id) => new mongoose.Types.ObjectId(id)) },
-      isActive: true,
     })
-      .select("doctorId clinicId dayOfWeek startTime endTime")
       .populate("clinicId", "name address")
       .lean();
 
-    // 6️⃣ Map doctors with availability
+    // 6️⃣ Map doctors with availability and clinic info
     const doctors = paginatedDoctorIds.map((id) => {
       const docClinic = doctorClinicDocs.find((d) => d.doctorId.toString() === id) || {};
+      const availabilities = allAvailabilities
+        .filter((a) => a.doctorId.toString() === id)
+        .flatMap((rec) =>
+          (rec.availability || []).filter(a => a.isActive).map(a => ({
+            dayOfWeek: a.dayOfWeek,
+            startTime: a.startTime,
+            endTime: a.endTime,
+            isActive: a.isActive,
+            clinic: rec.clinicId,
+          }))
+        );
+
       return {
         doctorId: id,
         roleInClinic: docClinic.roleInClinic,
         clinicLogin: { email: docClinic.clinicLogin?.email },
         status: docClinic.status,
         doctor: doctorDetailsMap[id],
-        availability: allAvailabilities.filter((a) => a.doctorId.toString() === id),
+        availability: availabilities,
       };
     });
 
@@ -559,6 +565,7 @@ const getDoctorsWithAvailability = async (req, res) => {
       limit: parsedLimit,
       doctors,
     });
+
   } catch (err) {
     console.error("Error fetching doctors with availability:", err);
     return res.status(500).json({
