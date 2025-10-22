@@ -137,7 +137,7 @@ const registerPatient = async (req, res) => {
 //   }
 // };
 const getPatientWithUniqueId = async (req, res) => {
-  const { id: uniqueId } = req.body;
+  const { id: uniqueId } = req.query;
 
   if (!uniqueId) {
     return res.status(400).json({ success: false, message: "Unique ID is required" });
