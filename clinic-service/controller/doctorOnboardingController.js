@@ -88,117 +88,163 @@ if (!specialization || !Array.isArray(specialization) || specialization.length =
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
-
 const addDoctorAvailability = async (req, res) => {
-  const { id: doctorUniqueId } = req.params; // doctorUniqueId from URL
-  const { clinicId, daysOfWeek, startTime, endTime, createdBy } = req.body;
+  const { id: doctorUniqueId } = req.params;
+  const { clinicId, availability = [], createdBy } = req.body;
 
-  // ✅ Validate input
-  if (!mongoose.Types.ObjectId.isValid(clinicId)) {
-    return res.status(400).json({ success: false, message: "Invalid clinicId" });
-  }
-  if (!doctorUniqueId || !Array.isArray(daysOfWeek) || daysOfWeek.length === 0) {
-    return res.status(400).json({
-      success: false,
-      message: "doctorUniqueId, daysOfWeek[], startTime, and endTime are required",
-    });
-  }
-
-  // ✅ Fetch doctor from auth-service by uniqueId
-  let doctor;
   try {
-    const url = `${AUTH_SERVICE_BASE_URL}/doctor/details-uniqueid/${doctorUniqueId}`;
-    const response = await axios.get(url);
-
-    if (response.data?.success && response.data.doctor) {
-      doctor = response.data.doctor;
-    } else {
-      return res.status(404).json({ success: false, message: "Doctor not found in auth-service" });
+    // ✅ Validate clinic ID
+    if (!mongoose.Types.ObjectId.isValid(clinicId)) {
+      return res.status(400).json({ success: false, message: "Invalid clinicId" });
     }
-  } catch (error) {
-    console.error("Axios error fetching doctor:", error.response?.data || error.message);
-    return res.status(500).json({
-      success: false,
-      message: "Failed to fetch doctor from auth-service",
-      details: error.response?.data || error.message,
+
+    // ✅ Validate inputs
+    if (!doctorUniqueId || !Array.isArray(availability) || availability.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "doctorUniqueId and non-empty availability[] are required",
+      });
+    }
+
+    // ✅ Fetch doctor from auth-service
+    let doctor;
+    try {
+      const url = `${AUTH_SERVICE_BASE_URL}/doctor/details-uniqueid/${doctorUniqueId}`;
+      const response = await axios.get(url);
+      if (response.data?.success && response.data?.doctor) {
+        doctor = response.data.doctor;
+      } else {
+        return res.status(404).json({ success: false, message: "Doctor not found in auth-service" });
+      }
+    } catch (err) {
+      console.error("Error fetching doctor:", err.message);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to fetch doctor details from auth-service",
+        details: err.message,
+      });
+    }
+
+    // ✅ Ensure doctor is onboarded in this clinic
+    const onboarded = await DoctorClinic.findOne({
+      doctorId: new mongoose.Types.ObjectId(doctor._id),
+      clinicId: new mongoose.Types.ObjectId(clinicId),
+      status: "active",
     });
-  }
+    if (!onboarded) {
+      return res.status(403).json({
+        success: false,
+        message: "Doctor is not onboarded to this clinic.",
+      });
+    }
 
-  // ✅ Ensure doctor is onboarded in this clinic
-  const onboarded = await DoctorClinic.findOne({
-    doctorId: new mongoose.Types.ObjectId(doctor._id),
-    clinicId: new mongoose.Types.ObjectId(clinicId),
-    status: "active",
-  });
-  if (!onboarded) {
-    return res.status(403).json({
-      success: false,
-      message: "Doctor is not onboarded to this clinic. Please onboard before adding availability.",
-    });
-  }
-
-  // ✅ Time overlap helper
-  const toMinutes = (time) => {
-    const [h, m] = time.split(":").map(Number);
-    return h * 60 + m;
-  };
-  const newStart = toMinutes(startTime);
-  const newEnd = toMinutes(endTime);
-
-  if (newEnd <= newStart) {
-    return res.status(400).json({
-      success: false,
-      message: "End time must be later than start time",
-    });
-  }
-
-  try {
+    const validDays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
     const createdSlots = [];
 
-    for (const dayOfWeek of daysOfWeek) {
-      // ✅ Find all slots for this doctor on this day (across ALL clinics)
-      const existingSlots = await DoctorAvailability.find({
-        doctorId: doctor._id,
-        dayOfWeek,
-        isActive: true,
-      });
+    // Helper function to convert time to minutes
+    const toMinutes = (t) => {
+      const [h, m] = t.split(":").map(Number);
+      return h * 60 + m;
+    };
 
-      // ✅ Check overlap with each existing slot
-      const hasConflict = existingSlots.some((slot) => {
-        const start = toMinutes(slot.startTime);
-        const end = toMinutes(slot.endTime);
-        return newStart < end && newEnd > start; // ranges overlap
-      });
+    // ✅ Fetch all existing availability for doctor across all clinics (once)
+    const existingAvailabilities = await DoctorAvailability.find({ doctorId: doctor._id });
 
-      if (hasConflict) {
+    // ✅ Loop through availability slots
+    for (const slot of availability) {
+      const { dayOfWeek, startTime, endTime } = slot;
+
+      if (!dayOfWeek || !startTime || !endTime) {
         return res.status(400).json({
           success: false,
-          message: `Doctor already has availability overlapping on ${dayOfWeek} (${startTime} - ${endTime}) in another clinic`,
+          message: "Each slot must include dayOfWeek, startTime, and endTime.",
         });
       }
 
-      // ✅ If no conflict, create availability
-      const availability = new DoctorAvailability({
+      if (!validDays.includes(dayOfWeek)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid day '${dayOfWeek}'. Allowed: ${validDays.join(", ")}`,
+        });
+      }
+
+      if (toMinutes(endTime) <= toMinutes(startTime)) {
+        return res.status(400).json({
+          success: false,
+          message: `End time must be later than start time for ${dayOfWeek}`,
+        });
+      }
+
+      // ✅ Check conflicts across all clinics
+      let conflictFound = false;
+      for (const entry of existingAvailabilities) {
+        for (const s of entry.availability) {
+          if (s.dayOfWeek !== dayOfWeek || !s.isActive) continue;
+
+          const existingStart = toMinutes(s.startTime);
+          const existingEnd = toMinutes(s.endTime);
+          const newStart = toMinutes(startTime);
+          const newEnd = toMinutes(endTime);
+
+          if (newStart < existingEnd && newEnd > existingStart) {
+            const clinicMsg = entry.clinicId.toString() === clinicId
+              ? "this clinic"
+              : "another clinic";
+
+            return res.status(400).json({
+              success: false,
+              message: `Doctor already has overlapping availability on ${dayOfWeek} (${s.startTime}–${s.endTime}) in ${clinicMsg}.`,
+            });
+          }
+        }
+      }
+
+      // ✅ Add or update doctor availability for this clinic
+      let doc = await DoctorAvailability.findOne({
         doctorId: doctor._id,
         clinicId,
+      });
+
+      if (!doc) {
+        doc = new DoctorAvailability({
+          doctorId: doctor._id,
+          clinicId,
+          createdBy,
+          availability: [],
+        });
+      }
+
+      doc.availability.push({
         dayOfWeek,
         startTime,
         endTime,
-        createdBy: createdBy ? new mongoose.Types.ObjectId(createdBy) : undefined,
+        isActive: true,
       });
 
-      await availability.save();
-      createdSlots.push(availability);
+      await doc.save();
+      createdSlots.push({ dayOfWeek, startTime, endTime });
     }
 
+    // ✅ Success response with doctor info
     return res.status(201).json({
       success: true,
       message: "Doctor availability added successfully",
-      data: createdSlots,
+      doctor: {
+        id: doctor._id,
+        name: doctor.name,
+        email: doctor.email,
+        specialization: doctor.specialization,
+        phone: doctor.phone,
+      },
+      availability: createdSlots,
     });
   } catch (error) {
-    console.error("DB error saving availability:", error);
-    return res.status(500).json({ success: false, message: "Error saving doctor availability" });
+    console.error("❌ addDoctorAvailability error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error while adding doctor availability",
+      details: error.message,
+    });
   }
 };
 
@@ -757,115 +803,79 @@ const getSingleDoctorWithinClinic = async (req, res) => {
   try {
     const { clinicId, doctorId } = req.params;
 
-    // Validate IDs
+    // ✅ Validate IDs
     if (!clinicId || !mongoose.Types.ObjectId.isValid(clinicId))
       return res.status(400).json({ success: false, message: "Invalid clinicId" });
 
     if (!doctorId || !mongoose.Types.ObjectId.isValid(doctorId))
       return res.status(400).json({ success: false, message: "Invalid doctorId" });
 
-    // Fetch the DoctorClinic entry
+    // ✅ Fetch the DoctorClinic entry
     const doctorClinic = await DoctorClinic.findOne({ clinicId, doctorId }).lean();
 
     if (!doctorClinic)
       return res.status(404).json({ success: false, message: "Doctor not found in this clinic" });
 
-    // Fetch only the doctor’s name from Auth service
+    // ✅ Fetch doctor's basic info from Auth Service
     const doctorRes = await axios.get(`${AUTH_SERVICE_BASE_URL}/doctor/details/${doctorId}`);
     const doctorData = doctorRes.data?.data;
 
     if (!doctorData)
       return res.status(404).json({ success: false, message: "Doctor details not found in Auth Service" });
 
-    // Combine doctor name with all DoctorClinic details
+    // ✅ Fetch all doctor availabilities for this clinic
+    const availabilities = await DoctorAvailability.find({ clinicId, doctorId })
+      .select("dayOfWeek startTime endTime isActive _id createdAt updatedAt")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // ✅ Combine data
     const responseData = {
-      ...doctorClinic, // all fields from DoctorClinic
-      name: doctorData.name, // override/add doctor name
+      ...doctorClinic,
+      name: doctorData.name,
+      specialization: doctorData.specialization || null,
+      email: doctorData.email || null,
+      phone: doctorData.phone || null,
+      availability: availabilities,
     };
 
     return res.status(200).json({
       success: true,
-      message: "Doctor details fetched successfully",
+      message: "Doctor and availability details fetched successfully",
       data: responseData,
     });
   } catch (error) {
     console.error("❌ getSingleDoctorWithinClinic error:", error);
     return res.status(500).json({
       success: false,
-      message: "Server error while fetching doctor",
+      message: "Server error while fetching doctor details",
       error: error.message,
     });
   }
 };
 const editDoctorAvailability = async (req, res) => {
   try {
-    const { id: availabilityId } = req.params; 
-    const { clinicId, doctorUniqueId, dayOfWeek, startTime, endTime, updatedBy } = req.body;
+    const { id: availabilityId } = req.params; // DoctorAvailability document _id
+    const { index, dayOfWeek, startTime, endTime, updatedBy } = req.body;
 
-    // ✅ Step 1: Basic validation
-    if (!mongoose.Types.ObjectId.isValid(availabilityId)) {
-      return res.status(400).json({ success: false, message: "Invalid availabilityId" });
+    // ✅ Validate index
+    if (index === undefined || index === null) {
+      return res.status(400).json({ success: false, message: "Availability index is required" });
     }
 
-    if (!mongoose.Types.ObjectId.isValid(clinicId)) {
-      return res.status(400).json({ success: false, message: "Invalid clinicId" });
-    }
-
-    if (!doctorUniqueId || !dayOfWeek || !startTime || !endTime) {
-      return res.status(400).json({
-        success: false,
-        message: "doctorUniqueId, dayOfWeek, startTime, and endTime are required",
-      });
-    }
-
-    // ✅ Step 2: Fetch doctor from auth-service
-    let doctor;
-    try {
-      const url = `${AUTH_SERVICE_BASE_URL}/doctor/details-uniqueid/${doctorUniqueId}`;
-      const response = await axios.get(url);
-
-      if (response.data?.success && response.data.doctor) {
-        doctor = response.data.doctor;
-      } else {
-        return res.status(404).json({
-          success: false,
-          message: "Doctor not found in auth-service",
-        });
-      }
-    } catch (error) {
-      console.error("Axios error fetching doctor:", error.response?.data || error.message);
-      return res.status(500).json({
-        success: false,
-        message: "Failed to fetch doctor from auth-service",
-        details: error.response?.data || error.message,
-      });
-    }
-
-    // ✅ Step 3: Check if availability exists
-    const availability = await DoctorAvailability.findById(availabilityId);
-    if (!availability) {
-      return res.status(404).json({
-        success: false,
-        message: "Doctor availability not found",
-      });
-    }
-
-    // ✅ Step 4: Verify doctor-clinic association
-    if (
-      availability.doctorId.toString() !== doctor._id.toString() ||
-      availability.clinicId.toString() !== clinicId
-    ) {
-      return res.status(403).json({
-        success: false,
-        message: "This availability does not belong to the specified doctor or clinic",
-      });
-    }
-
-    // ✅ Step 5: Validate time range
+    // ✅ Convert time to minutes
     const toMinutes = (time) => {
       const [h, m] = time.split(":").map(Number);
       return h * 60 + m;
     };
+
+    if (!startTime || !endTime) {
+      return res.status(400).json({
+        success: false,
+        message: "Both startTime and endTime are required",
+      });
+    }
+
     const newStart = toMinutes(startTime);
     const newEnd = toMinutes(endTime);
 
@@ -876,53 +886,79 @@ const editDoctorAvailability = async (req, res) => {
       });
     }
 
-    // ✅ Step 6: Check overlapping availability (excluding current slot)
-    const existingSlots = await DoctorAvailability.find({
-      doctorId: doctor._id,
-      dayOfWeek,
-      isActive: true,
-      _id: { $ne: availabilityId },
-    });
-
-    const hasConflict = existingSlots.some((slot) => {
-      const start = toMinutes(slot.startTime);
-      const end = toMinutes(slot.endTime);
-      return newStart < end && newEnd > start; // time ranges overlap
-    });
-
-    if (hasConflict) {
-      return res.status(400).json({
+    // ✅ Fetch the document
+    const availabilityDoc = await DoctorAvailability.findById(availabilityId);
+    if (!availabilityDoc) {
+      return res.status(404).json({
         success: false,
-        message: `Doctor already has an overlapping availability on ${dayOfWeek} (${startTime} - ${endTime})`,
+        message: "Doctor availability document not found",
       });
     }
 
-    // ✅ Step 7: Update availability
-    availability.dayOfWeek = dayOfWeek;
-    availability.startTime = startTime;
-    availability.endTime = endTime;
-    availability.updatedBy = updatedBy ? new mongoose.Types.ObjectId(updatedBy) : undefined;
-    availability.updatedAt = new Date();
+    // ✅ Validate index range
+    if (index < 0 || index >= availabilityDoc.availability.length) {
+      return res.status(400).json({ success: false, message: "Invalid availability index" });
+    }
 
-    await availability.save();
+    const targetSlot = availabilityDoc.availability[index];
+    const newDay = dayOfWeek || targetSlot.dayOfWeek;
 
-    // ✅ Step 8: Return success
-    return res.status(200).json({
-      success: true,
-      message: "Doctor availability updated successfully",
-      data: availability,
+    // ✅ Fetch all existing availabilities for this doctor
+    const existingAvailabilities = await DoctorAvailability.find({
+      doctorId: availabilityDoc.doctorId,
     });
 
-  } catch (error) {
-    // ✅ Global catch block for unexpected server errors
-    console.error("Unexpected error in editDoctorAvailability:", error);
-    return res.status(500).json({
+    // ✅ Check conflicts across all clinics
+    for (const entry of existingAvailabilities) {
+      for (const [i, s] of entry.availability.entries()) {
+        if (entry._id.toString() === availabilityDoc._id.toString() && i === index) continue; // skip current slot
+        if (s.dayOfWeek !== newDay || !s.isActive) continue;
+
+        const existingStart = toMinutes(s.startTime);
+        const existingEnd = toMinutes(s.endTime);
+
+        if (newStart < existingEnd && newEnd > existingStart) {
+          const clinicMsg =
+            entry.clinicId.toString() === availabilityDoc.clinicId.toString()
+              ? "this clinic"
+              : "another clinic";
+
+          return res.status(400).json({
+            success: false,
+            message: `Doctor already has overlapping availability on ${newDay} (${s.startTime}–${s.endTime}) in ${clinicMsg}.`,
+          });
+        }
+      }
+    }
+
+    // ✅ Update the specific entry
+    targetSlot.dayOfWeek = newDay;
+    targetSlot.startTime = startTime;
+    targetSlot.endTime = endTime;
+    targetSlot.updatedBy = updatedBy || null;
+    availabilityDoc.updatedAt = new Date();
+
+    await availabilityDoc.save();
+
+    // ✅ Optionally re-fetch to confirm changes
+    const updatedDoc = await DoctorAvailability.findById(availabilityId);
+
+    res.status(200).json({
+      success: true,
+      message: "Availability updated successfully",
+      data: updatedDoc,
+    });
+  } catch (err) {
+    console.error("❌ editDoctorAvailability error:", err);
+    res.status(500).json({
       success: false,
-      message: "An unexpected error occurred while editing doctor availability",
-      details: error.message,
+      message: "Error updating doctor availability",
+      details: err.message,
     });
   }
 };
+
+
 
 
 
