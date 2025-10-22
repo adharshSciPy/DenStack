@@ -11,7 +11,15 @@ const CLINIC_SERVICE_BASE_URL = process.env.CLINIC_SERVICE_BASE_URL;
 
 const createAppointment = async (req, res) => {
   const { id: clinicId } = req.params;
-  const { receptionistId, patientId, doctorId, department, appointmentDate, appointmentTime } = req.body;
+  const {
+    userId,        // The logged-in user ID (receptionist or admin)
+    userRole,      // "receptionist" or "admin"
+    patientId,
+    doctorId,
+    department,
+    appointmentDate,
+    appointmentTime
+  } = req.body;
 
   try {
     // 1️⃣ Validate required fields
@@ -24,8 +32,11 @@ const createAppointment = async (req, res) => {
     if (!doctorId || !mongoose.Types.ObjectId.isValid(doctorId))
       return res.status(400).json({ success: false, message: "Invalid or missing doctorId" });
 
-    if (!receptionistId || !mongoose.Types.ObjectId.isValid(receptionistId))
-      return res.status(400).json({ success: false, message: "Invalid or missing receptionistId" });
+    if (!userId || !mongoose.Types.ObjectId.isValid(userId))
+      return res.status(400).json({ success: false, message: "Invalid or missing userId" });
+
+    if (!userRole || !["receptionist", "admin"].includes(userRole))
+      return res.status(400).json({ success: false, message: "Invalid or missing userRole" });
 
     if (!department || typeof department !== "string")
       return res.status(400).json({ success: false, message: "Department is required" });
@@ -50,24 +61,29 @@ const createAppointment = async (req, res) => {
     if (!patient)
       return res.status(404).json({ success: false, message: "Patient not found in this clinic" });
 
-    // 4️⃣ Verify receptionist belongs to clinic via Auth Service
-    try {
-      const staffRes = await axios.get(`${AUTH_SERVICE_BASE_URL}/clinic/all-staffs/${clinicId}`);
-      const staff = staffRes.data?.staff;
-      if (!staff || !staff.receptionists)
-        return res.status(404).json({ success: false, message: "Clinic staff data unavailable" });
+    // 4️⃣ Verify receptionist belongs to clinic if role is receptionist
+    if (userRole === "receptionist") {
+      try {
+        const staffRes = await axios.get(`${AUTH_SERVICE_BASE_URL}/clinic/all-staffs/${clinicId}`);
+        const staff = staffRes.data?.staff;
 
-      const isReceptionistInClinic = staff.receptionists.some(
-        (rec) => rec._id.toString() === receptionistId.toString()
-      );
-      if (!isReceptionistInClinic)
-        return res.status(403).json({ success: false, message: "Receptionist does not belong to this clinic" });
-    } catch (err) {
-      return res.status(503).json({
-        success: false,
-        message: "Unable to verify receptionist from Auth Service",
-        error: err.response?.data?.message || err.message,
-      });
+        if (!staff || !staff.receptionists)
+          return res.status(404).json({ success: false, message: "Clinic staff data unavailable" });
+
+        const isReceptionistInClinic = staff.receptionists.some(
+          (rec) => rec._id.toString() === userId.toString()
+        );
+
+        if (!isReceptionistInClinic)
+          return res.status(403).json({ success: false, message: "Receptionist does not belong to this clinic" });
+
+      } catch (err) {
+        return res.status(503).json({
+          success: false,
+          message: "Unable to verify receptionist from Auth Service",
+          error: err.response?.data?.message || err.message,
+        });
+      }
     }
 
     // 5️⃣ Fetch doctor availability for the department
@@ -79,7 +95,7 @@ const createAppointment = async (req, res) => {
       availabilities = availRes.data?.doctors?.[0]?.availability || [];
 
       if (!availabilities.length)
-        return res.status(400).json({ success: false, message: "Doctor has no availability in this clinic for the department" });
+        return res.status(400).json({ success: false, message: `Doctor has no availability in ${department} department` });
     } catch (err) {
       return res.status(503).json({
         success: false,
@@ -132,10 +148,10 @@ const createAppointment = async (req, res) => {
       clinicId,
       patientId,
       doctorId,
-      department, // ✅ store department
+      department,
       appointmentDate,
       appointmentTime,
-      createdBy: receptionistId,
+      createdBy: userId,
       status: "scheduled",
       opNumber: nextOpNumber,
     });
