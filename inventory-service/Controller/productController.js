@@ -2,6 +2,7 @@ import Product from "../Model/ProductSchema.js";
 import Category from "../Model/CategorySchema.js";
 import path from "path";
 import fs from "fs";
+import { response } from "express";
 
 // Create a new product with image upload
 const createProduct = async (req, res) => {
@@ -50,8 +51,24 @@ const createProduct = async (req, res) => {
 
 const productDetails = async (req, res) => {
     try {
-        const response = await Product.find();
-        res.status(200).json({ message: "Product Fetched", data: response });
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+        const totalProducts = await Product.countDocuments();
+
+        const response = await Product.find()
+            .skip(skip)
+            .limit(limit)
+            .populate("category", "name")
+            .sort({ createdAt: -1 })
+        res.status(200).json({
+            message: "Product Fetched",
+            currentPage: page,
+            totalPages: Math.ceil(totalProducts / limit),
+            totalProducts,
+            limit,
+            data: response
+        });
     } catch (error) {
         res.status(500).json({ message: "Internal Server Error", error: error.message })
     }
@@ -62,6 +79,38 @@ const getProduct = async (req, res) => {
         const { id } = req.params;
         const response = await Product.findById(id);
         res.status(200).json({ message: "Product Fetched", data: response });
+    } catch (error) {
+        res.status(500).json({ message: "Internal Server Error", error: error.message })
+    }
+}
+
+const productsByCategory = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const category = await Category.findById(id);
+        if (!category) {
+            return res.status(404).json({ message: "Category not found" });
+        }
+
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+        const totalProducts = await Product.countDocuments({ category: id });
+
+        const productCategory = await Product.find({ category: id })
+            .skip(skip)
+            .limit(limit)
+            .sort({ createdAt: -1 });
+        res.status(200).json({
+            message: `Products fetched from ${category.name}`,
+            currentPage: page,
+            totalPages: Math.ceil(totalProducts / limit),
+            totalProducts,
+            limit,
+            data: productCategory
+        })
+
+
     } catch (error) {
         res.status(500).json({ message: "Internal Server Error", error: error.message })
     }
@@ -89,7 +138,7 @@ const updateProduct = async (req, res) => {
 
         // 🔹 Handle new image upload (if provided)
         if (req.file) {
-            product.image = [`/uploads/${req.file.filename}`]; // replace existing image
+            product.image = [`/ uploads / ${req.file.filename}`]; // replace existing image
         }
 
         // 🔹 Update other fields (only if provided)
@@ -124,5 +173,5 @@ const deleteProduct = async (req, res) => {
 }
 
 export {
-    createProduct, productDetails, getProduct, updateProduct, deleteProduct
+    createProduct, productDetails, getProduct, productsByCategory, updateProduct, deleteProduct
 }
