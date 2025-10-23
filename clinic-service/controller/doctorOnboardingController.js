@@ -950,9 +950,70 @@ const editDoctorAvailability = async (req, res) => {
     });
   }
 };
+const getDepartmentDetails = async (req, res) => {
+  try {
+    const { id: clinicId } = req.params;
+
+    // 🔹 Validate clinicId
+    if (!clinicId || !mongoose.Types.ObjectId.isValid(clinicId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid clinicId",
+      });
+    }
+
+    // 🔹 Find all active doctors in the clinic
+    const onboardedDoctors = await DoctorClinic.find({
+      clinicId: new mongoose.Types.ObjectId(clinicId),
+      status: "active",
+    })
+      .select("specializations")
+      .lean();
+
+    if (!onboardedDoctors.length) {
+      return res.status(404).json({
+        success: false,
+        message: "No doctors found for this clinic",
+        departments: [],
+      });
+    }
+
+    // 🔹 Collect and flatten all specialization arrays
+    const allSpecializations = onboardedDoctors.flatMap(
+      (doc) => doc.specializations || []
+    );
+
+    // 🔹 Extract unique departments (remove duplicates)
+    const departments = [...new Set(allSpecializations.filter(Boolean))];
+
+    // 🔹 If no departments found
+    if (!departments.length) {
+      return res.status(404).json({
+        success: false,
+        message: "No departments found for this clinic",
+        departments: [],
+      });
+    }
+
+    // ✅ Success response
+    return res.status(200).json({
+      success: true,
+      clinicId,
+      totalDepartments: departments.length,
+      departments,
+    });
+  } catch (error) {
+    console.error("Error fetching department details:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching department details",
+      details: error.message,
+    });
+  }
+};
 
 
 
 
 
-export { onboardDoctor, addDoctorAvailability, getAvailability, clinicDoctorLogin, getDoctorsBasedOnDepartment, getDoctorsWithAvailability, getAllActiveDoctorsOnClinic, removeDoctorFromClinic, getSingleDoctorWithinClinic,editDoctorAvailability };
+export { onboardDoctor, addDoctorAvailability, getAvailability, clinicDoctorLogin, getDoctorsBasedOnDepartment, getDoctorsWithAvailability, getAllActiveDoctorsOnClinic, removeDoctorFromClinic, getSingleDoctorWithinClinic, editDoctorAvailability, getDepartmentDetails };

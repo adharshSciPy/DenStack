@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { addDoctorAvailability, clinicDoctorLogin, editDoctorAvailability, getAllActiveDoctorsOnClinic, getAvailability, getDoctorsBasedOnDepartment, getDoctorsWithAvailability, getSingleDoctorWithinClinic, onboardDoctor, removeDoctorFromClinic, } from "../controller/doctorOnboardingController.js";
+import { addDoctorAvailability, clinicDoctorLogin, editDoctorAvailability, getAllActiveDoctorsOnClinic, getAvailability, getDepartmentDetails, getDoctorsBasedOnDepartment, getDoctorsWithAvailability, getSingleDoctorWithinClinic, onboardDoctor, removeDoctorFromClinic, } from "../controller/doctorOnboardingController.js";
 const doctorOnboard=Router();
 doctorOnboard.route('/onboard-doctor').post(onboardDoctor)
 doctorOnboard.route('/availability-doctor/:id').post(addDoctorAvailability)
@@ -11,4 +11,5 @@ doctorOnboard.route('/active-doctors').get(getAllActiveDoctorsOnClinic)// to fet
 doctorOnboard.route('/remove/doctor-from-clinic').delete(removeDoctorFromClinic);// to remove doctor from clinic
 doctorOnboard.route('/doctor/:clinicId/:doctorId').get(getSingleDoctorWithinClinic);// to get specific doctor's details within a clinic
 doctorOnboard.route('/update-availability/:id').patch(editDoctorAvailability);// to edit specific availability by id
+doctorOnboard.route('/department/details/:id').get(getDepartmentDetails);// to get department details by clinicId
 export default doctorOnboard
