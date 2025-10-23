@@ -15,32 +15,41 @@ const registerPatient = async (req, res) => {
   try {
     const { id: clinicId } = req.params;
     const {
-      receptionistId,
+      userId,        // Logged-in user ID (Admin or Receptionist)
+      userRole,      // "admin" or "receptionist"
       name,
       phone,
       email,
       password,
       age,
       gender,
-      medicalHistory
+      medicalHistory,
     } = req.body;
 
-    if (!clinicId) {
-      return res.status(400).json({ success: false, message: "Clinic ID is required" });
+    // 1️⃣ Validate Clinic ID
+    if (!clinicId || !mongoose.Types.ObjectId.isValid(clinicId)) {
+      return res.status(400).json({ success: false, message: "Invalid or missing clinicId" });
     }
 
-    if (!receptionistId) {
-      return res.status(400).json({ success: false, message: "Receptionist ID is required" });
+    // 2️⃣ Validate Creator Info
+    if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ success: false, message: "Invalid or missing userId" });
     }
 
+    if (!userRole || !["receptionist", "admin"].includes(userRole)) {
+      return res.status(400).json({ success: false, message: "Invalid userRole. Must be receptionist or admin." });
+    }
+
+    // 3️⃣ Validate Name and Phone
     if (!name || !nameValidator(name)) {
-      return res.status(400).json({ success: false, message: "Invalid name. Must be 2-50 characters." });
+      return res.status(400).json({ success: false, message: "Invalid name. Must be 2–50 characters." });
     }
 
     if (!phone || !phoneValidator(phone)) {
-      return res.status(400).json({ success: false, message: "Invalid phone number. Must be 10 digits starting with 6-9." });
+      return res.status(400).json({ success: false, message: "Invalid phone number. Must be 10 digits starting with 6–9." });
     }
 
+    // 4️⃣ Optional Validations
     if (email && !emailValidator(email)) {
       return res.status(400).json({ success: false, message: "Invalid email format." });
     }
@@ -48,7 +57,7 @@ const registerPatient = async (req, res) => {
     if (password && !passwordValidator(password)) {
       return res.status(400).json({
         success: false,
-        message: "Password must be 8-64 chars, include uppercase, lowercase, number, and special char."
+        message: "Password must be 8–64 chars, include uppercase, lowercase, number, and special char.",
       });
     }
 
@@ -60,20 +69,38 @@ const registerPatient = async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid gender value." });
     }
 
-    // Validate receptionist in another service
+    // 5️⃣ Verify the creator based on role
     try {
-      const receptionRes = await axios.get(`${AUTH_SERVICE_BASE_URL}/receptionist/details/${receptionistId}`);
-      if (!receptionRes?.data?.success || !receptionRes?.data?.reception) {
-        return res.status(404).json({ success: false, message: "Receptionist not found" });
-      }
+      if (userRole === "receptionist") {
+        const staffRes = await axios.get(`${AUTH_SERVICE_BASE_URL}/clinic/all-staffs/${clinicId}`);
+        const staff = staffRes.data?.staff;
+
+        if (!staff || !staff.receptionists)
+          return res.status(404).json({ success: false, message: "Clinic staff data unavailable." });
+
+        const isReceptionist = staff.receptionists.some(
+          (rec) => rec._id.toString() === userId.toString()
+        );
+        if (!isReceptionist)
+          return res.status(403).json({ success: false, message: "Receptionist does not belong to this clinic." });
+      } 
+        // else if (userRole === "admin") {
+        //   const adminRes = await axios.get(`${AUTH_SERVICE_BASE_URL}/clinic-admin/details/${userId}`);
+        //   if (!adminRes?.data?.success || !adminRes?.data?.admin)
+        //     return res.status(404).json({ success: false, message: "Clinic admin not found." });
+        // }
     } catch (err) {
-      return res.status(500).json({ success: false, message: "Error validating receptionist", error: err.message });
+      return res.status(500).json({
+        success: false,
+        message: "Error validating creator in Auth Service.",
+        error: err.response?.data?.message || err.message,
+      });
     }
 
-    // Check if a patient with the same phone already exists in this clinic
+    // 6️⃣ Check if patient already exists in this clinic
     let parentPatient = await Patient.findOne({ clinicId, phone });
 
-    // Create new patient
+    // 7️⃣ Create new patient
     const newPatient = new Patient({
       clinicId,
       name,
@@ -83,34 +110,38 @@ const registerPatient = async (req, res) => {
       age,
       gender,
       medicalHistory,
-      createdBy: receptionistId,
-      parentPatient: parentPatient?._id || null
+      createdBy: userId,
+      createdByRole: userRole.charAt(0).toUpperCase() + userRole.slice(1), // Admin or Receptionist
+      parentPatient: parentPatient?._id || null,
     });
 
     await newPatient.save();
 
-    // If parent exists, add this patient to parent's linkedPatients
+    // 8️⃣ Link to parent if exists
     if (parentPatient) {
       parentPatient.linkedPatients = parentPatient.linkedPatients || [];
       parentPatient.linkedPatients.push(newPatient._id);
       await parentPatient.save();
     }
 
+    // ✅ Success Response
     return res.status(201).json({
       success: true,
-      message: "Patient registered successfully",
+      message: "Patient registered successfully.",
       patient: newPatient,
     });
 
   } catch (error) {
-    console.error("Error registering patient:", error);
+    console.error("❌ Error registering patient:", error);
     return res.status(500).json({
       success: false,
-      message: "Server error while registering patient",
+      message: "Server error while registering patient.",
       error: error.message,
     });
   }
 };
+
+
 // export const getPatientById = async (req, res) => {
 //   try {
 //     const { id } = req.params;  // Gets from URL: /patient/68e496a097514f58b13e6112
