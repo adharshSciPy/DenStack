@@ -14,8 +14,22 @@ const createVendor = async (req, res) => {
 
 const vendorDetails = async (req, res) => {
     try {
-        const details = await Vendor.find();
-        res.status(200).json({ message: "Details Fetched", data: details });
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+        const totalVendors = await Vendor.countDocuments();
+        const details = await Vendor.find()
+            .skip(skip)
+            .limit(limit)
+            .sort({ createdAt: -1 })
+        res.status(200).json({
+            message: "Vendor details Fetched",
+            currentpage: page,
+            totalPages: Math.ceil(totalVendors / limit),
+            totalVendors,
+            limit,
+            data: details
+        });
     } catch (error) {
         res.status(500).json({ message: "Internal Server Error", error: error.message })
     }
