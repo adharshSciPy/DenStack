@@ -70,11 +70,25 @@ const createOrder = async (req, res) => {
 // ✅ GET ALL ORDERS (SuperAdmin or for Admin Dashboard)
 const getAllOrders = async (req, res) => {
     try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+        const totalOrders = await Order.countDocuments();
+
         const orders = await Order.find()
+            .skip(skip)
+            .limit(limit)
             .populate("items.productId", "name price")
             .sort({ createdAt: -1 });
 
-        res.status(200).json({ success: true, orders });
+        res.status(200).json({
+            message: "Order fetched Successfully",
+            currentpage: page,
+            totalPages: Math.ceil(totalOrders / limit),
+            totalOrders,
+            limit,
+            data: orders
+        });
     } catch (error) {
         console.error("Get Orders Error:", error);
         res.status(500).json({ success: false, message: "Server Error" });
@@ -85,8 +99,13 @@ const getAllOrders = async (req, res) => {
 const getUserOrders = async (req, res) => {
     try {
         const { userId } = req.params;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+        const totalOrders = await Order.countDocuments({ userId: userId })
 
         const orders = await Order.find({ userId })
+            .skip(skip)
             .populate("items.productId", "name price images")
             .sort({ createdAt: -1 });
 
@@ -94,7 +113,14 @@ const getUserOrders = async (req, res) => {
             return res.status(404).json({ success: false, message: "No orders found" });
         }
 
-        res.status(200).json({ success: true, orders });
+        res.status(200).json({
+            message: "User orders fetched",
+            currentpage: page,
+            totalPage: Math.ceil(totalOrders / limit),
+            totalOrders,
+            limit,
+            data: orders
+        });
     } catch (error) {
         console.error("Get User Orders Error:", error);
         res.status(500).json({ success: false, message: "Server Error" });
