@@ -448,16 +448,12 @@ const getClinicDashboardDetails = async (req, res) => {
     });
   }
 };
-
 const addShiftToStaff = async (req, res) => {
   try {
-    const { id, } = req.params;
-    let { startTime, endTime, startDate, endDate,role } = req.body;
+    const { id } = req.params;
+    let { startTime, endTime, startDate, endDate, role } = req.body;
 
-    // Convert date strings to ISO if needed
-    if (typeof startDate === "string") startDate = formatDate(startDate);
-    if (typeof endDate === "string") endDate = formatDate(endDate);
-
+    // ✅ Select model based on role
     let Model;
     switch (role) {
       case "nurse":
@@ -469,38 +465,76 @@ const addShiftToStaff = async (req, res) => {
       case "receptionist":
         Model = Receptionist;
         break;
-        case "accountant":
+      case "accountant":
         Model = Accountant;
         break;
-        case "technician":
+      case "technician":
         Model = Technician;
         break;
       default:
         return res.status(400).json({ success: false, message: "Invalid role" });
     }
 
+    // ✅ Parse DD-MM-YYYY to valid Date
+    const parseDate = (str) => {
+      if (!str) return null;
+      const [day, month, year] = str.split("-");
+      const d = new Date(`${year}-${month}-${day}T00:00:00Z`);
+      if (isNaN(d)) throw new Error(`Invalid date: ${str}`);
+      return d;
+    };
+
+    startDate = parseDate(startDate);
+    endDate = parseDate(endDate);
+
+    // ✅ Find staff
     const staff = await Model.findById(id);
-    if (!staff) return res.status(404).json({ success: false, message: "Staff not found" });
+    if (!staff) {
+      return res.status(404).json({ success: false, message: "Staff not found" });
+    }
 
-    // Optional: deactivate overlapping shifts
-    staff.shifts = staff.shifts.map(shift => {
-      if (shift.isActive && shift.endDate < new Date()) {
-        shift.isActive = false;
-        shift.archivedAt = new Date();
-      }
-      return shift;
-    });
+    // ✅ If there is at least one shift → update the latest one
+    if (staff.shifts && staff.shifts.length > 0) {
+      const latestShiftIndex = staff.shifts.length - 1;
+      const latestShift = staff.shifts[latestShiftIndex];
 
-    // Add new shift
-    staff.shifts.push({ startTime, endTime, startDate, endDate, isActive: true });
+      latestShift.startTime = startTime;
+      latestShift.endTime = endTime;
+      latestShift.startDate = startDate;
+      latestShift.endDate = endDate;
+      latestShift.isActive = true;
+      latestShift.archivedAt = null;
+      latestShift.updatedAt = new Date();
+    } else {
+      // ✅ If no shift exists → create new
+      staff.shifts = [
+        {
+          startTime,
+          endTime,
+          startDate,
+          endDate,
+          isActive: true,
+        },
+      ];
+    }
+
     await staff.save();
 
-    res.status(200).json({ success: true, message: "Shift added", shifts: staff.shifts });
+    res.status(200).json({
+      success: true,
+      message: staff.shifts.length === 1 ? "Shift added" : "Shift updated",
+      shifts: staff.shifts,
+    });
   } catch (error) {
     console.error("addShiftToStaff error:", error);
-    res.status(500).json({ success: false, message: "Server error" });
+    res.status(500).json({
+      success: false,
+      message: error.message || "Server error",
+    });
   }
 };
+
+
 const removeStaffFromClinic = async (req, res) => {
   try {
     const { id: clinicId } = req.params;
