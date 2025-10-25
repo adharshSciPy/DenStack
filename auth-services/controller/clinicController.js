@@ -221,23 +221,34 @@ const getClinicStaffs = async (req, res) => {
       return res.status(404).json({ success: false, message: "Clinic not found" });
     }
 
-    // Role map
+    // ✅ Role map
     const roleMap = {
       nurse: "nurses",
       receptionist: "receptionists",
       pharmacist: "pharmacists",
       accountant: "accountants",
+      technician: "technicians", // 👈 Added technician role
     };
 
-    // Prepare empty staff object
+    // ✅ Prepare empty staff object
     const staffResult = {
       nurses: [],
       receptionists: [],
       pharmacists: [],
       accountants: [],
+      technicians: [], // 👈 Added technicians array
     };
 
-    // Fetch staff by role
+    // ✅ Model mapping
+    const ModelMap = {
+      nurse: Nurse,
+      receptionist: Receptionist,
+      pharmacist: Pharmacist,
+      accountant: Accountant,
+      technician: Technician, // 👈 Added Technician model
+    };
+
+    // ✅ Fetch staff by role
     for (const [key, modelName] of Object.entries(roleMap)) {
       let staffIds = clinic.staffs[modelName] || [];
       let query = { _id: { $in: staffIds } };
@@ -247,13 +258,6 @@ const getClinicStaffs = async (req, res) => {
       if (cursor && mongoose.Types.ObjectId.isValid(cursor)) {
         query._id.$lt = cursor;
       }
-
-      const ModelMap = {
-        nurse: Nurse,
-        receptionist: Receptionist,
-        pharmacist: Pharmacist,
-        accountant: Accountant,
-      };
 
       const staffData = await ModelMap[key]
         .find(query)
@@ -282,6 +286,7 @@ const getClinicStaffs = async (req, res) => {
     });
   }
 };
+
 
 
 const getTheme=async (req, res) => {
