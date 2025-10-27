@@ -1,8 +1,5 @@
 import Product from "../Model/ProductSchema.js";
 import Category from "../Model/CategorySchema.js";
-import path from "path";
-import fs from "fs";
-import { response } from "express";
 
 // Create a new product with image upload
 const createProduct = async (req, res) => {
@@ -54,9 +51,11 @@ const productDetails = async (req, res) => {
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 10;
         const skip = (page - 1) * limit;
-        const totalProducts = await Product.countDocuments();
+        const search = req.query.search || "";
+        const filter = search ? { name: { $regex: search, $options: "i" } } : {};
+        const totalProducts = await Product.countDocuments(filter);
 
-        const response = await Product.find()
+        const response = await Product.find(filter)
             .skip(skip)
             .limit(limit)
             .populate("category", "name")
@@ -67,6 +66,7 @@ const productDetails = async (req, res) => {
             totalPages: Math.ceil(totalProducts / limit),
             totalProducts,
             limit,
+            search,
             data: response
         });
     } catch (error) {
@@ -95,9 +95,14 @@ const productsByCategory = async (req, res) => {
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 10;
         const skip = (page - 1) * limit;
-        const totalProducts = await Product.countDocuments({ category: id });
+        const search = req.query.search || "";
+        const searchFilter = search ? { name: { $regex: search, $options: "i" } } : {};
 
-        const productCategory = await Product.find({ category: id })
+
+        const filter = { category: id, ...searchFilter };
+        const totalProducts = await Product.countDocuments(filter);
+
+        const productCategory = await Product.find(filter)
             .skip(skip)
             .limit(limit)
             .sort({ createdAt: -1 });
@@ -107,6 +112,7 @@ const productsByCategory = async (req, res) => {
             totalPages: Math.ceil(totalProducts / limit),
             totalProducts,
             limit,
+            search,
             data: productCategory
         })
 
