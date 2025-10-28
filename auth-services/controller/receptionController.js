@@ -35,6 +35,11 @@ const registerReception = async (req, res) => {
     if (!clinic) {
       return res.status(404).json({ message: "Clinic not found" });
     }
+    if (!clinic.features?.canAddStaff?.receptionists) {
+      return res.status(403).json({
+        message: "This clinic’s current plan does not allow adding receptionists.",
+      });
+    }
 
     // ✅ Check if email/phone already exists
     const existingReceptionEmail = await Reception.findOne({ email });

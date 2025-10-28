@@ -36,6 +36,11 @@ const registerNurse = async (req, res) => {
     if (!clinic) {
       return res.status(404).json({ message: "Clinic not found" });
     }
+    if (!clinic.features?.canAddStaff?.nurses) {
+      return res.status(403).json({
+        message: "This clinic’s current plan does not allow adding nurses.",
+      });
+    }
 
     // Check if nurse email/phone already exists
     const existingNurseEmail = await Nurse.findOne({ email });

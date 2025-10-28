@@ -23,36 +23,53 @@ const formatDate = (dateStr) => {
   return new Date(`${year}-${month}-${day}`);
 };
 const registerClinic = async (req, res) => {
-  const { name, type, email, phoneNumber, password, address, description, } = req.body;
-
   try {
+    const {
+      name,
+      type,
+      email,
+      phoneNumber,
+      password,
+      address,
+      description,
+      theme,
+      features, 
+    } = req.body;
 
-    // ====== VALIDATIONS ======
+   
     if (!name || !nameValidator(name)) {
-      return res.status(400).json({ message: "Invalid name" });
+      return res.status(400).json({ success: false, message: "Invalid name" });
     }
     if (!email || !emailValidator(email)) {
-      return res.status(400).json({ message: "Invalid email" });
+      return res.status(400).json({ success: false, message: "Invalid email" });
     }
     if (!phoneNumber || !phoneValidator(phoneNumber)) {
-      return res.status(400).json({ message: "Invalid phone number" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid phone number" });
     }
     if (!password || !passwordValidator(password)) {
-      return res.status(400).json({ message: "Invalid password" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid password" });
     }
 
-    // ====== CHECK IF ALREADY EXISTS ======
-    const existingClinicEmail = await Clinic.findOne({ email });
-    if (existingClinicEmail) {
-      return res.status(400).json({ message: "Email already exists" });
-    }
+    const [existingEmail, existingPhone] = await Promise.all([
+      Clinic.findOne({ email }),
+      Clinic.findOne({ phoneNumber }),
+    ]);
+    if (existingEmail)
+      return res.status(400).json({
+        success: false,
+        message: "Email already exists",
+      });
+    if (existingPhone)
+      return res.status(400).json({
+        success: false,
+        message: "Phone number already exists",
+      });
 
-    const existingClinicPhone = await Clinic.findOne({ phoneNumber });
-    if (existingClinicPhone) {
-      return res.status(400).json({ message: "Phone number already exists" });
-    }
-
-    // ====== CREATE CLINIC ======
+  
     const newClinic = new Clinic({
       name,
       type,
@@ -61,16 +78,41 @@ const registerClinic = async (req, res) => {
       password,
       address,
       description,
-
+      theme,
     });
 
-    await newClinic.save();
+    // 🔹 Default subscription on registration (basic/monthly)
+    newClinic.activateSubscription("monthly", "basic", 0);
 
-    // ====== GENERATE TOKENS ======
+    // 🔹 Apply features based on default package
+    newClinic.applySubscriptionFeatures();
+
+    // 🔹 Optionally override feature toggles from request (on/off)
+    if (features && typeof features === "object") {
+      Object.entries(features).forEach(([key, value]) => {
+        if (key in newClinic.features) {
+          if (typeof value === "object") {
+            // nested object (like canAddStaff)
+            Object.entries(value).forEach(([subKey, subVal]) => {
+              if (
+                newClinic.features[key] &&
+                subKey in newClinic.features[key]
+              ) {
+                newClinic.features[key][subKey] = !!subVal; // enforce boolean
+              }
+            });
+          } else {
+            newClinic.features[key] = !!value;
+          }
+        }
+      });
+    }
+
+    await newClinic.save();
     const accessToken = newClinic.generateAccessToken();
     const refreshToken = newClinic.generateRefreshToken();
-
-    res.status(201).json({
+    return res.status(201).json({
+      success: true,
       message: "Clinic registered successfully",
       clinic: {
         id: newClinic._id,
@@ -80,13 +122,19 @@ const registerClinic = async (req, res) => {
         type: newClinic.type,
         role: newClinic.role,
         subscription: newClinic.subscription,
+        features: newClinic.features,
+        theme: newClinic.theme,
       },
       accessToken,
       refreshToken,
     });
   } catch (error) {
     console.error("❌ Error in registerClinic:", error);
-    res.status(500).json({ message: "Server error" });
+    return res.status(500).json({
+      success: false,
+      message: "Server error during clinic registration",
+      details: error.message,
+    });
   }
 };
 
