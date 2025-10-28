@@ -34,7 +34,11 @@ const registerPharmacist = async (req, res) => {
     if (!clinic) {
       return res.status(404).json({ message: "Clinic not found" });
     }
-
+    if (!clinic.features?.canAddStaff?.pharmacists) {
+      return res.status(403).json({
+        message: "This clinic’s current plan does not allow adding pharmacists.",
+      });
+    }
     // ✅ Check if email/phone already exists
     const existingPharmacistEmail = await Pharmacist.findOne({ email });
     if (existingPharmacistEmail) {

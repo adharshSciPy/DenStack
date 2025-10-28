@@ -9,6 +9,7 @@ const CLINIC_ROLE = process.env.CLINIC_ROLE || "700";
 
 const clinicSchema = new Schema(
   {
+    // ===== Basic Details =====
     name: {
       type: String,
       required: [true, "Clinic name is required"],
@@ -16,131 +17,122 @@ const clinicSchema = new Schema(
       minlength: [2, "Clinic name must be at least 2 characters"],
       maxlength: [100, "Clinic name must not exceed 100 characters"],
     },
+
     type: {
       type: String,
       enum: ["single", "clinic", "hospital"],
       default: "clinic",
     },
+
     email: {
       type: String,
+      required: [true, "Email is required"],
       lowercase: true,
       trim: true,
       unique: true,
-      match: [/\S+@\S+\.\S+/, "Please provide a valid email"],
+      match: [/\S+@\S+\.\S+/, "Please provide a valid email address"],
     },
+
     phoneNumber: {
       type: Number,
+      required: [true, "Phone number is required"],
       unique: true,
-      match: [/^[6-9]\d{9}$/, "Phone number must be 10 digits"],
+      match: [/^[6-9]\d{9}$/, "Phone number must be 10 digits starting with 6-9"],
     },
+
     password: {
       type: String,
       required: [true, "Password is required"],
       minlength: [8, "Password must be at least 8 characters"],
       maxlength: [64, "Password cannot exceed 64 characters"],
     },
+
     address: {
-      street: String,
-      city: String,
-      state: String,
-      country: String,
-      zip: String,
+      street: { type: String },
+      city: { type: String },
+      state: { type: String },
+      country: { type: String },
+      zip: { type: String },
     },
+
     description: {
       type: String,
       maxlength: [500, "Description cannot exceed 500 characters"],
     },
+
+    // ===== Theme Configuration =====
     theme: {
-      startColor: {
-        type: String,
-        default: "#1E4D2B", // default gradient start
-      },
-      endColor: {
-        type: String,
-        default: "#3FA796", // default gradient end
-      },
-      primaryForeground: {
-        type: String,
-        default: "#ffffff", // text color on primary
-      },
-      sidebarForeground: {
-        type: String,
-        default: "#ffffff", // text color on sidebar
-      },
-      secondary:{
-        type: String,
-        default: "#3FA796", // text color on sidebar
-      },
+      startColor: { type: String, default: "#1E4D2B" },
+      endColor: { type: String, default: "#3FA796" },
+      primaryForeground: { type: String, default: "#ffffff" },
+      sidebarForeground: { type: String, default: "#ffffff" },
+      secondary: { type: String, default: "#3FA796" },
     },
 
-    // createdBy: {
-    //   type: Schema.Types.ObjectId,
-    //   ref: "SuperAdmin",
-    //   required: true,
-    // },
-
+    // ===== Role and Access =====
     role: {
       type: String,
       default: CLINIC_ROLE,
     },
 
-   subscription: {
-  package: {
-    type: String,
-    enum: ["basic", "standard", "premium"],
-    default: "basic",
-  },
-  type: {
-    type: String,
-    enum: ["monthly", "annual"],
-    default: "monthly",
-  },
-  price: {
-    type: Number,
-    default: 0,
-  },
-  startDate: {
-    type: Date,
-    default: Date.now,
-  },
-  endDate: {
-    type: Date,
-  },
-  isActive: {
-    type: Boolean,
-    default: true,
-  },
-  nextBillingDate: {
-    type: Date,
-  },
-  lastPaymentDate: {
-    type: Date,
-  },
-  transactionId: {
-    type: String, // useful if using Razorpay, Stripe, etc.
-  },
-},
+    // ===== Subscription Plan =====
+    subscription: {
+      package: {
+        type: String,
+        enum: ["basic", "standard", "premium"],
+        default: "basic",
+      },
+      type: {
+        type: String,
+        enum: ["monthly", "annual"],
+        default: "monthly",
+      },
+      price: { type: Number, default: 0 },
+      startDate: { type: Date, default: Date.now },
+      endDate: { type: Date },
+      isActive: { type: Boolean, default: true },
+      nextBillingDate: { type: Date },
+      lastPaymentDate: { type: Date },
+      transactionId: { type: String }, // optional for payment tracking
+    },
 
-
+    // ===== Status =====
     isActive: {
       type: Boolean,
       default: true,
     },
+
+    // ===== Staff References =====
     staffs: {
       nurses: [{ type: Schema.Types.ObjectId, ref: "Nurse" }],
       receptionists: [{ type: Schema.Types.ObjectId, ref: "Reception" }],
       pharmacists: [{ type: Schema.Types.ObjectId, ref: "Pharmacist" }],
       accountants: [{ type: Schema.Types.ObjectId, ref: "Accountant" }],
-      technicians: [{ type: Schema.Types.ObjectId, ref: "Technician" }]
-    }
+      technicians: [{ type: Schema.Types.ObjectId, ref: "Technician" }],
+    },
 
-
+    // ===== Feature Controls (Super Admin Controlled) =====
+    features: {
+      canAddStaff: {
+        nurses: { type: Boolean, default: false },
+        receptionists: { type: Boolean, default: false },
+        pharmacists: { type: Boolean, default: false },
+        accountants: { type: Boolean, default: false },
+        technicians: { type: Boolean, default: false },
+      },
+      canAddDoctors: { type: Boolean, default: true },
+      canAddDepartments: { type: Boolean, default: true },
+      canManageAppointments: { type: Boolean, default: true },
+      canAccessBilling: { type: Boolean, default: true },
+      canAccessReports: { type: Boolean, default: false },
+    },
   },
-
   { timestamps: true }
 );
 
-// ====== Hooks ======
+
+
+// ===== Pre-save Hook: Hash Password =====
 clinicSchema.pre("save", async function (next) {
   if (!this.isModified("password")) return next();
   try {
@@ -151,21 +143,28 @@ clinicSchema.pre("save", async function (next) {
   }
 });
 
-// ====== Methods ======
+
+
+// ===== Instance Methods =====
+
+// 🔹 Password validation
 clinicSchema.methods.isPasswordCorrect = async function (password) {
   return await bcrypt.compare(password, this.password);
 };
 
+// 🔹 Address formatting
 clinicSchema.methods.getFullAddress = function () {
   const { street, city, state, country, zip } = this.address || {};
   return [street, city, state, country, zip].filter(Boolean).join(", ");
 };
 
+// 🔹 Toggle active/inactive state
 clinicSchema.methods.toggleActive = function () {
   this.isActive = !this.isActive;
   return this.isActive;
 };
 
+// 🔹 JWT Access Token
 clinicSchema.methods.generateAccessToken = function (role = CLINIC_ROLE) {
   return jwt.sign(
     {
@@ -180,6 +179,7 @@ clinicSchema.methods.generateAccessToken = function (role = CLINIC_ROLE) {
   );
 };
 
+// 🔹 JWT Refresh Token
 clinicSchema.methods.generateRefreshToken = function (role = CLINIC_ROLE) {
   return jwt.sign(
     {
@@ -193,7 +193,13 @@ clinicSchema.methods.generateRefreshToken = function (role = CLINIC_ROLE) {
     { expiresIn: process.env.REFRESH_TOKEN_EXPIRY }
   );
 };
-clinicSchema.methods.activateSubscription = function (type = "monthly", pkg = "basic", price = 0) {
+
+// 🔹 Activate subscription with dynamic duration
+clinicSchema.methods.activateSubscription = function (
+  type = "monthly",
+  pkg = "basic",
+  price = 0
+) {
   const now = new Date();
   const endDate = new Date(now);
 
@@ -216,16 +222,47 @@ clinicSchema.methods.activateSubscription = function (type = "monthly", pkg = "b
   return this.subscription;
 };
 
-
+// 🔹 Check subscription validity
 clinicSchema.methods.isSubscriptionValid = function () {
-  return this.subscription?.isActive && new Date() < new Date(this.subscription.endDate);
+  return (
+    this.subscription?.isActive &&
+    new Date() < new Date(this.subscription.endDate)
+  );
 };
 
+// 🔹 Cancel subscription immediately
 clinicSchema.methods.cancelSubscription = function () {
   this.subscription.isActive = false;
   this.subscription.endDate = new Date();
   return this.subscription;
 };
-const Clinic = mongoose.model("Clinic", clinicSchema);
 
+// 🔹 Auto-apply features based on package
+clinicSchema.methods.applySubscriptionFeatures = function () {
+  if (this.subscription.package === "basic") {
+    this.features.canAddStaff = {
+      nurses: false,
+      receptionists: true,
+      pharmacists: false,
+      accountants: false,
+      technicians: false,
+    };
+    this.features.canAccessReports = false;
+  } else if (this.subscription.package === "premium") {
+    this.features.canAddStaff = {
+      nurses: true,
+      receptionists: true,
+      pharmacists: true,
+      accountants: true,
+      technicians: true,
+    };
+    this.features.canAccessReports = true;
+  }
+  return this.features;
+};
+
+
+
+// ===== Export Model =====
+const Clinic = mongoose.model("Clinic", clinicSchema);
 export default Clinic;
