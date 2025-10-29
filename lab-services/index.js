@@ -3,10 +3,8 @@ import dotenv from "dotenv";
 import cors from "cors";
 import connectDB from "./mongoDB/connectDB.js";
 import labRouter from "./routes/labRoutes.js";
-import labUserRouter from "./routes/labUserRoute.js";
 import labOrderRouter from "./routes/labOrderRoutes.js";
-
-
+import path from "path";
 dotenv.config();
 connectDB();
 
@@ -25,11 +23,9 @@ app.get("/", (req, res) => {
   res.send("🚀 API is running...");
 });
 app.use("/api/v1/lab",labRouter)
-app.use("/api/v1/lab-user",labUserRouter)
-app.use("/api/v1/lab-order",labOrderRouter)
+app.use("/api/v1/lab-orders",labOrderRouter)
 
-
-
+app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 
 
 const PORT = process.env.PORT || 8005;

@@ -2,7 +2,7 @@ import LabVendor from "../model/LabVendor.js";
 
 const createLabVendor = async (req, res) => {
   try {
-    const { name, contactPerson, email, services, isActive, clinicId } =
+    const { name, contactPerson, email, services, isActive } =
       req.body;
 
     // Basic manual validations
@@ -19,26 +19,13 @@ const createLabVendor = async (req, res) => {
       return res.status(400).json({ message: "Invalid email format" });
     }
 
-    // Check for duplicates
-    const existing = await LabVendor.findOne({
-      name: name.trim(),
-      clinicId: req.body.clinicId,
-    });
-
-    if (existing) {
-      return res
-        .status(400)
-        .json({
-          message: "A lab with this name already exists in this clinic",
-        });
-    }
+    
     const vendor = new LabVendor({
       name: name.trim(),
       contactPerson: contactPerson?.trim(),
       email: email?.trim(),
       services,
-      isActive,
-      clinicId,
+      isActive
     });
 
     await vendor.save();
@@ -96,36 +83,12 @@ const deleteLabVendor = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
-const getLabsByClinicId = async (req, res) => {
-  try {
-    const { clinicId } = req.params;
 
-    if (!clinicId) {
-      return res.status(400).json({ message: "Clinic ID is required" });
-    }
-
-    const labs = await LabVendor.find({ clinicId });
-
-    if (labs.length === 0) {
-      return res.status(404).json({ message: "No labs found for this clinic" });
-    }
-
-    res.status(200).json({
-      message: "Labs fetched successfully",
-      count: labs.length,
-      labs,
-    });
-  } catch (error) {
-    console.error("Error fetching labs:", error);
-    res.status(500).json({ message: "Server error", error: error.message });
-  }
-};
 
 export {
   createLabVendor,
   getAllLabVendors,
   getLabVendorById,
   updateLabVendor,
-  deleteLabVendor,
-  getLabsByClinicId,
+  deleteLabVendor
 };
