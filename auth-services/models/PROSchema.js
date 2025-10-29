@@ -28,15 +28,25 @@ const proSchema = new Schema(
       maxlength: [64, "Password cannot exceed 64 characters"],
     },
     phoneNumber: {
-      type:Number,
+      type: Number,
       required: [true, "Phone number is required"],
       unique: true,
       match: [/^[6-9]\d{9}$/, "Phone number must be 10 digits"],
     },
+    approve: {
+      type: Boolean,
+      default: true,
+    },
+    uniqueId: {
+      type: String,
+      required: true,
+      unique: true
+    },
     role: {
       type: String,
       default: PRO_ROLE,
-    }},
+    }
+  },
   { timestamps: true }
 );
 
