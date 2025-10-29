@@ -69,6 +69,20 @@ const consultPatient = async (req, res) => {
       createdBy: doctorId,
     });
 
+    // ✅ Inside consultPatient after creating newVisit
+if (req.body.referral && req.body.referral.referredToDoctorId) {
+  const { referredToDoctorId, referralReason } = req.body.referral;
+
+  newVisit.referral = {
+    referredByDoctorId: doctorId,
+    referredToDoctorId,
+    referralReason,
+    referralDate: new Date(),
+    status: "pending",
+  };
+
+}
+
     await newVisit.save({ session });
 
     // Optionally create TreatmentPlan and link it
