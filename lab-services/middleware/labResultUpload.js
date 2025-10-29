@@ -2,12 +2,13 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 
-const resultDir = path.join("uploads", "labResults");
+// ✅ Ensure upload folder exists
+const resultDir = path.join(process.cwd(), "uploads", "labResults");
 if (!fs.existsSync(resultDir)) {
   fs.mkdirSync(resultDir, { recursive: true });
 }
 
-// ✅ Multer storage
+// ✅ Configure storage
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, resultDir);
@@ -22,7 +23,7 @@ const storage = multer.diskStorage({
   },
 });
 
-// ✅ Allow both MIME + extension checks
+// ✅ Allowed MIME types and extensions
 const allowedMimeTypes = [
   "image/jpeg",
   "image/png",
@@ -53,7 +54,7 @@ const allowedExtensions = [
   ".zip",
 ];
 
-// ✅ Improved fileFilter
+// ✅ File validation logic
 const fileFilter = (req, file, cb) => {
   const ext = path.extname(file.originalname).toLowerCase();
 
@@ -64,15 +65,15 @@ const fileFilter = (req, file, cb) => {
     cb(null, true);
   } else {
     console.warn(
-      `❌ Unsupported file detected: ${file.originalname}, mimetype: ${file.mimetype}`
+      `❌ Unsupported file: ${file.originalname} | mimetype: ${file.mimetype}`
     );
     cb(new Error(`Unsupported file type: ${file.originalname}`), false);
   }
 };
 
-// ✅ Export multer setup
+// ✅ Export multer instance
 export const uploadLabResult = multer({
   storage,
   fileFilter,
-  limits: { fileSize: 1024 * 1024 * 1024 }, // 1 GB
+  limits: { fileSize: 1024 * 1024 * 1024 }, // 1GB max
 });

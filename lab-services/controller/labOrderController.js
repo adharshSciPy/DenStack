@@ -1,7 +1,7 @@
 import DentalLabOrder from "../model/labOrder.js";
 import LabVendor from "../model/LabVendor.js";
 import axios from "axios";
-
+import path from "path"
 export const createDentalLabOrder = async (req, res) => {
   try {
     const { vendor, dentist, patientName, deliveryDate, note, price,appointmentId } =
