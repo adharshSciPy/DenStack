@@ -23,10 +23,6 @@ const LabVendor = new mongoose.Schema(
     isActive: {
       type: Boolean,
       default: true,
-    },clinicId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Clinic", 
-      required: true,
     },
   },
   { timestamps: true }

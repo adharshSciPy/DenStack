@@ -1,29 +1,18 @@
-import { Router } from "express";
-import {
-  createLabOrder,
-  updateOrderStatus,
-  getPendingLabOrders,
-  getLabOrdersbyClinicId,
-  getLabOrdersStatus,
-  getlabOrdersbyLabId,
-  getClinicLabStats,
-} from "../controller/LabOrder.js";
+import express from "express";
+import { createDentalLabOrder,getDentalLabOrderById,getDentalLabOrders,updateDentalLabOrderStatus,uploadLabResults } from "../controller/labOrderController.js";
+import uploadDentalLabFiles from "../middleware/multerDentalLab.js";
+import {uploadLabResult} from "../middleware/labResultUpload.js"
 
-const labOrderRouter = Router();
 
-labOrderRouter.route("/create-order").post(createLabOrder);
-labOrderRouter.route("/update-status/:orderId").patch(updateOrderStatus);
-labOrderRouter.route("/pending-orders/:clinicId").get(getPendingLabOrders);
-labOrderRouter
-  .route("/lab-orders/:clinicId")
-  .get(getLabOrdersbyClinicId);
-labOrderRouter
-  .route("/lab-orders-status/:clinicId/:labId")
-  .get(getLabOrdersStatus);
-labOrderRouter
-  .route("/lab-orders-by-lab/:clinicId/:labId")
-  .get(getlabOrdersbyLabId);
-labOrderRouter
-  .route("/clinic-lab-stats/:clinicId")
-  .get(getClinicLabStats);
+const labOrderRouter = express.Router();
+
+labOrderRouter.route("/dental-orders").post(uploadDentalLabFiles.array("attachments"), createDentalLabOrder);
+labOrderRouter.route("/getall-dental-orders").get(getDentalLabOrders);
+labOrderRouter.route("/dental-orders/:id").get( getDentalLabOrderById);
+labOrderRouter.route("/dental-orders/status/:id").patch(updateDentalLabOrderStatus);
+labOrderRouter.route(
+  "/dental-orders/upload-results/:id",).patch(
+  uploadLabResult.array("resultFiles", 50),
+  uploadLabResults
+);
 export default labOrderRouter;
