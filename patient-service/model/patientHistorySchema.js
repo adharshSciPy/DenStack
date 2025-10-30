@@ -75,7 +75,17 @@ const patientHistorySchema = new mongoose.Schema(
     status: { type: String, enum: ["pending","completed"], default: "completed" },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "Doctor", required: true },
     updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: "Doctor" },
+       referral: {
+      referredByDoctorId: { type: mongoose.Schema.Types.ObjectId, ref: "Doctor" },
+      referredToDoctorId: { type: mongoose.Schema.Types.ObjectId, ref: "Doctor" },
+      referralReason: { type: String, maxlength: 500 },
+      referralDate: { type: Date },
+      status: { type: String, enum: ["pending", "accepted", "completed"], default: "pending" },
+    },
+
   },
+  
+
   { timestamps: true }
 );
 

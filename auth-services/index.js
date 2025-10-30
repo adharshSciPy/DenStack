@@ -10,6 +10,7 @@ import pharmacistAuthRouter from "./routes/pharmacistRouter.js";
 import accountantAuthRouter from "./routes/accountantRouter.js";
 import technicianAuthRouter from "./routes/technicianRouter.js";
 import receptionAuthRouter from "./routes/receptionRoute.js";
+import PRORouter from "./routes/PRORouter.js";
 import clinicSubscriptionCron from "./utils/clinicSubscriptionCron.js";
 import staffShiftCron from "./utils/staffShiftCron.js";
 
@@ -37,6 +38,7 @@ app.use("/api/v1/auth/pharmacist", pharmacistAuthRouter)
 app.use("/api/v1/auth/accountant", accountantAuthRouter)
 app.use("/api/v1/auth/receptionist", receptionAuthRouter)
 app.use("/api/v1/auth/technician", technicianAuthRouter)
+app.use("/api/v1/auth/PRO", PRORouter)
 
 
 const PORT = process.env.PORT || 8001;

@@ -34,6 +34,13 @@ const registerAccountant = async (req, res) => {
       return res.status(404).json({ message: "Clinic not found" });
     }
 
+    // ✅ Check feature permission to add accountants
+    if (!clinic.features?.canAddStaff?.accountants) {
+      return res.status(403).json({
+        message: "This clinic’s current plan does not allow adding accountants.",
+      });
+    }
+
     // ✅ Check if email/phone already exists
     const existingAccountantEmail = await Accountant.findOne({ email });
     if (existingAccountantEmail) {
@@ -91,6 +98,7 @@ const registerAccountant = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
+
 
 const loginAccountant = async (req, res) => {
   const { email, password } = req.body;
