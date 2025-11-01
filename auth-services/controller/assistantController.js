@@ -213,6 +213,29 @@ const fetchAssistantByUniqueId = async (req, res) => {
     }
 };
 
+const updateAssistant = async (req, res) => {
+    const { id } = req.params;
+    const { name, email, phoneNumber } = req.body;
+    try {
+        const response = await Assistant.findByIdAndUpdate(id, {
+            name, email, phoneNumber
+        }, { new: true })
+        res.status(200).json({ message: "Updated Successfully", data: response })
+    } catch (error) {
+        res.status(500).json({ message: "Internal Server Error", error: error.message })
+    }
+}
+
+const deleteAssistant = async (req, res) => {
+    const { id } = req.params;
+    try {
+        const response = await Assistant.findByIdAndDelete(id)
+        res.status(200).json({ message: "Deleted Successfully", data: response })
+    } catch (error) {
+        res.status(500).json({ message: "Internal Server Error", error: error.message })
+    }
+}
+
 export {
-    registerAssistant, loginAssistant, allAssistant, fetchAssistantById, fetchAssistantByUniqueId
+    registerAssistant, loginAssistant, allAssistant, fetchAssistantById, fetchAssistantByUniqueId, updateAssistant, deleteAssistant
 }
