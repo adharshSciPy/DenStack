@@ -686,59 +686,128 @@ const getAllActiveDoctorsOnClinic = async (req, res) => {
     });
   }
 };
+// OLD CODE - kept for reference(not used,doctor clinic login,passing clinicId from frontend)
+// const clinicDoctorLogin = async (req, res) => {
+//   const { clinicEmail, clinicPassword,clinicId } = req.body;
+
+//   try {
+//     // ✅ Validate input
+//     if (!clinicEmail || !clinicPassword || !clinicId) {
+//       return res.status(400).json({ success: false, message: "Email, password, and clinicId are required" });
+//     }
+//     if (!mongoose.Types.ObjectId.isValid(clinicId)) {
+//       return res.status(400).json({ success: false, message: "Invalid clinicId" });
+//     }
+
+  
+//     const doctorClinic = await DoctorClinic.findOne({ "clinicLogin.email": clinicEmail });
+
+//     if (!doctorClinic) {
+//       return res.status(404).json({ success: false, message: "Invalid email or password" });
+//     }
+
+    
+//     const isMatch = await bcrypt.compare(clinicPassword, doctorClinic.clinicLogin.password);
+//     if (!isMatch) {
+//       return res.status(401).json({ success: false, message: "Invalid email or password" });
+//     }
+//     if(doctorClinic.clinicId.toString()!==clinicId){
+//       return res.status(403).json({ success: false, message: "Doctor not associated with this clinic" });
+//     }
+
+//     // ✅ Generate JWT
+//   const accessToken = jwt.sign(
+//   {
+//     doctorClinicId: doctorClinic._id,
+//     doctorId: doctorClinic.doctorId,
+//     clinicId: doctorClinic.clinicId,
+//     roleInClinic: doctorClinic.roleInClinic,
+//   },
+//   process.env.ACCESS_TOKEN_SECRET,   // ✅ fixed
+//   { expiresIn: process.env.ACCESS_TOKEN_EXPIRY || "1h" }
+// );
+
+// const refreshToken = jwt.sign(
+//   { doctorClinicId: doctorClinic._id },
+//   process.env.REFRESH_TOKEN_SECRET,  // ✅ fixed
+//   { expiresIn: process.env.REFRESH_TOKEN_EXPIRY || "7d" }
+// );
+
+
+//     return res.status(200).json({
+//       success: true,
+//       message: "Login successful inside clinic",
+//       doctorClinic: {
+//         id: doctorClinic._id,
+//         roleInClinic: doctorClinic.roleInClinic,
+//         status: doctorClinic.status,
+//         doctor: {
+//           id: doctorClinic.doctorId._id,
+//           name: doctorClinic.doctorId.name,
+//         },
+//         clinic: {
+//           id: doctorClinic.clinicId._id,
+//           name: doctorClinic.clinicId.name,
+//         },
+//       },
+//       accessToken,
+//       refreshToken,
+//     });
+//   } catch (error) {
+//     console.error("❌ Error in clinicDoctorLogin:", error);
+//     return res.status(500).json({ success: false, message: "Server error" });
+//   }
+// };
+
+// NEW CODE - clinic doctor login(used,by fetching clinicId from db itself)
 const clinicDoctorLogin = async (req, res) => {
-  const { clinicEmail, clinicPassword,clinicId } = req.body;
+  const { clinicEmail, clinicPassword } = req.body;
 
   try {
     // ✅ Validate input
-    if (!clinicEmail || !clinicPassword || !clinicId) {
-      return res.status(400).json({ success: false, message: "Email, password, and clinicId are required" });
-    }
-    if (!mongoose.Types.ObjectId.isValid(clinicId)) {
-      return res.status(400).json({ success: false, message: "Invalid clinicId" });
+    if (!clinicEmail || !clinicPassword) {
+      return res.status(400).json({ success: false, message: "Email and password are required" });
     }
 
-  
-    const doctorClinic = await DoctorClinic.findOne({ "clinicLogin.email": clinicEmail });
-
+    // ✅ Find the doctor/staff by login email
+    const doctorClinic = await DoctorClinic.findOne({ "clinicLogin.email": clinicEmail })
+    
     if (!doctorClinic) {
       return res.status(404).json({ success: false, message: "Invalid email or password" });
     }
 
-    
+    // ✅ Verify password
     const isMatch = await bcrypt.compare(clinicPassword, doctorClinic.clinicLogin.password);
     if (!isMatch) {
       return res.status(401).json({ success: false, message: "Invalid email or password" });
     }
-    if(doctorClinic.clinicId.toString()!==clinicId){
-      return res.status(403).json({ success: false, message: "Doctor not associated with this clinic" });
-    }
 
-    // ✅ Generate JWT
-  const accessToken = jwt.sign(
-  {
-    doctorClinicId: doctorClinic._id,
-    doctorId: doctorClinic.doctorId,
-    clinicId: doctorClinic.clinicId,
-    roleInClinic: doctorClinic.roleInClinic,
-  },
-  process.env.ACCESS_TOKEN_SECRET,   // ✅ fixed
-  { expiresIn: process.env.ACCESS_TOKEN_EXPIRY || "1h" }
-);
+    // ✅ Generate JWT tokens
+    const accessToken = jwt.sign(
+      {
+        doctorClinicId: doctorClinic._id,
+        doctorId: doctorClinic.doctorId._id,
+        clinicId: doctorClinic.clinicId._id,   // automatically from DB
+         role: process.env.DOCTOR_CLINIC_ROLE || "456", 
+      },
+      process.env.ACCESS_TOKEN_SECRET,
+      { expiresIn: process.env.ACCESS_TOKEN_EXPIRY || "1h" }
+    );
 
-const refreshToken = jwt.sign(
-  { doctorClinicId: doctorClinic._id },
-  process.env.REFRESH_TOKEN_SECRET,  // ✅ fixed
-  { expiresIn: process.env.REFRESH_TOKEN_EXPIRY || "7d" }
-);
+    const refreshToken = jwt.sign(
+      { doctorClinicId: doctorClinic._id },
+      process.env.REFRESH_TOKEN_SECRET,
+      { expiresIn: process.env.REFRESH_TOKEN_EXPIRY || "7d" }
+    );
 
-
+    // ✅ Send response
     return res.status(200).json({
       success: true,
-      message: "Login successful inside clinic",
+      message: "Login successful",
       doctorClinic: {
         id: doctorClinic._id,
         roleInClinic: doctorClinic.roleInClinic,
+        role: process.env.DOCTOR_CLINIC_ROLE || "456", 
         status: doctorClinic.status,
         doctor: {
           id: doctorClinic.doctorId._id,
@@ -752,6 +821,7 @@ const refreshToken = jwt.sign(
       accessToken,
       refreshToken,
     });
+
   } catch (error) {
     console.error("❌ Error in clinicDoctorLogin:", error);
     return res.status(500).json({ success: false, message: "Server error" });
