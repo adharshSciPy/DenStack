@@ -246,6 +246,25 @@ const deletePRO = async (req, res) => {
     }
 }
 
+const approveStatus = async (req, res) => {
+    const { id } = req.params;
+    try {
+        const pro = await PRO.findById(id);
+
+        if (!pro) {
+            return res.status(404).json({ message: "PRO not found" });
+        }
+
+        pro.approve = !pro.approve;
+
+        await pro.save();
+
+        res.status(200).json({ message: `PRO ${pro.approve ? "Approved" : "Disapproved"} Successfully`, data: pro })
+    } catch (error) {
+        res.status(500).json({ message: "Internal Server Error", error: error.message })
+    }
+}
+
 export {
-    registerPRO, loginpro, allPros, fetchProById, fetchProByUniqueId, updatePRO, deletePRO
+    registerPRO, loginpro, allPros, fetchProById, fetchProByUniqueId, updatePRO, deletePRO, approveStatus
 }

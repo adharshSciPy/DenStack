@@ -236,6 +236,21 @@ const deleteAssistant = async (req, res) => {
     }
 }
 
+const approveAssist = async (req, res) => {
+    const { id } = req.params;
+    try {
+        const assist = await Assistant.findById(id)
+        if (!assist) {
+            return res.status(400).json({ message: "Assistant not found" });
+        }
+        assist.approve = !assist.approve;
+        await assist.save();
+        res.status(200).json({ message: `Assistant ${assist.approve ? "Approved" : "Disapproved"} Successfully`, data: assist })
+    } catch (error) {
+        res.status(500).json({ message: "Internal Server Error", error: error.message })
+    }
+}
+
 export {
-    registerAssistant, loginAssistant, allAssistant, fetchAssistantById, fetchAssistantByUniqueId, updateAssistant, deleteAssistant
+    registerAssistant, loginAssistant, allAssistant, fetchAssistantById, fetchAssistantByUniqueId, updateAssistant, deleteAssistant, approveAssist
 }
