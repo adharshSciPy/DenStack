@@ -321,7 +321,7 @@ const getAppointmentById = async (req, res) => {
     }
 
     const appointment = await Appointment.findById(appointmentId)
-      .populate("patientId", "name phone email") // only populate patient
+      .populate("patientId", "name phone email age") // only populate patient
       .lean();
 
     if (!appointment) {
