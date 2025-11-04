@@ -310,8 +310,6 @@ const getTodaysAppointments = async (req, res) => {
   }
 };
 
-
-
 const getAppointmentById = async (req, res) => {
   try {
     const { id: appointmentId } = req.params;
