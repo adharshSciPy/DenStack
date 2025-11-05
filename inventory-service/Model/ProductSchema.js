@@ -11,6 +11,7 @@ const productSchema = new Schema(
             required: [true, "Product name is required"],
             trim: true,
         },
+        brand: { type: mongoose.Schema.Types.ObjectId, ref: "Brand", required: true },
         category: {
             type: Schema.Types.ObjectId,
             ref: "Category",
@@ -31,9 +32,7 @@ const productSchema = new Schema(
         image: {
             type: String
         },
-        brand: {
-            type: String
-        },
+
         expiryDate: {
             type: Date
         },

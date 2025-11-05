@@ -226,33 +226,98 @@ const createAppointment = async (req, res) => {
   }
 };
 
-
 const getTodaysAppointments = async (req, res) => {
   try {
     const { doctorId, clinicId } = req.doctorClinic;
+    const { search = "", cursor = null, limit = 10, date } = req.query;
 
-    const today = new Date();
-    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    // 🗓️ Use date from query or default to today
+    const targetDate = date
+      ? new Date(date)
+      : new Date();
 
-    const appointments = await Appointment.find({
-      doctorId,
-      clinicId,
+    const todayStr = `${targetDate.getFullYear()}-${String(
+      targetDate.getMonth() + 1
+    ).padStart(2, "0")}-${String(targetDate.getDate()).padStart(2, "0")}`;
+
+    const matchStage = {
+      doctorId: new mongoose.Types.ObjectId(doctorId),
+      clinicId: new mongoose.Types.ObjectId(clinicId),
       appointmentDate: todayStr,
       status: "scheduled",
-    })
-      .populate("patientId", "name phone email age gender patientUniqueId")
-      .sort({ opNumber: 1 })
-      .lean(); 
+    };
 
-    appointments.sort((a, b) => a.opNumber - b.opNumber);
+    if (cursor && mongoose.Types.ObjectId.isValid(cursor)) {
+      matchStage._id = { $lt: new mongoose.Types.ObjectId(cursor) };
+    }
+
+    const pipeline = [
+      { $match: matchStage },
+      {
+        $lookup: {
+          from: "patients",
+          localField: "patientId",
+          foreignField: "_id",
+          as: "patientId",
+        },
+      },
+      { $unwind: "$patientId" },
+    ];
+
+    if (search.trim() !== "") {
+      const s = search.trim();
+      const searchRegex = new RegExp(s, "i");
+      pipeline.push({
+        $match: {
+          $or: [
+            { "patientId.name": searchRegex },
+            { "patientId.phone": { $regex: s } },
+            { "patientId.patientUniqueId": searchRegex },
+          ],
+        },
+      });
+    }
+
+    pipeline.push(
+      { $sort: { _id: -1 } },
+      { $limit: Number(limit) },
+      {
+        $project: {
+          _id: 1,
+          doctorId: 1,
+          clinicId: 1,
+          department: 1,
+          appointmentDate: 1,
+          appointmentTime: 1,
+          status: 1,
+          createdBy: 1,
+          opNumber: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          "patientId._id": 1,
+          "patientId.name": 1,
+          "patientId.phone": 1,
+          "patientId.age": 1,
+          "patientId.gender": 1,
+          "patientId.patientUniqueId": 1,
+        },
+      }
+    );
+
+    const appointments = await Appointment.aggregate(pipeline);
+    const nextCursor =
+      appointments.length > 0
+        ? appointments[appointments.length - 1]._id
+        : null;
 
     return res.status(200).json({
       success: true,
       message: "Appointments fetched successfully",
       count: appointments.length,
-      totalAppointments: appointments.length,
+      limit: Number(limit),
+      nextCursor,
+      hasMore: !!nextCursor,
       data: appointments,
-      nextCursor: appointments?.length ? appointments[appointments.length - 1]._id : null,
     });
   } catch (err) {
     console.error("getTodaysAppointments error:", err);
@@ -273,7 +338,7 @@ const getAppointmentById = async (req, res) => {
     }
 
     const appointment = await Appointment.findById(appointmentId)
-      .populate("patientId", "name phone email") // only populate patient
+      .populate("patientId", "name phone email age") // only populate patient
       .lean();
 
     if (!appointment) {

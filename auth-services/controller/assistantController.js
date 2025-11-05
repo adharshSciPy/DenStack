@@ -1,33 +1,32 @@
-import PRO from "../models/PROSchema.js";
+import Assistant from "../models/assistantSchema.js"
 import { nameValidator, emailValidator, passwordValidator, phoneValidator } from "../utils/validators.js";
 import mongoose from "mongoose";
 
 const generatePROId = () => {
     const randomNum = Math.floor(100000 + Math.random() * 900000);
-    return `DCS_PRO_${randomNum}`
+    return `DCS_ASSIST_${randomNum}`
 }
 
-const registerPRO = async (req, res) => {
-    const { name, email, phoneNumber, password } = req.body;
+const registerAssistant = async (req, res) => {
+    const { name, phoneNumber, email, password } = req.body;
     try {
         if (!name || !nameValidator(name)) {
-            return res.status(400).json({ message: "Invalid Name" });
+            return res.status(400).json({ message: "Invalid Name" })
         }
         if (!email || !emailValidator(email)) {
             return res.status(400).json({ message: "Invalid Email" })
         }
-        if (!password || !passwordValidator(password)) {
-            return res.status(400).json({ message: "Invalid Password" })
-        }
         if (!phoneNumber || !phoneValidator(phoneNumber)) {
             return res.status(400).json({ message: "Invalid Phone Number" })
         }
-
-        const existingEmail = await PRO.findOne({ email })
+        if (!password || !passwordValidator(password)) {
+            return res.status(400).json({ message: "Invalid Password" })
+        }
+        const existingEmail = await Assistant.findOne({ email })
         if (existingEmail) {
             return res.status(400).json({ message: "Email already exists" })
         }
-        const existingPhone = await PRO.findOne({ phoneNumber })
+        const existingPhone = await Assistant.findOne({ phoneNumber })
         if (existingPhone) {
             return res.status(400).json({ message: "Phone Number already exists" })
         }
@@ -35,33 +34,31 @@ const registerPRO = async (req, res) => {
         let exists = true;
         while (exists) {
             uniqueId = generatePROId();
-            exists = await PRO.findOne({ uniqueId })
+            exists = await Assistant.findOne({ uniqueId })
         }
-
-        const newPRO = new PRO({
-            name, email, password, phoneNumber, uniqueId, approve: true
+        const newAssistant = new Assistant({
+            name, phoneNumber, email, password, uniqueId, approve: true
         })
-        await newPRO.save();
-        const accessToken = newPRO.generateAccessToken();
-        const refreshToken = newPRO.generateRefreshToken();
-
+        await newAssistant.save();
+        const accessToken = newAssistant.generateAccessToken();
+        const refreshToken = newAssistant.generateRefreshToken();
         res.status(200).json({
-            message: "PRO registered successfully",
-            PRO: {
-                id: newPRO._id,
-                name: newPRO.name,
-                email: newPRO.email,
-                phoneNumber: newPRO.phoneNumber,
-                role: newPRO.role,
-                uniqueId: newPRO.uniqueId,
-                approve: newPRO.approve
+            message: "Assistant registered successfully",
+            Assistant: {
+                id: newAssistant._id,
+                name: newAssistant.name,
+                email: newAssistant.email,
+                phoneNumber: newAssistant.phoneNumber,
+                role: newAssistant.role,
+                uniqueId: newAssistant.uniqueId,
+                approve: newAssistant.approve
             },
             accessToken,
             refreshToken
         })
-    } catch (error) {
-        console.error("❌ Error in registerpro:", error);
-
+    }
+    catch (error) {
+        res.status(500).json({ message: "Internal Server Error", error: error.message })
         if (error.code === 11000) {
             const field = Object.keys(error.keyPattern)[0];
             return res.status(400).json({ message: `${field} already exists` });
@@ -69,48 +66,41 @@ const registerPRO = async (req, res) => {
 
         res.status(500).json({ message: "Server error" });
     }
+
 }
 
-const loginpro = async (req, res) => {
+const loginAssistant = async (req, res) => {
     const { email, password } = req.body;
-
     try {
         if (!email || !emailValidator(email)) {
-            return res.status(400).json({ message: "Invalid email" });
+            return res.status(400).json({ message: "Invalid Email" })
         }
-
-        if (!password) {
-            return res.status(400).json({ message: "Password is required" });
+        if (!password || !passwordValidator(password)) {
+            return res.status(400).json({ message: "Invalid Password" })
         }
-
-        const pro = await PRO.findOne({ email });
-        if (!pro) {
-            return res.status(400).json({ message: "Invalid email or password" });
+        const assistant = await Assistant.findOne({ email })
+        if (!assistant) {
+            return res.status(400).json({ message: "Invalid Email or Password" })
         }
-
-        // ✅ Check approval status
-        if (!pro.approve) {
-            return res.status(403).json({ message: "Your account is not approved yet. Please contact admin." });
+        if (!assistant.approve) {
+            return res.status(400).json({ message: "Your account is not approved yet. Please contact admin" })
         }
-
-        const isMatch = await pro.isPasswordCorrect(password);
+        const isMatch = await assistant.isPasswordCorrect(password)
         if (!isMatch) {
             return res.status(400).json({ message: "Invalid email or password" });
         }
-
-        const accessToken = pro.generateAccessToken();
-        const refreshToken = pro.generateRefreshToken();
-
+        const accessToken = assistant.generateAccessToken();
+        const refreshToken = assistant.generateRefreshToken();
         res.status(200).json({
             message: "Login successful",
             pro: {
-                id: pro._id,
-                name: pro.name,
-                email: pro.email,
-                phoneNumber: pro.phoneNumber,
-                role: pro.role,
-                uniqueId: pro.uniqueId,
-                approve: pro.approve,
+                id: assistant._id,
+                name: assistant.name,
+                email: assistant.email,
+                phoneNumber: assistant.phoneNumber,
+                role: assistant.role,
+                uniqueId: assistant.uniqueId,
+                approve: assistant.approve,
             },
             accessToken,
             refreshToken,
@@ -119,9 +109,9 @@ const loginpro = async (req, res) => {
         console.error("❌ Error in loginpro:", error);
         res.status(500).json({ message: "Server error" });
     }
-};
+}
 
-const allPros = async (req, res) => {
+const allAssistant = async (req, res) => {
     try {
         let { page = 1, limit = 10, search = "" } = req.query;
 
@@ -138,10 +128,10 @@ const allPros = async (req, res) => {
         }
 
         // Count total documents
-        const total = await PRO.countDocuments(query);
+        const total = await Assistant.countDocuments(query);
 
         // Pagination + sorting (newest first)
-        const pros = await PRO.find(query)
+        const assistants = await Assistant.find(query)
             .sort({ createdAt: -1 })
             .skip((page - 1) * limit)
             .limit(limit);
@@ -151,18 +141,18 @@ const allPros = async (req, res) => {
             total,
             page,
             totalPages: Math.ceil(total / limit),
-            pros
+            assistants
         });
     } catch (error) {
-        console.error("Error fetching pros:", error);
+        console.error("Error fetching assistants:", error);
         res.status(500).json({
             success: false,
-            message: "Server error while fetching pros",
+            message: "Server error while fetching assistants",
         });
     }
 };
 
-const fetchProById = async (req, res) => {
+const fetchAssistantById = async (req, res) => {
     try {
         const { id } = req.params;
 
@@ -175,59 +165,59 @@ const fetchProById = async (req, res) => {
         }
 
         // ✅ Fetch doctor with only needed fields
-        const pro = await PRO.findById(id).lean();
+        const assistants = await Assistant.findById(id).lean();
 
-        if (!pro) {
+        if (!assistants) {
             return res.status(404).json({
                 success: false,
-                message: "PRO not found",
+                message: "Assistants not found",
             });
         }
 
         return res.status(200).json({
             success: true,
-            data: pro,
+            data: assistants,
         });
     } catch (error) {
-        console.error("❌ Error fetching PRO by ID:", error);
+        console.error("❌ Error fetching Assistant by ID:", error);
         return res.status(500).json({
             success: false,
-            message: "Server error while fetching PRO details",
+            message: "Server error while fetching Assistant details",
             error: error.message,
         });
     }
 };
 
-const fetchProByUniqueId = async (req, res) => {
+const fetchAssistantByUniqueId = async (req, res) => {
     try {
         const { id: uniqueId } = req.params;
 
-        const pro = await PRO.findOne({ uniqueId });
-        if (!pro) {
+        const assistant = await Assistant.findOne({ uniqueId });
+        if (!assistant) {
             return res.status(404).json({
                 success: false,
-                message: "PRO not found",
+                message: "Assistant not found",
             });
         }
 
         res.status(200).json({
             success: true,
-            pro,
+            assistant,
         });
     } catch (error) {
-        console.error("Error fetching PRO by uniqueId:", error);
+        console.error("Error fetching Assistant by uniqueId:", error);
         res.status(500).json({
             success: false,
-            message: "Server error while fetching PRO by uniqueId",
+            message: "Server error while fetching Assistant by uniqueId",
         });
     }
 };
 
-const updatePRO = async (req, res) => {
+const updateAssistant = async (req, res) => {
     const { id } = req.params;
     const { name, email, phoneNumber } = req.body;
     try {
-        const response = await PRO.findByIdAndUpdate(id, {
+        const response = await Assistant.findByIdAndUpdate(id, {
             name, email, phoneNumber
         }, { new: true })
         res.status(200).json({ message: "Updated Successfully", data: response })
@@ -236,35 +226,31 @@ const updatePRO = async (req, res) => {
     }
 }
 
-const deletePRO = async (req, res) => {
+const deleteAssistant = async (req, res) => {
     const { id } = req.params;
     try {
-        const response = await PRO.findByIdAndDelete(id)
+        const response = await Assistant.findByIdAndDelete(id)
         res.status(200).json({ message: "Deleted Successfully", data: response })
     } catch (error) {
         res.status(500).json({ message: "Internal Server Error", error: error.message })
     }
 }
 
-const approveStatus = async (req, res) => {
+const approveAssist = async (req, res) => {
     const { id } = req.params;
     try {
-        const pro = await PRO.findById(id);
-
-        if (!pro) {
-            return res.status(404).json({ message: "PRO not found" });
+        const assist = await Assistant.findById(id)
+        if (!assist) {
+            return res.status(400).json({ message: "Assistant not found" });
         }
-
-        pro.approve = !pro.approve;
-
-        await pro.save();
-
-        res.status(200).json({ message: `PRO ${pro.approve ? "Approved" : "Disapproved"} Successfully`, data: pro })
+        assist.approve = !assist.approve;
+        await assist.save();
+        res.status(200).json({ message: `Assistant ${assist.approve ? "Approved" : "Disapproved"} Successfully`, data: assist })
     } catch (error) {
         res.status(500).json({ message: "Internal Server Error", error: error.message })
     }
 }
 
 export {
-    registerPRO, loginpro, allPros, fetchProById, fetchProByUniqueId, updatePRO, deletePRO, approveStatus
+    registerAssistant, loginAssistant, allAssistant, fetchAssistantById, fetchAssistantByUniqueId, updateAssistant, deleteAssistant, approveAssist
 }

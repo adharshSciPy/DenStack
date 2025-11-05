@@ -10,7 +10,8 @@ const categorySchema = new Schema({
     description: {
         type: String,
         trim: true
-    }
+    },
+    parentCategory: { type: mongoose.Schema.Types.ObjectId, ref: "Category", default: null },
 }, { timestamps: true })
 
 const Category = mongoose.model("Category", categorySchema);
