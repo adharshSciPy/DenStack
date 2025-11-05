@@ -2,9 +2,9 @@ import Category from "../Model/CategorySchema.js";
 
 const createCategory = async (req, res) => {
     try {
-        const { categoryName, description } = req.body
+        const { categoryName, description, parentCategory } = req.body
         const category = await Category.create({
-            categoryName, description
+            categoryName, description, parentCategory: parentCategory || null,
         })
         res.status(200).json({ message: "Category Created Successfully", data: category })
     } catch (error) {
@@ -12,14 +12,33 @@ const createCategory = async (req, res) => {
     }
 }
 
-const categoryDetails = async (req, res) => {
+const getmainCategory = async (req, res) => {
     try {
-        const details = await Category.find();
+        const details = await Category.find({ parentCategory: null });
         res.status(200).json({ message: "Category Fetched", data: details })
     } catch (error) {
         res.status(500).json({ message: "Internal Server Error", error: error.message })
     }
 }
+
+const getSubCategory = async (req, res) => {
+    try {
+        const subCategories = await Category.find({ parentCategory: req.params.id });
+        res.status(200).json({ message: "Fetch Subcategory", data: subCategories });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+const getAllCategory = async (req, res) => {
+    try {
+        const categories = await Category.find().populate("parentCategory", "name");
+        res.status(200).json({ message: "Fecth all categories", data: categories });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
 
 const deleteCategory = async (req, res) => {
     try {
@@ -32,5 +51,5 @@ const deleteCategory = async (req, res) => {
 }
 
 export {
-    createCategory, categoryDetails, deleteCategory
+    createCategory, getmainCategory, getSubCategory, getAllCategory, deleteCategory
 }
