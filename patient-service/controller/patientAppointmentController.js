@@ -8,6 +8,7 @@ import PatientHistory from "../model/patientHistorySchema.js";
 configDotenv();
 const AUTH_SERVICE_BASE_URL = process.env.AUTH_SERVICE_BASE_URL;
 const CLINIC_SERVICE_BASE_URL = process.env.CLINIC_SERVICE_BASE_URL;
+const NOTIFICATION_SERVICE_URL = process.env.NOTIFICATION_SERVICE_URL;
 
 const createAppointment = async (req, res) => {
   const { id: clinicId } = req.params;
@@ -19,7 +20,7 @@ const createAppointment = async (req, res) => {
     department,
     appointmentDate,
     appointmentTime,
-    forceBooking // optional flag for manual override
+    forceBooking 
   } = req.body;
 
   try {
@@ -192,6 +193,23 @@ const createAppointment = async (req, res) => {
     });
     await appointment.save();
 
+    // 🆕 9️⃣ Send confirmation notification (non-blocking)
+    try {
+      await axios.post(`${NOTIFICATION_SERVICE_URL}/api/notifications/send-confirmation`, {
+        appointmentId: appointment._id,
+        clinicId,
+        patientId,
+        doctorId,
+        appointmentDate,
+        appointmentTime,
+        opNumber: nextOpNumber
+      });
+      console.log("✅ Confirmation SMS sent to patient");
+    } catch (notifError) {
+      // Don't fail appointment if SMS fails
+      console.error("⚠️ SMS failed but appointment created:", notifError.message);
+    }
+
     return res.status(201).json({
       success: true,
       message: "Appointment created successfully",
@@ -207,6 +225,7 @@ const createAppointment = async (req, res) => {
     });
   }
 };
+
 
 const getTodaysAppointments = async (req, res) => {
   try {
