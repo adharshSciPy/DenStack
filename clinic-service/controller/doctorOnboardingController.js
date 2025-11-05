@@ -77,7 +77,6 @@ const onboardDoctor = async (req, res) => {
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
-
 const addDoctorAvailability = async (req, res) => {
   const { id: doctorUniqueId } = req.params;
   const { clinicId, availability = [], createdBy } = req.body;

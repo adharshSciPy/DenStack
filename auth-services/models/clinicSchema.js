@@ -37,7 +37,10 @@ const clinicSchema = new Schema(
       type: Number,
       required: [true, "Phone number is required"],
       unique: true,
-      match: [/^[6-9]\d{9}$/, "Phone number must be 10 digits starting with 6-9"],
+      match: [
+        /^[6-9]\d{9}$/,
+        "Phone number must be 10 digits starting with 6-9",
+      ],
     },
 
     password: {
@@ -101,6 +104,18 @@ const clinicSchema = new Schema(
       type: Boolean,
       default: true,
     },
+    isMultipleClinic: {
+      type: Boolean,
+      default: false,
+    },
+    isOwnLab: {
+      type: Boolean,
+      default: false,
+    },
+    labId: {
+  type: Schema.Types.ObjectId,
+  default: null,
+},
 
     // ===== Staff References =====
     staffs: {
@@ -126,11 +141,24 @@ const clinicSchema = new Schema(
       canAccessBilling: { type: Boolean, default: true },
       canAccessReports: { type: Boolean, default: false },
     },
+    // ===== Clinic Hierarchy =====
+parentClinicId: {
+  type: Schema.Types.ObjectId,
+  ref: "Clinic",
+  default: null, // null for main clinics
+},
+
+subClinics: [
+  {
+    type: Schema.Types.ObjectId,
+    ref: "Clinic",
+  },
+],
+
+
   },
   { timestamps: true }
 );
-
-
 
 // ===== Pre-save Hook: Hash Password =====
 clinicSchema.pre("save", async function (next) {
@@ -142,8 +170,6 @@ clinicSchema.pre("save", async function (next) {
     next(error);
   }
 });
-
-
 
 // ===== Instance Methods =====
 
@@ -260,8 +286,6 @@ clinicSchema.methods.applySubscriptionFeatures = function () {
   }
   return this.features;
 };
-
-
 
 // ===== Export Model =====
 const Clinic = mongoose.model("Clinic", clinicSchema);
