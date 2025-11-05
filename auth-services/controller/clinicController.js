@@ -34,6 +34,8 @@ const registerClinic = async (req, res) => {
       description,
       theme,
       features, 
+        isMultipleClinic = false,
+      isOwnLab = false,
     } = req.body;
 
    
@@ -79,6 +81,8 @@ const registerClinic = async (req, res) => {
       address,
       description,
       theme,
+        isMultipleClinic, 
+      isOwnLab,
     });
 
     // 🔹 Default subscription on registration (basic/monthly)
@@ -124,6 +128,8 @@ const registerClinic = async (req, res) => {
         subscription: newClinic.subscription,
         features: newClinic.features,
         theme: newClinic.theme,
+          isMultipleClinic: newClinic.isMultipleClinic,
+        isOwnLab: newClinic.isOwnLab,
       },
       accessToken,
       refreshToken,
@@ -166,6 +172,12 @@ const loginClinic = async (req, res) => {
     // ====== GENERATE TOKENS ======
     const accessToken = clinic.generateAccessToken();
     const refreshToken = clinic.generateRefreshToken();
+      let subClinics = [];
+    if (clinic.isMultipleClinic) {
+      subClinics = await Clinic.find({ parentClinicId: clinic._id })
+        .select("_id name email phoneNumber type isOwnLab subscription isActive")
+        .lean();
+    }
 
     res.status(200).json({
       message: "Login successful",
@@ -177,6 +189,7 @@ const loginClinic = async (req, res) => {
         type: clinic.type,
         role: clinic.role,
         subscription: clinic.subscription,
+           subClinics,
       },
       accessToken,
       refreshToken,
@@ -687,6 +700,205 @@ const getClinicStaffCounts = async (req, res) => {
     });
   }
 };
+const registerSubClinic = async (req, res) => {
+  try {
+    const{id:parentClinicId}=req.params;
+    const {
+      name,
+      type,
+      email,
+      phoneNumber,
+      password,
+      address,
+      description,
+      theme,
+      features,
+      isOwnLab = false,
+    } = req.body;
 
+    // ===== Validate Parent Clinic =====
+    if (!parentClinicId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Parent clinic ID is required" });
+    }
 
-export { registerClinic, loginClinic, viewAllClinics, viewClinicById, editClinic,getClinicStaffs ,getTheme,editTheme,subscribeClinic,getClinicDashboardDetails, addShiftToStaff,removeStaffFromClinic,getClinicStaffCounts };
+    const parentClinic = await Clinic.findById(parentClinicId);
+    if (!parentClinic) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Parent clinic not found" });
+    }
+
+    if (!parentClinic.isMultipleClinic) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "This clinic is not authorized to have subclinics (isMultipleClinic is false)",
+      });
+    }
+
+    // ===== Validate Input =====
+    if (!name || !nameValidator(name)) {
+      return res.status(400).json({ success: false, message: "Invalid name" });
+    }
+    if (!email || !emailValidator(email)) {
+      return res.status(400).json({ success: false, message: "Invalid email" });
+    }
+    if (!phoneNumber || !phoneValidator(phoneNumber)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid phone number" });
+    }
+    if (!password || !passwordValidator(password)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid password" });
+    }
+
+    // ===== Check for duplicate email/phone =====
+    const [existingEmail, existingPhone] = await Promise.all([
+      Clinic.findOne({ email }),
+      Clinic.findOne({ phoneNumber }),
+    ]);
+
+    if (existingEmail)
+      return res
+        .status(400)
+        .json({ success: false, message: "Email already exists" });
+
+    if (existingPhone)
+      return res
+        .status(400)
+        .json({ success: false, message: "Phone number already exists" });
+
+    // ===== Create SubClinic =====
+    const newSubClinic = new Clinic({
+      name,
+      type,
+      email,
+      phoneNumber,
+      password,
+      address,
+      description,
+      theme,
+      isOwnLab,
+      parentClinicId,
+    });
+
+    // ===== Default Subscription =====
+    newSubClinic.activateSubscription("monthly", "basic", 0);
+    newSubClinic.applySubscriptionFeatures();
+
+    // ===== Optional Feature Overrides =====
+    if (features && typeof features === "object") {
+      Object.entries(features).forEach(([key, value]) => {
+        if (key in newSubClinic.features) {
+          if (typeof value === "object") {
+            Object.entries(value).forEach(([subKey, subVal]) => {
+              if (
+                newSubClinic.features[key] &&
+                subKey in newSubClinic.features[key]
+              ) {
+                newSubClinic.features[key][subKey] = !!subVal;
+              }
+            });
+          } else {
+            newSubClinic.features[key] = !!value;
+          }
+        }
+      });
+    }
+
+    // ===== Save SubClinic =====
+    await newSubClinic.save();
+
+    // ===== Link to Parent Clinic =====
+    parentClinic.subClinics.push(newSubClinic._id);
+    await parentClinic.save();
+
+    // ===== Generate Tokens =====
+    const accessToken = newSubClinic.generateAccessToken();
+    const refreshToken = newSubClinic.generateRefreshToken();
+
+    return res.status(201).json({
+      success: true,
+      message: "Subclinic registered successfully",
+      subClinic: {
+        id: newSubClinic._id,
+        name: newSubClinic.name,
+        email: newSubClinic.email,
+        phoneNumber: newSubClinic.phoneNumber,
+        parentClinicId: newSubClinic.parentClinicId,
+        isOwnLab: newSubClinic.isOwnLab,
+        subscription: newSubClinic.subscription,
+        features: newSubClinic.features,
+        theme: newSubClinic.theme,
+      },
+      accessToken,
+      refreshToken,
+    });
+  } catch (error) {
+    console.error("❌ Error in registerSubClinic:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error during subclinic registration",
+      details: error.message,
+    });
+  }
+};
+const assignClinicLab = async (req, res) => {
+  try {
+    const { id:clinicId } = req.params;
+    const { labId } = req.body;
+
+    if (!labId || typeof labId !== "string") {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid or missing labId in request body.",
+      });
+    }
+
+    // 🔹 Find the clinic
+    const clinic = await Clinic.findById(clinicId);
+    if (!clinic) {
+      return res.status(404).json({
+        success: false,
+        message: "Clinic not found.",
+      });
+    }
+
+    // 🔹 Check if the clinic can have its own lab
+    if (!clinic.isOwnLab) {
+      return res.status(400).json({
+        success: false,
+        message: "This clinic is not allowed to have its own lab.",
+      });
+    }
+
+    // 🔹 Add or update the labId field
+    clinic.labId = labId;
+    await clinic.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Lab assigned successfully to clinic.",
+      clinic: {
+        id: clinic._id,
+        name: clinic.name,
+        email: clinic.email,
+        isOwnLab: clinic.isOwnLab,
+        labId: clinic.labId,
+      },
+    });
+  } catch (error) {
+    console.error("❌ Error assigning lab to clinic:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error while assigning lab.",
+      details: error.message,
+    });
+  }
+};
+
+export { registerClinic, loginClinic, viewAllClinics, viewClinicById, editClinic,getClinicStaffs ,getTheme,editTheme,subscribeClinic,getClinicDashboardDetails, addShiftToStaff,removeStaffFromClinic,getClinicStaffCounts,registerSubClinic,assignClinicLab };
