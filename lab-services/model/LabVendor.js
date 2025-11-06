@@ -7,6 +7,8 @@ const LabVendor = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    type: { type: String, enum: ["inHouse", "external"], required: true },
+    clinicId: { type: String, default: null },
     contactPerson: {
       type: String,
       trim: true,
@@ -27,7 +29,6 @@ const LabVendor = new mongoose.Schema(
   },
   { timestamps: true }
 );
-
 
 LabVendor.index({ name: 1 });
 
