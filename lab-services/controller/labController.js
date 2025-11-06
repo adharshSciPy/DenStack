@@ -53,7 +53,7 @@ const createInHouseLabVendor = async (req, res) => {
         .status(400)
         .json({ message: "Clinic ID is required for in-house vendors" });
     }
-
+    
     // 1️⃣ Create lab vendor
     const vendor = new LabVendor({
       name: name.trim(),
