@@ -138,7 +138,7 @@ const createAppointment = async (req, res) => {
       return res.status(503).json({
         success: false,
         message: "Unable to fetch doctor availability",
-        error: err.response?.data?.message || err.message,
+        error: err,
       });
     }
 
@@ -209,16 +209,22 @@ const createAppointment = async (req, res) => {
 };
 const getTodaysAppointments = async (req, res) => {
   try {
-    const { doctorId } = req.doctorClinic;
+    const doctorId = req.doctorId;
     const { search = "", cursor = null, limit = 10, date } = req.query;
 
-    // 🗓️ Use date from query or default to today
+    if (!doctorId) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing doctorId in token",
+      });
+    }
+
+    // 🗓️ Build today's date string
     const targetDate = date ? new Date(date) : new Date();
     const todayStr = `${targetDate.getFullYear()}-${String(
       targetDate.getMonth() + 1
     ).padStart(2, "0")}-${String(targetDate.getDate()).padStart(2, "0")}`;
 
-    // ✅ Base match for doctor and date (across all clinics)
     const matchStage = {
       doctorId: new mongoose.Types.ObjectId(doctorId),
       appointmentDate: todayStr,
@@ -229,11 +235,10 @@ const getTodaysAppointments = async (req, res) => {
       matchStage._id = { $lt: new mongoose.Types.ObjectId(cursor) };
     }
 
-    // ✅ Build aggregation pipeline
     const pipeline = [
       { $match: matchStage },
 
-      // Join patient details
+      // 👤 Lookup patient info
       {
         $lookup: {
           from: "patients",
@@ -242,21 +247,10 @@ const getTodaysAppointments = async (req, res) => {
           as: "patient",
         },
       },
-      { $unwind: "$patient" },
-
-      // Join clinic details
-      {
-        $lookup: {
-          from: "clinics",
-          localField: "clinicId",
-          foreignField: "_id",
-          as: "clinic",
-        },
-      },
-      { $unwind: "$clinic" },
+      { $unwind: { path: "$patient", preserveNullAndEmptyArrays: true } },
     ];
 
-    // ✅ Optional search filter
+    // 🔍 Optional search
     if (search.trim() !== "") {
       const s = search.trim();
       const searchRegex = new RegExp(s, "i");
@@ -271,17 +265,11 @@ const getTodaysAppointments = async (req, res) => {
       });
     }
 
-    // ✅ Sorting, limiting
-    pipeline.push(
-      { $sort: { _id: -1 } },
-      { $limit: Number(limit) }
-    );
-
-    // ✅ Group appointments by clinic
+    // 🧩 Sort & group by clinic
+    pipeline.push({ $sort: { _id: -1 } });
     pipeline.push({
       $group: {
         _id: "$clinicId",
-        clinicName: { $first: "$clinic.name" },
         appointments: {
           $push: {
             _id: "$_id",
@@ -301,20 +289,64 @@ const getTodaysAppointments = async (req, res) => {
         },
       },
     });
-
-    // ✅ Rename _id → clinicId
-    pipeline.push({
-      $project: {
-        _id: 0,
-        clinicId: "$_id",
-        clinicName: 1,
-        appointments: 1,
-      },
-    });
+    pipeline.push({ $limit: Number(limit) });
 
     const groupedAppointments = await Appointment.aggregate(pipeline);
 
-    // Get next cursor for pagination
+    // ⚡ Cache to avoid multiple network calls for same clinic
+    const clinicCache = {};
+
+    // ---- 🔗 Fetch minimal clinic details (name + phoneNumber) ----
+    const results = await Promise.all(
+      groupedAppointments.map(async (group) => {
+        if (!group._id) {
+          return {
+            clinicId: null,
+            clinicName: "Unknown Clinic",
+            clinicPhone: null,
+            appointments: group.appointments,
+          };
+        }
+
+        // ✅ Use cached value if available
+        if (clinicCache[group._id]) {
+          return { ...clinicCache[group._id], appointments: group.appointments };
+        }
+
+        let clinicName = "Unknown Clinic";
+        let clinicPhone = null;
+
+        try {
+          const response = await axios.get(
+            `${AUTH_SERVICE_BASE_URL}/clinic/view-clinic/${group._id}`
+          );
+          const clinic = response.data?.data;
+          if (clinic) {
+            clinicName = clinic.name || clinicName;
+            clinicPhone = clinic.phoneNumber || null;
+          }
+        } catch (err) {
+          console.warn(
+            `⚠️ Failed to fetch clinic details for ${group._id}:`,
+            err.message
+          );
+        }
+
+        const clinicObj = {
+          clinicId: group._id,
+          clinicName,
+          clinicPhone,
+        };
+
+        clinicCache[group._id] = clinicObj; // 🧠 Cache it
+
+        return {
+          ...clinicObj,
+          appointments: group.appointments,
+        };
+      })
+    );
+
     const nextCursor =
       groupedAppointments.length > 0
         ? groupedAppointments[groupedAppointments.length - 1]?.appointments?.slice(-1)[0]?._id
@@ -322,12 +354,12 @@ const getTodaysAppointments = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: "Appointments grouped by clinic fetched successfully",
-      count: groupedAppointments.length,
+      message: "Today's appointments fetched successfully",
+      count: results.length,
       limit: Number(limit),
       nextCursor,
       hasMore: !!nextCursor,
-      data: groupedAppointments,
+      data: results,
     });
   } catch (err) {
     console.error("getTodaysAppointments error:", err);
@@ -338,6 +370,8 @@ const getTodaysAppointments = async (req, res) => {
     });
   }
 };
+
+
 
 
 const getAppointmentById = async (req, res) => {
