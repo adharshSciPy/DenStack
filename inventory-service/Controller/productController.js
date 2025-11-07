@@ -18,9 +18,13 @@ const createProduct = async (req, res) => {
         }
 
         // Handle uploaded image
-        let imagePath = "";
-        if (req.file) {
-            imagePath = `/uploads/${req.file.filename}`;
+        let imagePath = [];
+        if (req.files && req.files.length > 0) {
+            imagePath = req.files.map((file) => `/uploads/${file.filename}`);
+        }
+
+        if (imagePath.length < 3) {
+            return res.status(400).json({ message: "At least 3 images are required" });
         }
 
         const newProduct = new Product({
@@ -122,6 +126,17 @@ const productsByCategory = async (req, res) => {
     }
 }
 
+const getProductsByBrand = async (req, res) => {
+    try {
+        const products = await Product.find({ brand: req.params.id })
+            .populate("brand", "name")
+            .populate("category", "name");
+        res.json(products);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
 const updateProduct = async (req, res) => {
     try {
         const { id } = req.params; // product ID from URL
@@ -142,9 +157,22 @@ const updateProduct = async (req, res) => {
             product.category = category;
         }
 
-        // 🔹 Handle new image upload (if provided)
-        if (req.file) {
-            product.image = [`/ uploads / ${req.file.filename}`]; // replace existing image
+        // 🔹 Handle new image(s)
+        let imagePaths = [];
+
+        // If single image uploaded
+        if (req.files?.image && req.files.image.length > 0) {
+            imagePaths = [`/uploads/${req.files.image[0].filename}`];
+        }
+
+        // If multiple images uploaded
+        if (req.files?.images && req.files.images.length > 0) {
+            imagePaths = req.files.images.map((file) => `/uploads/${file.filename}`);
+        }
+
+        // If new images uploaded, replace old ones
+        if (imagePaths.length > 0) {
+            product.image = imagePaths;
         }
 
         // 🔹 Update other fields (only if provided)
@@ -161,7 +189,7 @@ const updateProduct = async (req, res) => {
         res.status(200).json({
             message: "Product updated successfully",
             product,
-        });
+        }, { new: true });
     } catch (error) {
         console.error("Update Product Error:", error);
         res.status(500).json({ message: "Server Error", error: error.message });
@@ -179,5 +207,5 @@ const deleteProduct = async (req, res) => {
 }
 
 export {
-    createProduct, productDetails, getProduct, productsByCategory, updateProduct, deleteProduct
+    createProduct, productDetails, getProduct, productsByCategory, getProductsByBrand, updateProduct, deleteProduct
 }
