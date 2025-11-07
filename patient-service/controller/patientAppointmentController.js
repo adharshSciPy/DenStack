@@ -207,7 +207,7 @@ const createAppointment = async (req, res) => {
     });
   }
 };
-const getTodaysAppointments = async (req, res) => {
+ const getTodaysAppointments = async (req, res) => {
   try {
     const doctorId = req.doctorId;
     const { search = "", cursor = null, limit = 10, date } = req.query;
