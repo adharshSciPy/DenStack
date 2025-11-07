@@ -849,9 +849,10 @@ const registerSubClinic = async (req, res) => {
 };
 const assignClinicLab = async (req, res) => {
   try {
-    const { id:clinicId } = req.params;
+    const { id: clinicId } = req.params;
     const { labId } = req.body;
 
+    // ✅ Validate input
     if (!labId || typeof labId !== "string") {
       return res.status(400).json({
         success: false,
@@ -859,7 +860,7 @@ const assignClinicLab = async (req, res) => {
       });
     }
 
-    // 🔹 Find the clinic
+    // ✅ Find the clinic
     const clinic = await Clinic.findById(clinicId);
     if (!clinic) {
       return res.status(404).json({
@@ -868,7 +869,7 @@ const assignClinicLab = async (req, res) => {
       });
     }
 
-    // 🔹 Check if the clinic can have its own lab
+    // ✅ Check if clinic can have labs
     if (!clinic.isOwnLab) {
       return res.status(400).json({
         success: false,
@@ -876,9 +877,16 @@ const assignClinicLab = async (req, res) => {
       });
     }
 
-    // 🔹 Add or update the labId field
-    clinic.labId = labId;
-    await clinic.save();
+    // ✅ Initialize labIds array if not exists
+    if (!Array.isArray(clinic.labIds)) {
+      clinic.labIds = [];
+    }
+
+    // ✅ Prevent duplicate lab entries
+    if (!clinic.labIds.includes(labId)) {
+      clinic.labIds.push(labId);
+      await clinic.save();
+    }
 
     return res.status(200).json({
       success: true,
@@ -888,7 +896,7 @@ const assignClinicLab = async (req, res) => {
         name: clinic.name,
         email: clinic.email,
         isOwnLab: clinic.isOwnLab,
-        labId: clinic.labId,
+        labIds: clinic.labIds,
       },
     });
   } catch (error) {
@@ -900,5 +908,6 @@ const assignClinicLab = async (req, res) => {
     });
   }
 };
+
 
 export { registerClinic, loginClinic, viewAllClinics, viewClinicById, editClinic,getClinicStaffs ,getTheme,editTheme,subscribeClinic,getClinicDashboardDetails, addShiftToStaff,removeStaffFromClinic,getClinicStaffCounts,registerSubClinic,assignClinicLab };

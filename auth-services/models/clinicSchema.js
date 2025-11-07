@@ -112,12 +112,13 @@ const clinicSchema = new Schema(
       type: Boolean,
       default: false,
     },
-    labId: {
-  type: Schema.Types.ObjectId,
-  default: null,
-},
-
-    // ===== Staff References =====
+  labIds: [
+  {
+    type: Schema.Types.ObjectId,
+    ref: "Lab",
+  },
+],
+  // ===== Staff References =====
     staffs: {
       nurses: [{ type: Schema.Types.ObjectId, ref: "Nurse" }],
       receptionists: [{ type: Schema.Types.ObjectId, ref: "Reception" }],
