@@ -209,18 +209,21 @@ const createAppointment = async (req, res) => {
 };
 const getTodaysAppointments = async (req, res) => {
   try {
-    const { doctorId } = req.doctorClinic;
+    const { doctorId, clinicId } = req.doctorClinic;
     const { search = "", cursor = null, limit = 10, date } = req.query;
 
     // 🗓️ Use date from query or default to today
-    const targetDate = date ? new Date(date) : new Date();
+    const targetDate = date
+      ? new Date(date)
+      : new Date();
+
     const todayStr = `${targetDate.getFullYear()}-${String(
       targetDate.getMonth() + 1
     ).padStart(2, "0")}-${String(targetDate.getDate()).padStart(2, "0")}`;
 
-    // ✅ Base match for doctor and date (across all clinics)
     const matchStage = {
       doctorId: new mongoose.Types.ObjectId(doctorId),
+      clinicId: new mongoose.Types.ObjectId(clinicId),
       appointmentDate: todayStr,
       status: "scheduled",
     };
@@ -229,116 +232,83 @@ const getTodaysAppointments = async (req, res) => {
       matchStage._id = { $lt: new mongoose.Types.ObjectId(cursor) };
     }
 
-    // ✅ Build aggregation pipeline
     const pipeline = [
       { $match: matchStage },
-
-      // Join patient details
       {
         $lookup: {
           from: "patients",
           localField: "patientId",
           foreignField: "_id",
-          as: "patient",
+          as: "patientId",
         },
       },
-      { $unwind: "$patient" },
-
-      // Join clinic details
-      {
-        $lookup: {
-          from: "clinics",
-          localField: "clinicId",
-          foreignField: "_id",
-          as: "clinic",
-        },
-      },
-      { $unwind: "$clinic" },
+      { $unwind: "$patientId" },
     ];
 
-    // ✅ Optional search filter
     if (search.trim() !== "") {
       const s = search.trim();
       const searchRegex = new RegExp(s, "i");
       pipeline.push({
         $match: {
           $or: [
-            { "patient.name": searchRegex },
-            { "patient.phone": { $regex: s } },
-            { "patient.patientUniqueId": searchRegex },
+            { "patientId.name": searchRegex },
+            { "patientId.phone": { $regex: s } },
+            { "patientId.patientUniqueId": searchRegex },
           ],
         },
       });
     }
 
-    // ✅ Sorting, limiting
     pipeline.push(
       { $sort: { _id: -1 } },
-      { $limit: Number(limit) }
+      { $limit: Number(limit) },
+      {
+        $project: {
+          _id: 1,
+          doctorId: 1,
+          clinicId: 1,
+          department: 1,
+          appointmentDate: 1,
+          appointmentTime: 1,
+          status: 1,
+          createdBy: 1,
+          opNumber: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          "patientId._id": 1,
+          "patientId.name": 1,
+          "patientId.phone": 1,
+          "patientId.age": 1,
+          "patientId.gender": 1,
+          "patientId.patientUniqueId": 1,
+        },
+      }
     );
 
-    // ✅ Group appointments by clinic
-    pipeline.push({
-      $group: {
-        _id: "$clinicId",
-        clinicName: { $first: "$clinic.name" },
-        appointments: {
-          $push: {
-            _id: "$_id",
-            appointmentDate: "$appointmentDate",
-            appointmentTime: "$appointmentTime",
-            status: "$status",
-            opNumber: "$opNumber",
-            patient: {
-              _id: "$patient._id",
-              name: "$patient.name",
-              phone: "$patient.phone",
-              age: "$patient.age",
-              gender: "$patient.gender",
-              patientUniqueId: "$patient.patientUniqueId",
-            },
-          },
-        },
-      },
-    });
-
-    // ✅ Rename _id → clinicId
-    pipeline.push({
-      $project: {
-        _id: 0,
-        clinicId: "$_id",
-        clinicName: 1,
-        appointments: 1,
-      },
-    });
-
-    const groupedAppointments = await Appointment.aggregate(pipeline);
-
-    // Get next cursor for pagination
+    const appointments = await Appointment.aggregate(pipeline);
     const nextCursor =
-      groupedAppointments.length > 0
-        ? groupedAppointments[groupedAppointments.length - 1]?.appointments?.slice(-1)[0]?._id
+      appointments.length > 0
+        ? appointments[appointments.length - 1]._id
         : null;
 
     return res.status(200).json({
       success: true,
-      message: "Appointments grouped by clinic fetched successfully",
-      count: groupedAppointments.length,
+      message: "Appointments fetched successfully",
+      count: appointments.length,
       limit: Number(limit),
       nextCursor,
       hasMore: !!nextCursor,
-      data: groupedAppointments,
+      data: appointments,
     });
   } catch (err) {
     console.error("getTodaysAppointments error:", err);
     return res.status(500).json({
       success: false,
-      message: "Server error while fetching today's appointments",
+      message: "Server error",
       error: err.message,
     });
   }
 };
-
 
 const getAppointmentById = async (req, res) => {
   try {
