@@ -568,7 +568,6 @@ const getDoctorsWithAvailability = async (req, res) => {
   }
 };
 
-
 const getAllActiveDoctorsOnClinic = async (req, res) => {
   const { clinicId, page = 1, limit = 10 } = req.query;
 
