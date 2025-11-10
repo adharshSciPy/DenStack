@@ -107,7 +107,7 @@ const getUserOrders = async (req, res) => {
         const orders = await Order.find({ userId })
             .skip(skip)
             .sort({ createdAt: -1 });
-        
+
         if (!orders.length) {
             return res.status(404).json({ success: false, message: "No orders found" });
         }
@@ -126,7 +126,42 @@ const getUserOrders = async (req, res) => {
     }
 };
 
+const cancelOrder = async (req, res) => {
+    try {
+        const { orderId } = req.params;
+        const order = await Order.findById(orderId);
+        if (!order) {
+            return res.status(400).json({ message: "Order Not Found" })
+        }
+        if (order.orderStatus === "CANCELLED") {
+            return res.status(400).json({ message: "Order is already cancelled" })
+        }
+        if (order.orderStatus === "DELIVERED") {
+            return res.status(400).json({ message: "Order is already delivered" })
+        }
+
+        for (const item of order.items) {
+            const product = await Product.findById(item.productId)
+            if (product) {
+                product.stock += item.quantity;
+
+                // Update low-stock flag
+                product.isLowStock = product.stock < 10;
+                await product.save();
+            }
+        }
+        order.orderStatus = "CANCELLED";
+        order.paymentStatus = "PENDING_REFUND"; // optional
+        await order.save();
+
+        res.status(200).json({ message: "Order cancelled successfully", data: order })
+
+    } catch (error) {
+        res.status(500).json({ message: "Internal Server Error", error: error.message })
+    }
+}
+
 
 export {
-    createOrder, getAllOrders, getUserOrders
+    createOrder, getAllOrders, getUserOrders, cancelOrder
 }
