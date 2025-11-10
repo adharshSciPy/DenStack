@@ -168,18 +168,17 @@ const registerPatient = async (req, res) => {
 //   }
 // };
 const getPatientWithUniqueId = async (req, res) => {
-  const { id: uniqueId } = req.query;
+  const { id: uniqueId, clinicId } = req.query;
 
-  if (!uniqueId) {
-    return res.status(400).json({ success: false, message: "Unique ID is required" });
+  if (!uniqueId || !clinicId) {
+    return res.status(400).json({ success: false, message: "Unique ID and Clinic ID are required" });
   }
 
   try {
-    const patient = await Patient.findOne({ patientUniqueId: uniqueId })
-
+    const patient = await Patient.findOne({ patientUniqueId: uniqueId, clinicId });
 
     if (!patient) {
-      return res.status(404).json({ success: false, message: "Patient not found" });
+      return res.status(404).json({ success: false, message: "Patient not found for this clinic" });
     }
 
     res.status(200).json({ success: true, data: patient });
@@ -188,6 +187,8 @@ const getPatientWithUniqueId = async (req, res) => {
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
+
+
 const getAllPatients = async (req, res) => {
   const { id: clinicId } = req.params;
 
