@@ -372,9 +372,6 @@ const createAppointment = async (req, res) => {
   }
 };
 
-
-
-
 const getAppointmentById = async (req, res) => {
   try {
     const { id: appointmentId } = req.params;
@@ -548,49 +545,94 @@ const getAppointmentsByClinic = async (req, res) => {
     const today = new Date();
     const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
 
+    // Calculate tomorrow’s date in same format (YYYY-MM-DD)
+    const tomorrow = new Date(today);
+    tomorrow.setDate(today.getDate() + 1);
+    const tomorrowStr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, "0")}-${String(tomorrow.getDate()).padStart(2, "0")}`;
+
+    // Date filter
     if (startDate && endDate) query.appointmentDate = { $gte: startDate, $lte: endDate };
     else if (startDate) query.appointmentDate = startDate;
     else query.appointmentDate = todayStr;
 
+    // Cursor pagination
     if (lastId && mongoose.Types.ObjectId.isValid(lastId)) {
-      query._id = { $gt: new mongoose.Types.ObjectId(lastId) }; // fetch after lastId
+      query._id = { $gt: new mongoose.Types.ObjectId(lastId) };
     }
 
+    // Search by patient name or ID
     if (search?.trim()) {
       const matchingIds = await Patient.find(
-        { clinicId, $or: [{ name: { $regex: search, $options: "i" } }, { patientUniqueId: { $regex: search, $options: "i" } }] },
+        {
+          clinicId,
+          $or: [
+            { name: { $regex: search, $options: "i" } },
+            { patientUniqueId: { $regex: search, $options: "i" } },
+          ],
+        },
         { _id: 1 }
-      ).lean().limit(50).then((res) => res.map((p) => p._id));
+      )
+        .lean()
+        .limit(50)
+        .then((res) => res.map((p) => p._id));
 
       query.patientId = matchingIds.length ? { $in: matchingIds } : { $in: [] };
     }
 
+    // Fetch appointments
     const appointments = await Appointment.find(query)
-      .sort({ _id: 1 }) // ascending for cursor
+      .sort({ _id: 1 })
       .limit(Number(limit))
       .populate("patientId", "name phone email age gender patientUniqueId")
       .select("patientId appointmentDate appointmentTime opNumber status createdAt")
       .lean();
 
-    const totalAppointments = await Appointment.countDocuments({ clinicId, appointmentDate: query.appointmentDate });
+    const totalAppointments = await Appointment.countDocuments({
+      clinicId,
+      appointmentDate: query.appointmentDate,
+    });
 
-    // Calculate nextCursor
-    const nextCursor = appointments.length === Number(limit) ? appointments[appointments.length - 1]._id : null;
+    // Cursor pagination
+    const nextCursor =
+      appointments.length === Number(limit)
+        ? appointments[appointments.length - 1]._id
+        : null;
 
-    // Stats aggregation
+    // Daily stats aggregation
     const counts = await Appointment.aggregate([
-      { $match: { clinicId: new mongoose.Types.ObjectId(clinicId), appointmentDate: query.appointmentDate } },
-      { $group: {
+      {
+        $match: {
+          clinicId: new mongoose.Types.ObjectId(clinicId),
+          appointmentDate: query.appointmentDate,
+        },
+      },
+      {
+        $group: {
           _id: null,
           totalAppointments: { $sum: 1 },
           completedCount: { $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] } },
           cancelledCount: { $sum: { $cond: [{ $eq: ["$status", "cancelled"] }, 1, 0] } },
           scheduledCount: { $sum: { $cond: [{ $eq: ["$status", "scheduled"] }, 1, 0] } },
-      }},
+        },
+      },
     ]);
 
-    const stats = counts[0] || { totalAppointments: 0, completedCount: 0, cancelledCount: 0, scheduledCount: 0 };
+    const stats =
+      counts[0] || {
+        totalAppointments: 0,
+        completedCount: 0,
+        cancelledCount: 0,
+        scheduledCount: 0,
+      };
 
+    // 🟡 New: Tomorrow’s "needs_reschedule" appointments
+    const tomorrowRescheduleCount = await Appointment.countDocuments({
+      clinicId,
+      appointmentDate: tomorrowStr,
+      status: { $in: ["rescheduled", "needs_reschedule"] },
+    });
+
+    // Final response
     return res.status(200).json({
       success: true,
       message: "Appointments fetched successfully",
@@ -598,13 +640,18 @@ const getAppointmentsByClinic = async (req, res) => {
       totalAppointments,
       nextCursor,
       stats,
+      tomorrowRescheduleCount, // 👈 new key for admin dashboard
     });
-
   } catch (error) {
     console.error("getAppointmentsByClinic error:", error);
-    return res.status(500).json({ success: false, message: "Server error while fetching appointments", error: error.message });
+    return res.status(500).json({
+      success: false,
+      message: "Server error while fetching appointments",
+      error: error.message,
+    });
   }
 };
+
 
 const clearDoctorFromAppointments = async (req, res) => {
   try {
