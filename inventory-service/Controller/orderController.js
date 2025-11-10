@@ -78,7 +78,7 @@ const getAllOrders = async (req, res) => {
         const orders = await Order.find()
             .skip(skip)
             .limit(limit)
-            .populate("items.productId", "name price")
+            .populate("items._id", "name price")
             .sort({ createdAt: -1 });
 
         res.status(200).json({
@@ -106,9 +106,8 @@ const getUserOrders = async (req, res) => {
 
         const orders = await Order.find({ userId })
             .skip(skip)
-            .populate("items.productId", "name price images")
             .sort({ createdAt: -1 });
-
+        
         if (!orders.length) {
             return res.status(404).json({ success: false, message: "No orders found" });
         }
