@@ -8,10 +8,10 @@ const CLINIC_ROLE = process.env.CLINIC_ROLE
 
 const productRoute = Router();
 
-productRoute.post("/createProduct", verifyAuthToken, authorizeRoles(SUPER_ADMIN), upload.array("image",3), createProduct);
+productRoute.post("/createProduct", verifyAuthToken, authorizeRoles(SUPER_ADMIN), upload.array("image", 3), createProduct);
 productRoute.get("/productsDetails", verifyAuthToken, authorizeRoles(SUPER_ADMIN, CLINIC_ROLE), productDetails);
-productRoute.get("/getProduct/:id", verifyAuthToken, authorizeRoles(SUPER_ADMIN), getProduct);
-productRoute.get("/getProductByBrand/:id", verifyAuthToken, authorizeRoles(SUPER_ADMIN), getProductsByBrand)
+productRoute.get("/getProduct/:id", verifyAuthToken, authorizeRoles(SUPER_ADMIN, CLINIC_ROLE), getProduct);
+productRoute.get("/getProductByBrand/:id", verifyAuthToken, authorizeRoles(SUPER_ADMIN, CLINIC_ROLE), getProductsByBrand)
 productRoute.put(
   "/updateProduct/:id",
   verifyAuthToken,

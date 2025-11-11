@@ -503,29 +503,36 @@ const getDoctorsWithAvailability = async (req, res) => {
     const paginatedDoctorIds = paginatedDocs.map((d) => d.doctorId.toString());
 
     // 4️⃣ Fetch availabilities
-    const allAvailabilities = await DoctorAvailability.find({
-      doctorId: { $in: paginatedDoctorIds.map((id) => new mongoose.Types.ObjectId(id)) },
-    })
-      .populate("clinicId", "name address")
-      .lean();
+   const allAvailabilities = await DoctorAvailability.find({
+  doctorId: { $in: paginatedDoctorIds.map((id) => new mongoose.Types.ObjectId(id)) },
+  clinicId: new mongoose.Types.ObjectId(clinicId),
+})
+  .populate("clinicId", "name address")
+  .lean();
+
 
     // 5️⃣ Combine everything
     const doctors = paginatedDocs.map((docClinic) => {
       const id = docClinic.doctorId.toString();
       const doctorDetails = doctorDetailsMap[id];
-      const availabilities = allAvailabilities
-        .filter((a) => a.doctorId.toString() === id)
-        .flatMap((rec) =>
-          (rec.availability || [])
-            .filter((a) => a.isActive)
-            .map((a) => ({
-              dayOfWeek: a.dayOfWeek,
-              startTime: a.startTime,
-              endTime: a.endTime,
-              isActive: a.isActive,
-              clinic: rec.clinicId,
-            }))
-        );
+  const availabilities = allAvailabilities
+  .filter(
+    (a) =>
+      a.doctorId.toString() === id &&
+      a.clinicId?._id?.toString() === clinicId // ✅ ensure clinic matches
+  )
+  .flatMap((rec) =>
+    (rec.availability || [])
+      .filter((a) => a.isActive)
+      .map((a) => ({
+        dayOfWeek: a.dayOfWeek,
+        startTime: a.startTime,
+        endTime: a.endTime,
+        isActive: a.isActive,
+        clinic: rec.clinicId,
+      }))
+  );
+
 
       return {
         doctorId: id,
@@ -560,7 +567,6 @@ const getDoctorsWithAvailability = async (req, res) => {
     });
   }
 };
-
 
 const getAllActiveDoctorsOnClinic = async (req, res) => {
   const { clinicId, page = 1, limit = 10 } = req.query;
