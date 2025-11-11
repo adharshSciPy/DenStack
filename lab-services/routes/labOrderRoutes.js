@@ -1,5 +1,5 @@
 import express from "express";
-import { createDentalLabOrder,getDentalLabOrderById,getDentalLabOrders,updateDentalLabOrderStatus,uploadLabResults } from "../controller/labOrderController.js";
+import { createDentalLabOrder,getLabStatsUsingClinicId,getAllLabOrdersByClinicId,getDentalLabOrderById,getLabOrdersByLabVendor,getDentalLabOrders,updateDentalLabOrderStatus,uploadLabResults } from "../controller/labOrderController.js";
 import uploadDentalLabFiles from "../middleware/multerDentalLab.js";
 import {uploadLabResult} from "../middleware/labResultUpload.js"
 
@@ -15,4 +15,7 @@ labOrderRouter.route(
   uploadLabResult.array("resultFiles", 50),
   uploadLabResults
 );
+labOrderRouter.route("/lab/:labVendorId").get(getLabOrdersByLabVendor);
+labOrderRouter.route("/clinic-dental-orders/:clinicId").get(getAllLabOrdersByClinicId);
+labOrderRouter.route("/lab-stats/:clinicId").get(getLabStatsUsingClinicId);
 export default labOrderRouter;

@@ -99,7 +99,18 @@ const createInHouseLabVendor = async (req, res) => {
   }
 };
 
-
+const getLabByClinicId = async (req, res) => {
+  try {
+    const { clinicId } = req.params;
+    const vendor = await LabVendor.find({ clinicId });
+    if (!vendor) {
+      return res.status(404).json({ message: "Lab not found for this clinic" });
+    }
+    res.status(200).json(vendor);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  } 
+};
 const getAllLabVendors = async (req, res) => {
   try {
     const vendors = await LabVendor.find().sort({ createdAt: -1 });
@@ -148,4 +159,5 @@ export {
   updateLabVendor,
   deleteLabVendor,
   createInHouseLabVendor,
+  getLabByClinicId
 };
