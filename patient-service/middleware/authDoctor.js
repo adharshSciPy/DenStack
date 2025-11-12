@@ -11,7 +11,7 @@ export const authDoctor = (req, res, next) => {
     const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
 
     req.doctorId = decoded.doctorId; // available for downstream use\
-    console.log("helloooooooo",req.doctorId);
+    // console.log("helloooooooo",req.doctorId);
     next();
   } catch (err) {
     console.error("authDoctor middleware error:", err);

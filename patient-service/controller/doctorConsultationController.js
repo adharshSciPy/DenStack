@@ -13,7 +13,7 @@ const consultPatient = async (req, res) => {
 
   try {
     const { id: appointmentId } = req.params;
-    const doctorId = req.doctorClinic?.doctorId;
+      const doctorId = req.doctorId; 
     const {
       symptoms,
       diagnosis,
@@ -170,9 +170,9 @@ const consultPatient = async (req, res) => {
 const startTreatmentPlan = async (req, res) => {
   try {
     const { id: patientId } = req.params;
-    const doctorId = req.doctorClinic?.doctorId;
-    const clinicId = req.doctorClinic?.clinicId;
-    const { planName, description, stages = [] } = req.body;
+         const doctorId = req.doctorId;
+    // const clinicId = req.doctorClinic?.clinicId;
+    const { clinicId,planName, description, stages = [] } = req.body;
 
     if (!doctorId || !clinicId) {
       return res.status(403).json({
