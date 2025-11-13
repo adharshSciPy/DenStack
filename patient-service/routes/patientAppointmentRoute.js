@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { createAppointment, getAppointmentById, getTodaysAppointments,getPatientHistory, addLabOrderToPatientHistory, getAppointmentsByClinic, clearDoctorFromAppointments, appointmentReschedule, cancelAppointment } from "../controller/patientAppointmentController.js";
+import { createAppointment, getAppointmentById, getTodaysAppointments,getPatientHistory, addLabOrderToPatientHistory, getAppointmentsByClinic, clearDoctorFromAppointments, appointmentReschedule, cancelAppointment, getPatientTreatmentPlans } from "../controller/patientAppointmentController.js";
 import { authClinicDoctor } from "../middleware/authClinicDoctor.js";
 import { authDoctor } from "../middleware/authDoctor.js";
 const patientAppointmentRouter=Router();
@@ -14,5 +14,7 @@ patientAppointmentRouter.route("/clinic-appointments/:id").get(getAppointmentsBy
 patientAppointmentRouter.route("/clear-doctor-from-appointments").patch(clearDoctorFromAppointments);
 patientAppointmentRouter.route("/reschedule/:id").patch(appointmentReschedule);
 patientAppointmentRouter.route("/cancel/:id").patch(cancelAppointment);
+patientAppointmentRouter.route("/treatment-plans/:id").get(getPatientTreatmentPlans);
+
 
 export default patientAppointmentRouter

@@ -7,9 +7,9 @@ const doctorConsultationRouter = Router();
 
 doctorConsultationRouter.post("/consult-patient/:id", authDoctor, consultPatient);
 doctorConsultationRouter.post("/start-treatment/:id", authDoctor,startTreatmentPlan);
-doctorConsultationRouter.post("/add-stage/:id", authClinicDoctor, addStageToTreatmentPlan);
-doctorConsultationRouter.patch("/update-procedure-status/:id/:stageIndex/:procedureIndex", authClinicDoctor, updateProcedureStatus);
-doctorConsultationRouter.patch("/finish-treatment/:id", authClinicDoctor, finishTreatmentPlan);
+doctorConsultationRouter.patch("/add-stage/:id", authDoctor, addStageToTreatmentPlan);
+doctorConsultationRouter.patch("/update-procedure-status/:id/:stageIndex/:procedureIndex", authDoctor, updateProcedureStatus);
+doctorConsultationRouter.patch("/finish-treatment/:id", authDoctor, finishTreatmentPlan);
 
 
 export default doctorConsultationRouter;
