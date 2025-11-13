@@ -5,15 +5,14 @@ const createOrder = async (req, res) => {
     try {
         const { userId, items } = req.body;
 
-        // Validate items
         if (!items || items.length === 0)
             return res.status(400).json({ message: "No items provided" });
 
-        // Fetch product prices from DB (to prevent tampering)
         let totalAmount = 0;
         const orderItems = [];
 
         for (const item of items) {
+
             const product = await Product.findById(item.productId);
             if (!product)
                 return res.status(404).json({ message: `Product not found: ${item.productId}` });
@@ -21,36 +20,34 @@ const createOrder = async (req, res) => {
             if (product.stock < item.quantity)
                 return res.status(400).json({ message: `Not enough stock for ${product.name}` });
 
-            // ⚡ Check if product is expired
+            // Check expiry
             const now = new Date();
             if (product.expiryDate && product.expiryDate < now) {
                 return res.status(400).json({ message: `Product expired: ${product.name}` });
             }
 
-            totalAmount += product.price * item.quantity;
+            // Pricing
+            const unitCost = product.price;
+            const totalCost = unitCost * item.quantity;
+
+            totalAmount += totalCost;
+
+            // ⭐ FIXED — match schema
             orderItems.push({
-                productId: product._id,
+                itemId: product._id,      // product reference
                 quantity: item.quantity,
-                price: product.price,
+                unitCost: unitCost,
+                totalCost: totalCost
             });
 
-            // ✅ Update low-stock flag immediately
-            if (product.stock < 10) {
-                product.isLowStock = true;
-            } else {
-                product.isLowStock = false;
-            }
-
-            // Update low-stock flag immediately
+            // Low stock flag
             product.isLowStock = product.stock - item.quantity < 10;
 
-
-            // (Optional) Reduce stock
+            // Reduce stock
             product.stock -= item.quantity;
             await product.save();
         }
 
-        // Create order
         const newOrder = new Order({
             userId,
             items: orderItems,
@@ -60,7 +57,12 @@ const createOrder = async (req, res) => {
         });
 
         await newOrder.save();
-        res.status(201).json({ message: "Order created successfully", order: newOrder });
+
+        res.status(201).json({
+            message: "Order created successfully",
+            order: newOrder
+        });
+
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: "Server error" });
@@ -161,7 +163,56 @@ const cancelOrder = async (req, res) => {
     }
 }
 
+const getOrdersByClinicId = async (req, res) => {
+  try {
+    const { clinicId } = req.params;
+    const limit = parseInt(req.query.limit) || 10;
+    const cursor = req.query.cursor || null; // the last orderId received
+
+    if (!clinicId) {
+      return res.status(400).json({ message: "Clinic ID is required" });
+    }
+
+    // Query object
+    let query = { userId: clinicId };
+
+    // If cursor exists → only fetch orders created BEFORE cursor
+    if (cursor) {
+      query._id = { $lt: cursor };
+    }
+
+    // Fetch orders
+    const orders = await Order.find(query)
+      .sort({ _id: -1 })        // newest first
+      .limit(limit + 1)         // fetch one extra to check "hasNext"
+      .populate("items.itemId", "name price image")
+
+
+    let nextCursor = null;
+
+    if (orders.length > limit) {
+      // Remove extra item
+      const nextOrder = orders.pop();
+      nextCursor = nextOrder._id;  // use this for next page
+    }
+
+    res.status(200).json({
+      message: "Orders fetched successfully",
+      data: orders,
+      nextCursor,         // null means no more pages
+      hasMore: !!nextCursor
+    });
+
+  } catch (error) {
+    console.error("Cursor Pagination Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server Error",
+      error: error.message
+    });
+  }
+};
 
 export {
-    createOrder, getAllOrders, getUserOrders, cancelOrder
+    createOrder, getAllOrders, getUserOrders, cancelOrder ,getOrdersByClinicId
 }
