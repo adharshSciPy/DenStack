@@ -4,6 +4,7 @@ import axios from "axios";
 import Patient from "../model/patientSchema.js";
 import Appointment from "../model/appointmentSchema.js";
 import PatientHistory from "../model/patientHistorySchema.js";
+import treatmentPlanSchema from "../model/treatmentPlanSchema.js";
 
 configDotenv();
 const AUTH_SERVICE_BASE_URL = process.env.AUTH_SERVICE_BASE_URL;
@@ -405,18 +406,17 @@ const getAppointmentById = async (req, res) => {
 const getPatientHistory = async (req, res) => {
   try {
     const { id: patientId } = req.params;
-    const { clinicId } = req.body;
+  const { clinicId } = req.query;
 
     // ✅ 1. Validate IDs
     if (!mongoose.Types.ObjectId.isValid(patientId)) {
       return res.status(400).json({ success: false, message: "Invalid patientId" });
     }
-
     if (!mongoose.Types.ObjectId.isValid(clinicId)) {
       return res.status(400).json({ success: false, message: "Invalid clinicId" });
     }
 
-    // ✅ 2. Fetch patient history (lean + sorted descending by visitDate)
+    // ✅ 2. Fetch patient history
     const history = await PatientHistory.find(
       { patientId, clinicId },
       {
@@ -432,10 +432,11 @@ const getPatientHistory = async (req, res) => {
         referrals: 1,
         status: 1,
         createdAt: 1,
-        consultationFee: 1,      // ✅ ADDED
-        procedures: 1,            // ✅ ADDED
-        totalAmount: 1,           // ✅ ADDED
-        isPaid: 1,                // ✅ ADDED
+        consultationFee: 1,
+        procedures: 1,
+        totalAmount: 1,
+        isPaid: 1,
+        treatmentPlanId: 1,
       }
     )
       .sort({ visitDate: -1 })
@@ -445,10 +446,11 @@ const getPatientHistory = async (req, res) => {
       return res.status(404).json({ success: false, message: "No patient history found" });
     }
 
-    // ✅ 3. Extract unique doctor IDs
+    // ✅ 3. Extract unique doctor & treatment plan IDs
     const doctorIds = [...new Set(history.map(h => h.doctorId?.toString()).filter(Boolean))];
+    const treatmentPlanIds = [...new Set(history.map(h => h.treatmentPlanId?.toString()).filter(Boolean))];
 
-    // ✅ 4. Fetch doctor details from microservice in parallel
+    // ✅ 4. Fetch doctor details (microservice)
     const doctorMap = {};
     await Promise.all(
       doctorIds.map(async (doctorId) => {
@@ -456,8 +458,6 @@ const getPatientHistory = async (req, res) => {
           const { data } = await axios.get(
             `${process.env.AUTH_SERVICE_BASE_URL}/doctor/details/${doctorId}`
           );
-
-          // Corrected access
           if (data?.success && data?.data) {
             doctorMap[doctorId] = {
               name: data.data.name,
@@ -471,13 +471,27 @@ const getPatientHistory = async (req, res) => {
       })
     );
 
-    // ✅ 5. Merge doctor info into each patient history record
+    // ✅ 5. Fetch treatment plan details
+    const treatmentPlans = await mongoose.model("TreatmentPlan").find(
+      { _id: { $in: treatmentPlanIds } },
+      "planName description status createdAt completedAt stages"
+    ).lean();
+
+    const treatmentPlanMap = treatmentPlans.reduce((acc, plan) => {
+      acc[plan._id.toString()] = plan;
+      return acc;
+    }, {});
+
+    // ✅ 6. Merge doctor & treatment plan info into each history
     const enrichedHistory = history.map(h => ({
       ...h,
       doctor: doctorMap[h.doctorId?.toString()] || null,
+      treatmentPlan: h.treatmentPlanId
+        ? treatmentPlanMap[h.treatmentPlanId.toString()] || null
+        : null,
     }));
 
-    // ✅ 6. Respond
+    // ✅ 7. Respond
     return res.status(200).json({
       success: true,
       count: enrichedHistory.length,
@@ -493,6 +507,8 @@ const getPatientHistory = async (req, res) => {
     });
   }
 };
+
+
 const addLabOrderToPatientHistory = async (req, res) => {
   try {
     const { id: historyId } = req.params;
@@ -895,5 +911,46 @@ const cancelAppointment = async (req, res) => {
     });
   }
 };
+const getPatientTreatmentPlans = async (req, res) => {
+  try {
+    const { id:patientId } = req.params;
 
-export { createAppointment ,getTodaysAppointments,getAppointmentById, getPatientHistory, addLabOrderToPatientHistory,getAppointmentsByClinic,clearDoctorFromAppointments,appointmentReschedule, cancelAppointment};
+    if (!patientId) {
+      return res.status(400).json({
+        success: false,
+        message: "Patient ID is required",
+      });
+    }
+
+    // ✅ Fetch all treatment plans for this patient
+    const treatmentPlans = await treatmentPlanSchema.find({ patientId })
+      .populate({
+        path: "patientId",
+        select: "name phone email patientUniqueId patientRandomId",
+      })
+      .populate({
+        path: "clinicId",
+        select: "name phone address",
+      })
+      .populate({
+        path: "createdByDoctorId",
+        select: "name specialization phoneNumber",
+      })
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      count: treatmentPlans.length,
+      data: treatmentPlans,
+    });
+  } catch (error) {
+    console.error("❌ Error fetching treatment plans:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error while fetching treatment plans",
+      error: error.message,
+    });
+  }
+};
+
+export { createAppointment ,getTodaysAppointments,getAppointmentById, getPatientHistory, addLabOrderToPatientHistory,getAppointmentsByClinic,clearDoctorFromAppointments,appointmentReschedule, cancelAppointment,getPatientTreatmentPlans};

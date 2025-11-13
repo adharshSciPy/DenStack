@@ -13,10 +13,19 @@ const consultPatient = async (req, res) => {
 
   try {
     const { id: appointmentId } = req.params;
-    const doctorId = req.doctorClinic?.doctorId;
-    const { symptoms, diagnosis, prescriptions, notes, files = [], procedures = [], treatmentPlan } = req.body;
+      const doctorId = req.doctorId; 
+    const {
+      symptoms,
+      diagnosis,
+      prescriptions,
+      notes,
+      files = [],
+      procedures = [],
+      treatmentPlan,
+      referral,
+    } = req.body;
 
-    // Basic validations
+    // 🧩 Basic validations
     if (!appointmentId || !mongoose.Types.ObjectId.isValid(appointmentId)) {
       return res.status(400).json({ success: false, message: "Invalid appointment ID" });
     }
@@ -24,71 +33,71 @@ const consultPatient = async (req, res) => {
       return res.status(403).json({ success: false, message: "Unauthorized: Missing doctor context" });
     }
 
-    // Fetch appointment and check doctor
-    const appointment = await Appointment.findById(appointmentId);
+    // 🔍 Fetch appointment
+    const appointment = await Appointment.findById(appointmentId).session(session);
     if (!appointment) {
       return res.status(404).json({ success: false, message: "Appointment not found" });
     }
     if (appointment.doctorId?.toString() !== doctorId?.toString()) {
       return res.status(403).json({ success: false, message: "Unauthorized: Doctor mismatch" });
     }
+    if (appointment.status === "cancelled") {
+      return res.status(400).json({ success: false, message: "Cannot consult a cancelled appointment" });
+    }
 
-    // Fetch patient
-    const patient = await Patient.findById(appointment.patientId);
+    // 👨‍⚕️ Fetch patient
+    const patient = await Patient.findById(appointment.patientId).session(session);
     if (!patient) {
       return res.status(404).json({ success: false, message: "Patient not found" });
     }
 
-    // Fetch consultation fee (best-effort) — fallback to 0 on error
+    // 💰 Fetch consultation fee
     let consultationFee = 0;
     try {
       const doctorsResp = await axios.get(`${CLINIC_SERVICE_BASE_URL}/active-doctors?clinicId=${appointment.clinicId}`);
-      const doctorData = doctorsResp.data?.doctors?.find(d => d.doctorId?.toString() === doctorId.toString());
+      const doctorData = doctorsResp.data?.doctors?.find(
+        (d) => d.doctorId?.toString() === doctorId.toString()
+      );
       consultationFee = doctorData?.standardConsultationFee ?? 0;
     } catch (err) {
       console.error("Error fetching doctor fee:", err.message);
-      consultationFee = 0;
     }
 
-    // Start transaction
+    // ⚙️ Start transaction
     session.startTransaction();
 
-    // Create PatientHistory (visit)
+    // 🧾 Create new patient visit record
     const newVisit = new PatientHistory({
       patientId: appointment.patientId,
       clinicId: appointment.clinicId,
       doctorId,
       appointmentId,
-      symptoms: Array.isArray(symptoms) ? symptoms : (symptoms ? [symptoms] : []),
-      diagnosis: Array.isArray(diagnosis) ? diagnosis : (diagnosis ? [diagnosis] : []),
+      symptoms: Array.isArray(symptoms) ? symptoms : symptoms ? [symptoms] : [],
+      diagnosis: Array.isArray(diagnosis) ? diagnosis : diagnosis ? [diagnosis] : [],
       prescriptions: prescriptions || [],
       notes: notes || "",
-      files: files || [],
-      procedures: procedures || [],
+      files,
+      procedures,
       consultationFee,
       createdBy: doctorId,
     });
 
-    // ✅ Inside consultPatient after creating newVisit
-if (req.body.referral && req.body.referral.referredToDoctorId) {
-  const { referredToDoctorId, referralReason } = req.body.referral;
-
-  newVisit.referral = {
-    referredByDoctorId: doctorId,
-    referredToDoctorId,
-    referralReason,
-    referralDate: new Date(),
-    status: "pending",
-  };
-
-}
+    // 🩺 Referral details (if present)
+    if (referral?.referredToDoctorId) {
+      newVisit.referral = {
+        referredByDoctorId: doctorId,
+        referredToDoctorId: referral.referredToDoctorId,
+        referralReason: referral.referralReason,
+        referralDate: new Date(),
+        status: "pending",
+      };
+    }
 
     await newVisit.save({ session });
 
-    // Optionally create TreatmentPlan and link it
+    // 🧠 Treatment Plan (optional)
     let newPlan = null;
-    if (treatmentPlan && treatmentPlan.planName) {
-      // validate and prepare stages & procedures
+    if (treatmentPlan?.planName) {
       const preparedStages = (treatmentPlan.stages || []).map((s) => ({
         stageName: s.stageName,
         description: s.description,
@@ -116,32 +125,28 @@ if (req.body.referral && req.body.referral.referredToDoctorId) {
 
       await newPlan.save({ session });
 
-      // Link plan id to the visit
+      // Link plan to visit
       newVisit.treatmentPlanId = newPlan._id;
       await newVisit.save({ session });
 
-      // Also add to patient's treatmentPlans array
-      patient.treatmentPlans = patient.treatmentPlans || [];
-      patient.treatmentPlans.push(newPlan._id);
+      // Add to patient
+      patient.treatmentPlans = [...(patient.treatmentPlans || []), newPlan._id];
     }
 
-    // Update appointment to completed + attach visitId
-    appointment.status = "completed";
-    appointment.visitId = newVisit._id;
-    await appointment.save({ session });
+    // ✅ Update appointment status & link visit
+    await Appointment.findByIdAndUpdate(
+      appointmentId,
+      { $set: { status: "completed", visitId: newVisit._id } },
+      { session }
+    );
 
-    // Link visit to patient history array
-    patient.visitHistory = patient.visitHistory || [];
-    patient.visitHistory.push(newVisit._id);
+    // ✅ Update patient history array
+    patient.visitHistory = [...(patient.visitHistory || []), newVisit._id];
     await patient.save({ session });
 
-    // Commit transaction
+    // 🔒 Commit
     await session.commitTransaction();
 
-    // End session
-    session.endSession();
-
-    // Return response
     return res.status(201).json({
       success: true,
       message: "Consultation saved successfully",
@@ -150,110 +155,81 @@ if (req.body.referral && req.body.referral.referredToDoctorId) {
       treatmentPlan: newPlan || null,
     });
   } catch (error) {
-    // Abort transaction on error
-    try {
-      await session.abortTransaction();
-    } catch (abortErr) {
-      console.error("Error aborting transaction:", abortErr);
-    }
-    session.endSession();
-
-    console.error("consultPatient error:", error);
+    console.error("❌ consultPatient error:", error);
+    await session.abortTransaction();
     return res.status(500).json({
       success: false,
       message: "Server error during consultation",
       error: error.message,
     });
+  } finally {
+    session.endSession();
   }
 };
+
 const startTreatmentPlan = async (req, res) => {
   try {
-    const { id: patientId } = req.params;
-    const doctorId = req.doctorClinic?.doctorId;
-    const clinicId = req.doctorClinic?.clinicId;
-    const { planName, description, stages = [] } = req.body;
+    const { id: patientId } = req.params; // patient id from URL
+    const { clinicId, planName, description, stages } = req.body;
+         const doctorId = req.doctorId; 
 
-    if (!doctorId || !clinicId) {
-      return res.status(403).json({
-        success: false,
-        message: "Unauthorized: Missing clinic or doctor context",
-      });
+
+    if (!clinicId || !planName) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Clinic ID and Plan Name are required" });
     }
 
- 
-    if (!planName) {
-      return res.status(400).json({ success: false, message: "Plan name is required" });
-    }
-
-  
-    const patient = await Patient.findById(patientId);
-    if (!patient) {
-      return res.status(404).json({ success: false, message: "Patient not found" });
-    }
-
-    
-    if (patient.clinicId.toString() !== clinicId.toString()) {
-      return res.status(403).json({
-        success: false,
-        message: "Patient does not belong to this clinic",
-      });
-    }
-
-    // ✅ Prepare stages with defaults
-    const preparedStages = stages.map((s) => ({
-      stageName: s.stageName,
-      description: s.description,
-      scheduledDate: s.scheduledDate ? new Date(s.scheduledDate) : undefined,
-      status: "pending", 
-      procedures: s.procedures?.map((p) => ({
-        name: p.name,
-        doctorId: p.doctorId || doctorId, 
-        referredByDoctorId: doctorId,
-        referredToDoctorId: p.doctorId,
-        referralNotes: p.referralNotes || "",
-        completed: false, 
-      })) || [],
-    }));
-
-    // ✅ Create new treatment plan
-    const newPlan = new TreatmentPlan({
+    // 1️⃣ Create the treatment plan
+    const newPlan = await TreatmentPlan.create({
       patientId,
       clinicId,
-      createdByDoctorId: doctorId, 
+      createdByDoctorId: doctorId,
       planName,
       description,
-      stages: preparedStages,
-      status: "ongoing",
+      stages,
     });
 
-    await newPlan.save();
+    // 2️⃣ Update patient record
+    await Patient.findByIdAndUpdate(
+      patientId,
+      { $push: { treatmentPlans: newPlan._id } },
+      { new: true }
+    );
 
-    // ✅ Link to patient
-    patient.treatmentPlans = patient.treatmentPlans || [];
-    patient.treatmentPlans.push(newPlan._id);
-    await patient.save();
+    // 3️⃣ Find the latest consultation / patient history for this patient
+    const latestHistory = await PatientHistory.findOne({ patientId })
+      .sort({ createdAt: -1 })
+      .limit(1);
 
-    return res.status(201).json({
+    // 4️⃣ Link treatment plan to latest patient history (if exists)
+    if (latestHistory) {
+      latestHistory.treatmentPlanId = newPlan._id;
+      await latestHistory.save();
+    }
+
+    res.status(201).json({
       success: true,
-      message: stages.length
-        ? "Treatment plan started successfully with stages"
-        : "Treatment plan started successfully (no stages yet)",
-      treatmentPlan: newPlan,
+      message: "Treatment plan created successfully",
+      data: newPlan,
     });
-  } catch (err) {
-    console.error("startTreatmentPlan error:", err);
-    return res.status(500).json({
+  } catch (error) {
+    console.error("Error starting treatment plan:", error);
+    res.status(500).json({
       success: false,
-      message: "Server error while starting treatment plan",
-      error: err.message,
+      message: error.message || "Server Error while creating treatment plan",
     });
   }
 };
-
 const addStageToTreatmentPlan = async (req, res) => {
   try {
     const { id: treatmentPlanId } = req.params;
-    const { stageName, description, procedures = [], scheduledDate } = req.body;
+    const { stageName, description = "", procedures = [], scheduledDate } = req.body;
+
+    const doctorId = req.doctorId; // from authDoctor middleware
+    if (!doctorId) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
 
     if (!stageName) {
       return res.status(400).json({ success: false, message: "Stage name is required" });
@@ -265,7 +241,10 @@ const addStageToTreatmentPlan = async (req, res) => {
     }
 
     if (treatmentPlan.status === "completed") {
-      return res.status(400).json({ success: false, message: "Cannot add stage to a completed treatment plan" });
+      return res.status(400).json({
+        success: false,
+        message: "Cannot add stage to a completed treatment plan",
+      });
     }
 
     const newStage = {
@@ -273,13 +252,13 @@ const addStageToTreatmentPlan = async (req, res) => {
       description,
       procedures: procedures.map((p) => ({
         name: p.name,
-        doctorId: p.doctorId || treatmentPlan.createdByDoctorId,
-        referredByDoctorId: treatmentPlan.createdByDoctorId,
-        referredToDoctorId: p.doctorId || treatmentPlan.createdByDoctorId,
+        doctorId: p.doctorId || doctorId, // assign doctor
+        referredByDoctorId: doctorId,
+        referredToDoctorId: p.doctorId || doctorId,
         referralNotes: p.referralNotes || "",
         completed: false,
       })),
-      scheduledDate,
+      scheduledDate: scheduledDate || new Date().toISOString(),
       status: "pending",
     };
 
@@ -301,31 +280,66 @@ const addStageToTreatmentPlan = async (req, res) => {
   }
 };
 
+
 const updateProcedureStatus = async (req, res) => {
   try {
-    const { id:planId, stageIndex, procedureIndex } = req.params;
-    const { completed } = req.body; 
+    const { id: planId, stageIndex, procedureIndex } = req.params;
+    const { completed } = req.body;
+    const doctorId = req.doctorId;
+
+    if (!doctorId) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
 
     if (typeof completed !== "boolean") {
-      return res.status(400).json({ success: false, message: "Completed status must be boolean" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Completed status must be boolean" });
     }
 
     const treatmentPlan = await TreatmentPlan.findById(planId);
-    if (!treatmentPlan) return res.status(404).json({ success: false, message: "Treatment plan not found" });
+    if (!treatmentPlan) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Treatment plan not found" });
+    }
 
     if (treatmentPlan.status === "completed") {
-      return res.status(400).json({ success: false, message: "Cannot update procedure in a completed plan" });
+      return res.status(400).json({
+        success: false,
+        message: "Cannot update procedure in a completed plan",
+      });
     }
 
     const stage = treatmentPlan.stages[stageIndex];
-    if (!stage) return res.status(404).json({ success: false, message: "Stage not found" });
+    if (!stage) {
+      return res.status(404).json({ success: false, message: "Stage not found" });
+    }
+
+    // If procedures array is empty, create a default procedure
+    if (!stage.procedures || stage.procedures.length === 0) {
+      stage.procedures = [
+        {
+          name: "Default Procedure",
+          doctorId,
+          referredByDoctorId: doctorId,
+          referredToDoctorId: doctorId,
+          referralNotes: "",
+          completed: false,
+        },
+      ];
+    }
 
     const procedure = stage.procedures[procedureIndex];
-    if (!procedure) return res.status(404).json({ success: false, message: "Procedure not found" });
+    if (!procedure) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Procedure not found" });
+    }
 
     procedure.completed = completed;
 
-    // Optional: mark stage completed if all procedures are done
+    // Mark stage completed if all procedures are done
     if (stage.procedures.every((p) => p.completed)) {
       stage.status = "completed";
     }
@@ -346,6 +360,7 @@ const updateProcedureStatus = async (req, res) => {
     });
   }
 };
+
 
 const finishTreatmentPlan = async (req, res) => {
   try {
