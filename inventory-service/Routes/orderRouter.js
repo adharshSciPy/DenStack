@@ -1,5 +1,5 @@
 import { Router } from "express"
-import { createOrder, getAllOrders, getUserOrders,cancelOrder } from "../Controller/orderController.js"
+import { createOrder, getAllOrders, getUserOrders,cancelOrder,getOrdersByClinicId } from "../Controller/orderController.js"
 import { verifyAuthToken, authorizeRoles } from "../middlewares/authmiddleware.js";
 const CLINIC_ROLE = process.env.CLINIC_ROLE
 
@@ -9,5 +9,5 @@ orderRouter.post("/createOrder", verifyAuthToken, authorizeRoles(CLINIC_ROLE), c
 orderRouter.get("/allOrders", verifyAuthToken, authorizeRoles(CLINIC_ROLE), getAllOrders);
 orderRouter.get("/user/:userId", verifyAuthToken, authorizeRoles(CLINIC_ROLE), getUserOrders);
 orderRouter.patch("/cancelOrder/:orderId", verifyAuthToken, authorizeRoles(CLINIC_ROLE), cancelOrder);
-
+orderRouter.get("/clinic/:clinicId",verifyAuthToken,authorizeRoles(CLINIC_ROLE),getOrdersByClinicId )
 export default orderRouter;

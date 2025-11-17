@@ -1,11 +1,8 @@
 import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
-import connectDB from "./mongoDB/connectDB.js";
-import categoryRouter from "./routes/categoryRoute.js";
-import clinicInventoryRouter from "./routes/clinicInventoryRoutes.js";
-import clinicPurchaseRouter from "./routes/clinicPurchaseRoute.js";
-import clinicDistributionRouter from "./routes/clinicDistributionRoutes.js";  
+import connectDB from "./mongoDB/connectDB.js"; 
+import clinicPurchaseRoute from "./routes/clinicPurchaseRoute.js"
 
 dotenv.config();
 connectDB();
@@ -20,12 +17,9 @@ app.use(express.json());
 app.get("/", (req, res) => {
   res.send("🚀 API is running...");
 });
-app.use("/api/v1/clinic-inventory",categoryRouter)
-app.use("/api/v1/clinic-inventory",clinicInventoryRouter)
-app.use("/api/v1/clinic-purchase",clinicPurchaseRouter)
-app.use("/api/v1/clinic-distribution",clinicDistributionRouter)
 
 
+app.use("/api/v1/clinicPurchase",clinicPurchaseRoute)
 
 const PORT = process.env.PORT || 8008;
 app.listen(PORT, () => {
