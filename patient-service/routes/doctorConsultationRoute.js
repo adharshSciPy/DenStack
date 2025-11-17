@@ -11,5 +11,4 @@ doctorConsultationRouter.patch("/add-stage/:id", authDoctor, addStageToTreatment
 doctorConsultationRouter.patch("/update-procedure-status/:id/:stageIndex/:procedureIndex", authDoctor, updateProcedureStatus);
 doctorConsultationRouter.patch("/finish-treatment/:id", authDoctor, finishTreatmentPlan);
 
-
 export default doctorConsultationRouter;
