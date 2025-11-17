@@ -69,7 +69,6 @@ const createOrder = async (req, res) => {
     }
 };
 
-// ✅ GET ALL ORDERS (SuperAdmin or for Admin Dashboard)
 const getAllOrders = async (req, res) => {
     try {
         const page = parseInt(req.query.page) || 1;
