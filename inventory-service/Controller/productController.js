@@ -4,51 +4,86 @@ import Category from "../Model/CategorySchema.js";
 // Create a new product with image upload
 const createProduct = async (req, res) => {
     try {
-        const { name, category, description, price, stock, brand, expiryDate } = req.body;
+        const {
+            name,
+            mainCategory,
+            subCategory,
+            description,
+            price,
+            stock,
+            brand,
+            expiryDate
+        } = req.body;
 
-        // Validate required fields
-        if (!name || !category || !price) {
-            return res.status(400).json({ message: "Name, category, and price are required" });
+        if (!name || !mainCategory || !price || !brand) {
+            return res.status(400).json({
+                message: "Name, mainCategory, brand, and price are required",
+            });
         }
 
-        // Check if category exists
-        const categoryExists = await Category.findById(category);
-        if (!categoryExists) {
-            return res.status(404).json({ message: "Category not found" });
+        const mainCat = await Category.findById(mainCategory);
+        if (!mainCat)
+            return res.status(404).json({ message: "Main category not found" });
+
+        if (mainCat.parentCategory !== null)
+            return res.status(400).json({
+                message: "Main category must not have a parentCategory",
+            });
+
+        if (subCategory) {
+            const subCat = await Category.findById(subCategory);
+            if (!subCat)
+                return res.status(404).json({ message: "Sub category not found" });
+
+            if (!subCat.parentCategory)
+                return res.status(400).json({
+                    message: "Provided sub category has no parent",
+                });
+
+            if (String(subCat.parentCategory) !== String(mainCategory))
+                return res.status(400).json({
+                    message: "Sub category does not belong to the selected main category",
+                });
         }
 
-        // Handle uploaded image
         let imagePath = [];
         if (req.files && req.files.length > 0) {
             imagePath = req.files.map((file) => `/uploads/${file.filename}`);
         }
 
         if (imagePath.length < 3) {
-            return res.status(400).json({ message: "At least 3 images are required" });
+            return res.status(400).json({
+                message: "At least 3 images are required",
+            });
         }
 
         const newProduct = new Product({
             name,
-            category,
+            mainCategory,
+            subCategory: subCategory || null,
             description,
             price,
+            brand,
             stock: stock || 0,
             image: imagePath,
-            brand,
             expiryDate,
         });
 
         await newProduct.save();
 
-        res.status(201).json({
+        return res.status(201).json({
             message: "Product created successfully",
             product: newProduct,
         });
     } catch (error) {
         console.error("Create Product Error:", error);
-        res.status(500).json({ message: "Server Error", error: error.message });
+        return res.status(500).json({
+            message: "Server Error",
+            error: error.message,
+        });
     }
 };
+
 
 const productDetails = async (req, res) => {
     try {
@@ -139,43 +174,80 @@ const getProductsByBrand = async (req, res) => {
 
 const updateProduct = async (req, res) => {
     try {
-        const { id } = req.params; // product ID from URL
-        const { name, category, description, price, stock, brand, expiryDate } = req.body;
+        const { id } = req.params;
 
-        // 🔹 Check if product exists
+        const {
+            name,
+            mainCategory,
+            subCategory,
+            description,
+            price,
+            stock,
+            brand,
+            expiryDate
+        } = req.body;
+
+       
         const product = await Product.findById(id);
         if (!product) {
             return res.status(404).json({ message: "Product not found" });
         }
 
-        // 🔹 Validate category (if changed)
-        if (category) {
-            const categoryExists = await Category.findById(category);
-            if (!categoryExists) {
-                return res.status(404).json({ message: "Category not found" });
-            }
-            product.category = category;
+       
+        if (mainCategory) {
+            const mainCat = await Category.findById(mainCategory);
+            if (!mainCat)
+                return res.status(404).json({ message: "Main category not found" });
+
+            if (mainCat.parentCategory !== null)
+                return res.status(400).json({
+                    message: "Main category must not have a parent",
+                });
+
+            product.mainCategory = mainCategory;
         }
 
-        // 🔹 Handle new image(s)
+        if (subCategory) {
+            const subCat = await Category.findById(subCategory);
+            if (!subCat)
+                return res.status(404).json({ message: "Sub category not found" });
+
+            if (!subCat.parentCategory)
+                return res.status(400).json({
+                    message: "Provided sub category has no parent",
+                });
+
+            // Ensure subcategory belongs to mainCategory (new if updated, else old)
+            const finalMain = mainCategory || product.mainCategory;
+
+            if (String(subCat.parentCategory) !== String(finalMain)) {
+                return res.status(400).json({
+                    message: "Sub category does not belong to selected main category",
+                });
+            }
+
+            product.subCategory = subCategory;
+        }
+
         let imagePaths = [];
 
-        // If single image uploaded
+        // If single image uploaded using "image"
         if (req.files?.image && req.files.image.length > 0) {
             imagePaths = [`/uploads/${req.files.image[0].filename}`];
         }
 
-        // If multiple images uploaded
+        // If multiple images uploaded using "images"
         if (req.files?.images && req.files.images.length > 0) {
-            imagePaths = req.files.images.map((file) => `/uploads/${file.filename}`);
+            imagePaths = req.files.images.map(
+                (file) => `/uploads/${file.filename}`
+            );
         }
 
-        // If new images uploaded, replace old ones
+        // Replace old images only if new ones provided
         if (imagePaths.length > 0) {
             product.image = imagePaths;
         }
 
-        // 🔹 Update other fields (only if provided)
         if (name) product.name = name;
         if (description) product.description = description;
         if (price !== undefined) product.price = price;
@@ -183,18 +255,21 @@ const updateProduct = async (req, res) => {
         if (brand) product.brand = brand;
         if (expiryDate) product.expiryDate = new Date(expiryDate);
 
-        // 🔹 Save updated product
         await product.save();
 
-        res.status(200).json({
+        return res.status(200).json({
             message: "Product updated successfully",
             product,
-        }, { new: true });
+        });
     } catch (error) {
         console.error("Update Product Error:", error);
-        res.status(500).json({ message: "Server Error", error: error.message });
+        return res.status(500).json({
+            message: "Server Error",
+            error: error.message,
+        });
     }
 };
+
 
 const deleteProduct = async (req, res) => {
     try {
