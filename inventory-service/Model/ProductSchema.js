@@ -12,10 +12,16 @@ const productSchema = new Schema(
             trim: true,
         },
         brand: { type: mongoose.Schema.Types.ObjectId, ref: "Brand", required: true },
-        category: {
+        // NEW FIELDS
+        mainCategory: {
             type: Schema.Types.ObjectId,
             ref: "Category",
             required: true,
+        },
+        subCategory: {
+            type: Schema.Types.ObjectId,
+            ref: "Category",
+            default: null,
         },
         description: {
             type: String
@@ -54,6 +60,28 @@ productSchema.pre("save", async function (next) {
         }
         this.productId = newId;
     }
+    next();
+});
+
+// VALIDATE SUBCATEGORY BELONGS TO MAIN CATEGORY
+productSchema.pre("save", async function (next) {
+    if (this.subCategory) {
+        const Category = mongoose.model("Category");
+
+        const subCat = await Category.findById(this.subCategory);
+        if (!subCat)
+            return next(new Error("Invalid Sub Category ID"));
+
+        if (!subCat.parentCategory)
+            return next(new Error("Selected Sub Category has no parent"));
+
+        if (String(subCat.parentCategory) !== String(this.mainCategory)) {
+            return next(
+                new Error("Sub Category does not belong to selected Main Category")
+            );
+        }
+    }
+
     next();
 });
 
