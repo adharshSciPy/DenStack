@@ -3,7 +3,7 @@ import Product from "../Model/ProductSchema.js";
 
 const createOrder = async (req, res) => {
     try {
-        const { userId, items } = req.body;
+        const { clinicId, items } = req.body;
 
         if (!items || items.length === 0)
             return res.status(400).json({ message: "No items provided" });
@@ -49,7 +49,7 @@ const createOrder = async (req, res) => {
         }
 
         const newOrder = new Order({
-            userId,
+            clinicId,
             items: orderItems,
             totalAmount,
             paymentStatus: "PENDING",

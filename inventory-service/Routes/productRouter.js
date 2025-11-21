@@ -5,7 +5,7 @@ import upload from "../middlewares/upload.js";
 
 const SUPER_ADMIN = process.env.SUPERADMIN_ROLE
 const CLINIC_ROLE = process.env.CLINIC_ROLE
-
+  
 const productRoute = Router();
 
 productRoute.post("/createProduct", verifyAuthToken, authorizeRoles(SUPER_ADMIN), upload.array("image", 3), createProduct);
