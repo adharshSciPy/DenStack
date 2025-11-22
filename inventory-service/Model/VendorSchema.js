@@ -39,6 +39,23 @@ const vendorSchema = new Schema(
             state: String,
             pincode: String,
         },
+        productsCount: {
+            type: Number
+        },
+        totalRevenue: {
+            type: Number
+        },
+        rating: {
+            type: String
+        },
+        performance: {
+            type: String
+        },
+        status: {
+            type: String,
+            enum: ["Active", "Inactive", "Pending"],
+            default: "Active"
+        },
 
 
         // 🗂️ Contact History (Super Admin → Vendor or vice versa)

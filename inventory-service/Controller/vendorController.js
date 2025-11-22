@@ -2,9 +2,9 @@ import Vendor from "../Model/VendorSchema.js";
 
 const createVendor = async (req, res) => {
     try {
-        const { name, companyName, email, phoneNumber, address, contactHistory } = req.body;
+        const { name, companyName, email, phoneNumber, address, productsCount, totalRevenue, rating, performance, status, contactHistory } = req.body;
         const vendor = await Vendor.create({
-            name, companyName, email, phoneNumber, address, contactHistory
+            name, companyName, email, phoneNumber, address, productsCount, totalRevenue, rating, performance, status, contactHistory
         })
         res.status(200).json({ message: "Successfully Created", data: vendor })
     } catch (error) {
@@ -38,10 +38,10 @@ const vendorDetails = async (req, res) => {
 const editVendor = async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, companyName, email, phoneNumber, address, contactHistory } = req.body;
+        const { name, companyName, email, phoneNumber, address, productsCount, totalRevenue, rating, performance, status, contactHistory } = req.body;
 
         // 🧠 Prepare update data
-        const updateData = { name, companyName, email, phoneNumber, address };
+        const updateData = { name, companyName, email, phoneNumber, address, productsCount, totalRevenue, rating, performance, status };
 
         // 🗂️ If there’s new contact history, append it instead of replacing
         if (contactHistory && contactHistory.length > 0) {
