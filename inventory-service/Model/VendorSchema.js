@@ -34,10 +34,7 @@ const vendorSchema = new Schema(
         },
 
         address: {
-            street: String,
-            city: String,
-            state: String,
-            pincode: String,
+            type: String
         },
         productsCount: {
             type: Number
