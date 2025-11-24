@@ -5,6 +5,7 @@ import connectDB from "./mongoDB/connectDB.js";
 import clinicPurchaseRoute from "./routes/clinicPurchaseRoute.js"
 
 dotenv.config();
+console.log("url", process.env.MONGO_URL)
 connectDB();
 
 const app = express();
@@ -21,7 +22,7 @@ app.get("/", (req, res) => {
 
 app.use("/api/v1/clinicPurchase",clinicPurchaseRoute)
 
-const PORT = process.env.PORT || 8008;
+const PORT = process.env.PORT || 8010;
 app.listen(PORT, () => {
   console.log(`✅ Server running on port:${PORT}`);
 });
