@@ -95,7 +95,14 @@ const createAppointment = async (req, res) => {
         { params: { doctorId, clinicId, department } }
       );
 
-      availabilities = availRes.data?.availability || [];
+    const doctors = availRes.data?.doctors || [];
+
+const doctor = doctors.find(
+  (d) => d.doctorId?.toString() === doctorId.toString()
+);
+
+availabilities = doctor?.availability || [];
+
 
       // Compute correct local day
       const [yyyy, mm, dd] = appointmentDate.split("-").map(Number);
