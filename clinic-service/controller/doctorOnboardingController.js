@@ -437,24 +437,29 @@ const getDoctorsWithAvailability = async (req, res) => {
     // -------------------------------
     // 3️⃣ DEPARTMENT FILTER (PRIMARY FILTER)
     // -------------------------------
-    let filteredDocs = doctorClinicDocs;
+  let filteredDocs = doctorClinicDocs;
 
-    if (department.trim()) {
-      const depLower = department.toLowerCase();
+if (department.trim()) {
+  const depLower = department.trim().toLowerCase();
 
-      filteredDocs = filteredDocs.filter((docClinic) =>
-        (docClinic.specializations || []).some(
-          (spec) => spec?.toLowerCase() === depLower
-        )
-      );
+  filteredDocs = doctorClinicDocs.filter((docClinic) => {
+    const specs = docClinic.specializations;
 
-      if (!filteredDocs.length) {
-        return res.status(404).json({
-          success: false,
-          message: "No doctors found for this specialization",
-        });
-      }
-    }
+    // If no specializations, skip
+    if (!Array.isArray(specs) || specs.length === 0) return false;
+
+    return specs.some(
+      (spec) => typeof spec === "string" && spec.trim().toLowerCase() === depLower
+    );
+  });
+
+  if (!filteredDocs.length) {
+    return res.status(404).json({
+      success: false,
+      message: `No doctors found for specialization '${department}'`,
+    });
+  }
+}
 
     // -------------------------------
     // 4️⃣ FETCH DOCTOR DETAILS (ONLY FOR FILTERED SET)
