@@ -10,7 +10,7 @@ const productRoute = Router();
 
 productRoute.post("/createProduct", verifyAuthToken, authorizeRoles(SUPER_ADMIN), upload.array("image", 3), createProduct);
 productRoute.get("/productsDetails", verifyAuthToken, authorizeRoles(SUPER_ADMIN, CLINIC_ROLE), productDetails);
-productRoute.get("/getProduct/:id", verifyAuthToken, authorizeRoles(SUPER_ADMIN, CLINIC_ROLE), getProduct);
+productRoute.get("/getProduct/:id", getProduct);
 productRoute.get("/getProductByBrand/:id", verifyAuthToken, authorizeRoles(SUPER_ADMIN, CLINIC_ROLE), getProductsByBrand)
 productRoute.put(
   "/updateProduct/:id",

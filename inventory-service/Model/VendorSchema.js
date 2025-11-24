@@ -34,10 +34,24 @@ const vendorSchema = new Schema(
         },
 
         address: {
-            street: String,
-            city: String,
-            state: String,
-            pincode: String,
+            type: String
+        },
+        productsCount: {
+            type: Number
+        },
+        totalRevenue: {
+            type: Number
+        },
+        rating: {
+            type: String
+        },
+        performance: {
+            type: String
+        },
+        status: {
+            type: String,
+            enum: ["Active", "Inactive", "Pending"],
+            default: "Active"
         },
 
 
