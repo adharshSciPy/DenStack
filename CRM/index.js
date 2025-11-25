@@ -1,14 +1,20 @@
 import express from "express";
+import http from "http";
 import dotenv from "dotenv";
 import cors from "cors";
 import connectDB from "./connectdb/connectdb.js";
-import notificationRoutes from "./routes/notificationRoutes.js";
-import "./utils/scheduler.js"; // Auto-start cron jobs
+import notificationRoutes from "./router/notificatonRoute.js";
+import { initializeSocket } from "./utils/socket.js";
+import "./utils/scheduler.js";
 
 dotenv.config();
 connectDB();
 
 const app = express();
+const server = http.createServer(app); // ✅ Create HTTP server for Socket.IO
+
+// Initialize Socket.IO
+initializeSocket(server);
 
 app.use(cors());
 app.use(express.json());
@@ -28,12 +34,13 @@ app.get("/health", (req, res) => {
 
 const PORT = process.env.PORT || 8011;
 
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log("\n" + "=".repeat(50));
   console.log("🚀 Notification Service Started");
   console.log("=".repeat(50));
   console.log(`📡 Server running on: http://localhost:${PORT}`);
   console.log(`🔔 API endpoint: http://localhost:${PORT}/api/notifications`);
+  console.log(`🔌 Socket.IO: Active`);
   console.log(`⏰ Cron jobs: Active`);
   console.log("=".repeat(50) + "\n");
 });
@@ -47,16 +54,3 @@ process.on("uncaughtException", (err) => {
   console.error("❌ Uncaught Exception:", err);
   process.exit(1);
 });
-
-
-
-
-
-
-
-
-
-
-
-
-

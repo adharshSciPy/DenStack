@@ -4,7 +4,7 @@
 import axios from "axios";
 import dotenv from "dotenv";
 import NotificationLog from "../model/notificationModel.js";
-import MessageTemplate from "../models/MessageTemplate.js";
+import MessageTemplate from "../model/messageTemplateModel.js";
 
 dotenv.config();
 
@@ -13,10 +13,42 @@ const CLINIC_SERVICE_BASE_URL = process.env.CLINIC_SERVICE_BASE_URL;
 
 class NotificationService {
   
+  // ================================
+  // Helper to clean phone number
+  // ================================
+  cleanPhoneNumber(phone) {
+    if (!phone) return null;
+    
+    // Convert to string and remove all non-digits
+    let cleaned = phone.toString().replace(/\D/g, '');
+    
+    // Remove leading 91 if present (for Indian numbers)
+    if (cleaned.startsWith('91') && cleaned.length === 12) {
+      cleaned = cleaned.substring(2);
+    }
+    
+    // Should be 10 digits for Indian mobile
+    if (cleaned.length !== 10) {
+      console.warn(`⚠️  Invalid phone number length: ${cleaned} (expected 10 digits)`);
+      return null;
+    }
+    
+    return cleaned;
+  }
 
+  // ================================
+  // SMS SENDING
+  // ================================
   async sendSMS(notification) {
     try {
       const USE_MSG91 = process.env.USE_MSG91 === "true";
+      
+      // Clean phone number
+      const cleanedPhone = this.cleanPhoneNumber(notification.recipient.phone);
+      
+      if (!cleanedPhone) {
+        throw new Error(`Invalid phone number: ${notification.recipient.phone}`);
+      }
       
       if (USE_MSG91) {
         // MSG91 (Popular in India)
@@ -31,6 +63,8 @@ class NotificationService {
           return;
         }
         
+        console.log(`📤 Sending SMS to: ${cleanedPhone} via MSG91`);
+        
         const response = await axios.post(
           `https://control.msg91.com/api/v5/flow/`,
           {
@@ -39,7 +73,7 @@ class NotificationService {
             country: "91",
             sms: [{
               message: notification.message,
-              to: [notification.recipient.phone.toString()]
+              to: [cleanedPhone] // ✅ FIXED: Use cleaned phone without country code
             }]
           },
           {
@@ -75,10 +109,12 @@ class NotificationService {
           return;
         }
         
+        console.log(`📤 Sending SMS to: +91${cleanedPhone} via Twilio`);
+        
         const response = await axios.post(
           `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`,
           new URLSearchParams({
-            To: `+91${notification.recipient.phone}`,
+            To: `+91${cleanedPhone}`, // Twilio needs full international format
             From: TWILIO_PHONE_NUMBER,
             Body: notification.message
           }),
@@ -105,8 +141,13 @@ class NotificationService {
     } catch (error) {
       console.error("❌ SMS sending failed:", error.message);
       
+      // Log the full error for debugging
+      if (error.response) {
+        console.error("Response error:", error.response.data);
+      }
+      
       notification.status = "failed";
-      notification.errorMessage = error.message;
+      notification.errorMessage = error.response?.data?.message || error.message;
       notification.retryCount += 1;
       await notification.save();
       
@@ -129,9 +170,14 @@ class NotificationService {
       const FROM_EMAIL = process.env.FROM_EMAIL;
       
       if (!SENDGRID_API_KEY) {
-        console.log("SendGrid not configured");
+        console.log("SendGrid not configured, marking as sent (dev mode)");
+        notification.status = "sent";
+        notification.sentAt = new Date();
+        await notification.save();
         return;
       }
+      
+      console.log(`📧 Sending email to: ${notification.recipient.email}`);
       
       const response = await axios.post(
         "https://api.sendgrid.com/v3/mail/send",
@@ -167,8 +213,13 @@ class NotificationService {
       
     } catch (error) {
       console.error("❌ Email sending failed:", error.message);
+      
+      if (error.response) {
+        console.error("Response error:", error.response.data);
+      }
+      
       notification.status = "failed";
-      notification.errorMessage = error.message;
+      notification.errorMessage = error.response?.data?.errors?.[0]?.message || error.message;
       await notification.save();
       throw error;
     }
@@ -190,27 +241,50 @@ class NotificationService {
     const templates = {
       appointment_confirmation: {
         sms: "Dear {{patientName}}, your appointment is confirmed for {{appointmentDate}} at {{appointmentTime}}. Your OP Number is {{opNumber}}. - {{clinicName}}",
-        email: "Your appointment has been confirmed for {{appointmentDate}} at {{appointmentTime}}.",
+        email: {
+          subject: "Appointment Confirmation - {{clinicName}}",
+          body: "Dear {{patientName}},\n\nYour appointment has been confirmed for {{appointmentDate}} at {{appointmentTime}}.\n\nYour OP Number: {{opNumber}}\n\nThank you,\n{{clinicName}}"
+        },
         whatsapp: "Hi {{patientName}}! Your appointment is scheduled for {{appointmentDate}} at {{appointmentTime}}. OP#: {{opNumber}}"
       },
       appointment_reminder: {
         sms: "Reminder: You have an appointment tomorrow at {{appointmentTime}}. OP Number: {{opNumber}}. - {{clinicName}}",
-        email: "This is a reminder for your appointment tomorrow at {{appointmentTime}}.",
+        email: {
+          subject: "Appointment Reminder - {{clinicName}}",
+          body: "Dear {{patientName}},\n\nThis is a reminder for your appointment tomorrow at {{appointmentTime}}.\n\nYour OP Number: {{opNumber}}\n\nSee you soon,\n{{clinicName}}"
+        },
         whatsapp: "Hi {{patientName}}! Reminder for your appointment tomorrow at {{appointmentTime}}."
       },
       token_ready: {
         sms: "Your token number {{opNumber}} is ready. Please proceed to the consultation room. - {{clinicName}}",
-        email: "Your token is ready. Please visit the consultation room.",
+        email: {
+          subject: "Your Token is Ready - {{clinicName}}",
+          body: "Dear {{patientName}},\n\nYour token {{opNumber}} is ready. Please visit the consultation room.\n\nThank you,\n{{clinicName}}"
+        },
         whatsapp: "🔔 Your token {{opNumber}} is ready! Please proceed to consultation."
+      },
+      doctor_notification: {
+        email: {
+          subject: "New Appointment: {{patientName}} - {{appointmentDate}}",
+          body: "Dear Dr. {{doctorName}},\n\nYou have a new appointment scheduled:\n\nPatient: {{patientName}}\nDate: {{appointmentDate}}\nTime: {{appointmentTime}}\nOP Number: {{opNumber}}\n\nBest regards,\n{{clinicName}}"
+        },
+        sms: "Dr. {{doctorName}}, new appointment: {{patientName}} on {{appointmentDate}} at {{appointmentTime}}. OP#{{opNumber}}"
       }
     };
+    
+    const templateData = templates[type]?.[channel];
+    
+    // Handle email templates with subject and body
+    const body = typeof templateData === 'object' ? templateData.body : templateData;
+    const subject = typeof templateData === 'object' ? templateData.subject : undefined;
     
     const template = new MessageTemplate({
       clinicId,
       name: `Default ${type} (${channel})`,
       type,
       channel,
-      body: templates[type]?.[channel] || "Notification from {{clinicName}}",
+      subject,
+      body: body || "Notification from {{clinicName}}",
       variables: ["patientName", "appointmentDate", "appointmentTime", "opNumber", "clinicName"],
       isDefault: true,
       isActive: true

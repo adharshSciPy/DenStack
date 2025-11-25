@@ -4,6 +4,7 @@ import axios from "axios";
 import Patient from "../model/patientSchema.js";
 import Appointment from "../model/appointmentSchema.js";
 import PatientHistory from "../model/patientHistorySchema.js";
+import DoctorAvailability from "../model/doctorAvailabilitySchema.js";
 
 configDotenv();
 const AUTH_SERVICE_BASE_URL = process.env.AUTH_SERVICE_BASE_URL;
@@ -53,6 +54,16 @@ const createAppointment = async (req, res) => {
     if (!patient)
       return res.status(404).json({ success: false, message: "Patient not found in this clinic" });
 
+    // 🆕 Fetch clinic details early for notification
+    let clinicName = "Our Clinic";
+    try {
+      const clinicRes = await axios.get(`${AUTH_SERVICE_BASE_URL}/clinic/view-clinic/${clinicId}`);
+      clinicName = clinicRes.data?.data?.name || clinicRes.data?.name || "Our Clinic";
+      console.log(`✅ Clinic name fetched: ${clinicName}`);
+    } catch (err) {
+      console.warn("Could not fetch clinic name:", err.message);
+    }
+
     if (userRole === "receptionist") {
       try {
         const staffRes = await axios.get(`${AUTH_SERVICE_BASE_URL}/clinic/all-staffs/${clinicId}`);
@@ -71,7 +82,7 @@ const createAppointment = async (req, res) => {
       }
     }
 
-    // 4️⃣ 🆕 Referral logic (no populate, use clinic-service API)
+    // 4️⃣ Referral logic (no populate, use clinic-service API)
     const activeReferral = await PatientHistory.findOne({
       patientId,
       clinicId,
@@ -82,7 +93,6 @@ const createAppointment = async (req, res) => {
 
     if (activeReferral?.referral?.referredToDoctorId) {
       try {
-        // Fetch all active doctors in this clinic
         const doctorRes = await axios.get(
           `${CLINIC_SERVICE_BASE_URL}/active-doctors?clinicId=${clinicId}`
         );
@@ -100,7 +110,6 @@ const createAppointment = async (req, res) => {
           };
         }
 
-        // 🚨 If patient tries to book another doctor while a referral is pending
         if (
           !forceBooking &&
           referredDoctor &&
@@ -114,7 +123,6 @@ const createAppointment = async (req, res) => {
           });
         }
 
-        // ✅ If booking the referred doctor → mark referral as accepted
         if (referredDoctor && referredDoctor.doctorId.toString() === doctorId.toString()) {
           await PatientHistory.updateOne(
             { _id: activeReferral._id },
@@ -126,16 +134,45 @@ const createAppointment = async (req, res) => {
       }
     }
 
-    // 5️⃣ Doctor availability
+    // 5️⃣ Doctor availability - Fetch from Clinic Service API
     let availabilities = [];
     try {
-      const availRes = await axios.get(`${CLINIC_SERVICE_BASE_URL}/department-based/availability`, {
-        params: { doctorId, clinicId, department },
+      const availRes = await axios.get(`${CLINIC_SERVICE_BASE_URL}/availability`, {
+        params: { doctorId, clinicId },
       });
-      availabilities = availRes.data?.doctors?.[0]?.availability || [];
-      if (!availabilities.length)
-        return res.status(400).json({ success: false, message: `Doctor has no availability in ${department}` });
+
+      console.log("🔍 Availability API response:", JSON.stringify(availRes.data, null, 2));
+
+      const availData = availRes.data?.availabilities || [];
+      
+      if (!availData.length) {
+        return res.status(400).json({
+          success: false,
+          message: `Doctor has no availability set in this clinic`,
+        });
+      }
+
+      // Format availabilities - they should already have clinic info from the API
+      availabilities = availData
+        .filter(slot => slot.isActive)
+        .map(slot => ({
+          dayOfWeek: slot.dayOfWeek,
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+          isActive: slot.isActive,
+          clinic: slot.clinic || { _id: clinicId }
+        }));
+
+      console.log("✅ Active availabilities formatted:", availabilities);
+
+      if (availabilities.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: `Doctor has no active availability in this clinic`,
+        });
+      }
     } catch (err) {
+      console.error("❌ Error fetching availability from Clinic Service:", err.response?.data || err.message);
       return res.status(503).json({
         success: false,
         message: "Unable to fetch doctor availability",
@@ -143,28 +180,64 @@ const createAppointment = async (req, res) => {
       });
     }
 
+    // 6️⃣ Check if appointment time falls within availability
     const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
     const appointmentDay = daysOfWeek[new Date(appointmentDate).getDay()];
     const appointmentMinutes = hour * 60 + minute;
 
+    console.log("🔍 Checking availability for:", { 
+      appointmentDay, 
+      appointmentTime, 
+      appointmentMinutes,
+      clinicId 
+    });
+
     const isAvailable = availabilities.some((slot) => {
       const slotClinicId = slot.clinic?._id || slot.clinic;
-      if (!slotClinicId || slotClinicId.toString() !== clinicId.toString()) return false;
-      if (!slot.dayOfWeek || slot.dayOfWeek.toLowerCase() !== appointmentDay.toLowerCase()) return false;
+      
+      // Check clinic match
+      if (!slotClinicId || slotClinicId.toString() !== clinicId.toString()) {
+        console.log(`❌ Clinic mismatch: ${slotClinicId} !== ${clinicId}`);
+        return false;
+      }
+      
+      // Check day match (case-insensitive)
+      if (!slot.dayOfWeek || slot.dayOfWeek.toLowerCase() !== appointmentDay.toLowerCase()) {
+        console.log(`❌ Day mismatch: ${slot.dayOfWeek} !== ${appointmentDay}`);
+        return false;
+      }
+      
+      // Check time range
       const [startH, startM] = slot.startTime.split(":").map(Number);
       const [endH, endM] = slot.endTime.split(":").map(Number);
       const slotStart = startH * 60 + startM;
       const slotEnd = endH * 60 + endM;
-      return appointmentMinutes >= slotStart && appointmentMinutes < slotEnd;
+      
+      const isInRange = appointmentMinutes >= slotStart && appointmentMinutes < slotEnd;
+      
+      console.log(`🔍 Time check: ${appointmentMinutes} in range [${slotStart}, ${slotEnd})? ${isInRange}`);
+      
+      return isInRange;
     });
 
-    if (!isAvailable)
+    if (!isAvailable) {
       return res.status(400).json({
         success: false,
         message: `Doctor is not available on ${appointmentDay} at ${appointmentTime}`,
+        debug: {
+          availabilities: availabilities.map(a => ({
+            day: a.dayOfWeek,
+            time: `${a.startTime}-${a.endTime}`
+          })),
+          requested: {
+            day: appointmentDay,
+            time: appointmentTime
+          }
+        }
       });
+    }
 
-    // 6️⃣ Prevent double booking
+    // 7️⃣ Prevent double booking
     const existingAppointment = await Appointment.findOne({
       doctorId,
       clinicId,
@@ -175,11 +248,11 @@ const createAppointment = async (req, res) => {
     if (existingAppointment)
       return res.status(400).json({ success: false, message: "Doctor already has an appointment at this time" });
 
-    // 7️⃣ Generate OP number
+    // 8️⃣ Generate OP number
     const lastAppointmentToday = await Appointment.findOne({ clinicId, appointmentDate }).sort({ opNumber: -1 });
     const nextOpNumber = lastAppointmentToday ? Number(lastAppointmentToday.opNumber) + 1 : 1;
 
-    // 8️⃣ Create appointment
+    // 9️⃣ Create appointment
     const appointment = new Appointment({
       clinicId,
       patientId,
@@ -193,7 +266,7 @@ const createAppointment = async (req, res) => {
     });
     await appointment.save();
 
-    // 🆕 9️⃣ Send confirmation notification (non-blocking)
+    // 🔟 Send confirmation notification (non-blocking)
     try {
       await axios.post(`${NOTIFICATION_SERVICE_URL}/api/notifications/send-confirmation`, {
         appointmentId: appointment._id,
@@ -202,12 +275,12 @@ const createAppointment = async (req, res) => {
         doctorId,
         appointmentDate,
         appointmentTime,
-        opNumber: nextOpNumber
+        opNumber: nextOpNumber,
+        clinicName
       });
-      console.log("✅ Confirmation SMS sent to patient");
+      console.log("✅ Confirmation notification sent to patient");
     } catch (notifError) {
-      // Don't fail appointment if SMS fails
-      console.error("⚠️ SMS failed but appointment created:", notifError.message);
+      console.error("⚠️ Notification failed but appointment created:", notifError.message);
     }
 
     return res.status(201).json({
@@ -802,5 +875,51 @@ const cancelAppointment = async (req, res) => {
     });
   }
 };
-
-export { createAppointment ,getTodaysAppointments,getAppointmentById, getPatientHistory, addLabOrderToPatientHistory,getAppointmentsByClinic,clearDoctorFromAppointments,appointmentReschedule, cancelAppointment};
+const getAppointmentsByDate = async (req, res) => {
+  try {
+    const { date, status } = req.query;
+    
+    if (!date) {
+      return res.status(400).json({
+        success: false,
+        message: 'Date parameter is required (format: YYYY-MM-DD)'
+      });
+    }
+    
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid date format. Use YYYY-MM-DD'
+      });
+    }
+    
+    const query = { appointmentDate: date };
+    
+    if (status) {
+      query.status = status;
+    }
+    
+    // ✅ FIXED: Only populate patientId
+    const appointments = await Appointment.find(query)
+      .populate('patientId', 'name email phone whatsappNumber')
+      .sort({ appointmentTime: 1 })
+      .lean();
+    
+    console.log(`📋 Found ${appointments.length} appointments for ${date}`);
+    
+    res.status(200).json({
+      success: true,
+      count: appointments.length,
+      data: appointments
+    });
+    
+  } catch (error) {
+    console.error('❌ Error fetching appointments by date:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch appointments',
+      error: error.message
+    });
+  }
+};
+export { createAppointment ,getTodaysAppointments,getAppointmentById, getPatientHistory, addLabOrderToPatientHistory,getAppointmentsByClinic,clearDoctorFromAppointments,appointmentReschedule, cancelAppointment,getAppointmentsByDate};

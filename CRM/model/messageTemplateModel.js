@@ -12,7 +12,7 @@ const messageTemplateSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ["appointment_confirmation", "appointment_reminder", "token_ready", "appointment_cancelled"],
+    enum: ["appointment_confirmation", "appointment_reminder", "token_ready", "appointment_cancelled","doctor_notification"],
     required: true
   },
   channel: {

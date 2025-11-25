@@ -22,7 +22,7 @@ const notificationLogSchema = new mongoose.Schema({
   // Notification details
   type: {
     type: String,
-    enum: ["appointment_confirmation", "appointment_reminder", "token_ready", "appointment_cancelled"],
+    enum: ["appointment_confirmation", "appointment_reminder", "token_ready", "appointment_cancelled", "doctor_notification"],
     required: true
   },
   channel: {
@@ -39,6 +39,7 @@ const notificationLogSchema = new mongoose.Schema({
   },
   
   // Message content
+  subject: String, // ✅ Added for email notifications
   message: {
     type: String,
     required: true
