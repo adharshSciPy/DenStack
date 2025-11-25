@@ -4,9 +4,10 @@ const clinicPurchaseOrderSchema = new mongoose.Schema({
     clinicId: String,
     items: [
         {
-            productId: mongoose.Schema.Types.ObjectId,
+            itemId: mongoose.Schema.Types.ObjectId,
             quantity: Number,
-            price: Number
+            unitCost: Number,
+            totalCost: Number,
         }
     ],
     totalAmount: Number,

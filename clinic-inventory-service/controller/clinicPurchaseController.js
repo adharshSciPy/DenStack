@@ -2,6 +2,7 @@ import ClinicPurchaseOrder from "../model/ClinicPurchaseOrder.js";
 import ClinicInventory from "../model/ClinicInventoryModel.js";
 import axios from "axios";
 
+const INVENTORY_SERVICE_URL = 'http://localhost:8004/api/v1/'
 // export const clinicPurchase = async (req, res) => {
 //   try {
 //     const { clinicId } = req.params;
@@ -68,61 +69,63 @@ import axios from "axios";
 //   }
 // };
 
-
 export const clinicPurchase = async (req, res) => {
-    try {
-        const {clinicId, items } = req.body;
+  try {
+    const { clinicId, items } = req.body;
 
-        if (!items || items.length === 0) {
-            return res.status(400).json({ message: "No items provided" });
-        }
-        if(!clinicId){
-            return res.status(400).json({ message: "No clinicId provided" });
-        }
-        // Extract token from incoming request
-        const authHeader = req.headers['authorization'];
-        if (!authHeader) {
-            return res.status(401).json({ message: "No authorization token provided" });
-        }
-
-        // Send order request to Inventory
-        const response = await axios.post(
-            `${process.env.INVENTORY_SERVICE_URL}order/createOrder`,
-            { clinicId, items },
-            {
-                headers: {
-                    Authorization: authHeader,   // forward token
-                }
-            }
-        );
-
-        const inventoryOrder = response.data.order;
-
-        if (!inventoryOrder) {
-            return res.status(500).json({ message: "Invalid response from Inventory" });
-        }
-
-        // Save in Clinic DB
-        const createdOrder = await ClinicPurchaseOrder.create({
-            clinicId,
-            items: inventoryOrder.items,
-            totalAmount: inventoryOrder.totalAmount,
-            status: "PENDING",
-            linkedInventoryOrderId: inventoryOrder._id
-        });
-
-        res.status(201).json({
-            message: "Order placed successfully",
-            order: createdOrder
-        });
-
-    } catch (err) {
-        console.log("Purchase Error →", err.response?.data || err.message);
-        res.status(500).json({
-            message: "Server error",
-            error: err.response?.data || err.message
-        });
+    if (!items || items.length === 0) {
+      return res.status(400).json({ message: "No items provided" });
     }
+    if (!clinicId) {
+      return res.status(400).json({ message: "No clinicId provided" });
+    }
+    // Extract token from incoming request
+    const authHeader = req.headers["authorization"];
+    if (!authHeader) {
+      return res
+        .status(401)
+        .json({ message: "No authorization token provided" });
+    }
+
+    // Send order request to Inventory
+    const response = await axios.post(
+      `${process.env.INVENTORY_SERVICE_URL}order/createOrder`,
+      { clinicId, items },
+      {
+        headers: {
+          Authorization: authHeader, // forward token
+        },
+      }
+    );
+    
+    const inventoryOrder = response.data?.order;
+
+    if (!inventoryOrder) {
+      return res
+        .status(500)
+        .json({ message: "Invalid response from Inventory" });
+    }
+
+    // Save in Clinic DB
+    const createdOrder = await ClinicPurchaseOrder.create({
+      clinicId,
+      items: inventoryOrder.items,
+      totalAmount: inventoryOrder.totalAmount,
+      status: "PENDING",
+      linkedInventoryOrderId: inventoryOrder._id,
+    });
+
+    res.status(201).json({
+      message: "Order placed successfully",
+      order: createdOrder,
+    });
+  } catch (err) {
+    console.log("Purchase Error →", err.response?.data || err.message);
+    res.status(500).json({
+      message: "Server error",
+      error: err.response?.data || err.message,
+    });
+  }
 };
 
 export const markDelivered = async (req, res) => {
@@ -155,18 +158,47 @@ export const markDelivered = async (req, res) => {
   }
 };
 
-export const  getClinicOrders = async (req, res) => {
-    try {
-        const { clinicId } = req.params;
-        const orders = await ClinicPurchaseOrder.find({ clinicId }).sort({ createdAt: -1 });
+export const getClinicOrders = async (req, res) => {
+  try {
+    const { clinicId } = req.params;
 
-        res.status(200).json({
-            message: "Orders fetched successfully",
-            data: orders
-        });
-    }
-    catch (error) {
-        console.error("Get Clinic Orders Error:", error);
-        res.status(500).json({ success: false, message: "Server Error" });
-    }
+    const orders = await ClinicPurchaseOrder.find({ clinicId }).sort({ createdAt: -1 });
+
+    // 🔥 Loop all orders & fetch product details for each item
+    const ordersWithProducts     = await Promise.all(
+      orders.map(async (order) => {
+        const updatedItems = await Promise.all(
+          order.items.map(async (item) => {
+            try {
+              const productResponse = await axios.get(
+                `${INVENTORY_SERVICE_URL}product/getProduct/${item.itemId}`
+              );
+
+              return {
+                ...item._doc,
+                product: productResponse.data.data  // attach product details
+              };
+            } catch (err) {
+              return { ...item._doc, product: null }; // product service down
+            }
+          })
+        );
+
+        return {
+          ...order._doc,
+          items: updatedItems
+        };
+      })
+    );
+
+    res.status(200).json({
+      message: "Orders fetched successfully",
+      data: ordersWithProducts,
+    });
+
+  } catch (error) {
+    console.error("Get Clinic Orders Error:", error);
+    res.status(500).json({ success: false, message: "Server Error" });
+  }
 };
+
