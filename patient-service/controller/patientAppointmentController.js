@@ -724,155 +724,136 @@ const clearDoctorFromAppointments = async (req, res) => {
 };
 const appointmentReschedule = async (req, res) => {
   try {
-    const { id: appointmentId } = req.params;
-    const { newDate, newTime, doctorId } = req.body;
+    const { id:appointmentId } = req.params;
+    const { doctorId, newDate, newTime } = req.body;
 
-    // ✅ Validate appointmentId
-    if (!appointmentId || !mongoose.Types.ObjectId.isValid(appointmentId)) {
+    console.log("========== RESCHEDULE DEBUG ==========");
+    console.log("📌 appointmentId:", appointmentId);
+    console.log("📌 doctorId:", doctorId);
+    console.log("📌 newDate:", newDate);
+    console.log("📌 newTime:", newTime);
+
+    // Validate IDs
+    if (!mongoose.Types.ObjectId.isValid(appointmentId))
       return res.status(400).json({ success: false, message: "Invalid appointmentId" });
-    }
 
-    // ✅ Validate date & time format
-    if (!newDate || !/^\d{4}-\d{2}-\d{2}$/.test(newDate)) {
-      return res.status(400).json({ success: false, message: "Invalid newDate format (use YYYY-MM-DD)" });
-    }
-    if (!newTime || !/^\d{2}:\d{2}$/.test(newTime)) {
-      return res.status(400).json({ success: false, message: "Invalid newTime format (use HH:mm)" });
-    }
+    if (!doctorId || !mongoose.Types.ObjectId.isValid(doctorId))
+      return res.status(400).json({ success: false, message: "Invalid doctorId" });
 
-    // ✅ Fetch appointment
+    if (!newDate || !/^\d{4}-\d{2}-\d{2}$/.test(newDate))
+      return res.status(400).json({ success: false, message: "Invalid newDate format" });
+
+    if (!newTime || !/^\d{2}:\d{2}$/.test(newTime))
+      return res.status(400).json({ success: false, message: "Invalid newTime format" });
+
+    // Fetch appointment
     const appointment = await Appointment.findById(appointmentId);
-    if (!appointment) {
+    if (!appointment)
       return res.status(404).json({ success: false, message: "Appointment not found" });
-    }
 
-    // ✅ Only scheduled appointments can be rescheduled
-    if (appointment.status !== "scheduled") {
-      return res.status(400).json({
-        success: false,
-        message: "Only scheduled appointments can be rescheduled",
-      });
-    }
-
+    // Extract from DB instead of body (IMPORTANT)
     const clinicId = appointment.clinicId;
-    let updatedDoctorId = appointment.doctorId;
+    const department = appointment.department;
 
-    // ✅ If appointment has no doctorId, require a new one
-    if (!updatedDoctorId && !doctorId) {
+    console.log("📌 Loaded clinicId from DB:", clinicId);
+    console.log("📌 Loaded department from DB:", department);
+
+    // Patient validation
+    const patientId = appointment.patientId;
+    const patient = await Patient.findOne({ _id: patientId, clinicId });
+
+    if (!patient)
+      return res.status(404).json({
+        success: false,
+        message: "Patient does not belong to this clinic",
+      });
+
+    // Prevent past time reschedule
+    const selectedDateTime = new Date(`${newDate}T${newTime}:00`);
+    if (selectedDateTime <= new Date())
       return res.status(400).json({
         success: false,
-        message:
-          "This appointment has no assigned doctor. Please provide a doctorId to assign.",
+        message: "Cannot reschedule to a past time",
       });
-    }
 
-    // ✅ If doctorId provided, validate and assign it
-    if (doctorId) {
-      if (!mongoose.Types.ObjectId.isValid(doctorId)) {
-        return res.status(400).json({ success: false, message: "Invalid doctorId" });
-      }
-      updatedDoctorId = doctorId;
-    }
-
-    // ✅ Parse and validate new date/time
-    const [hour, minute] = newTime.split(":").map(Number);
-    if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
-      return res.status(400).json({ success: false, message: "Invalid time values" });
-    }
-
-    const appointmentDateTime = new Date(`${newDate}T${newTime}:00`);
-    const now = new Date();
-    if (appointmentDateTime.getTime() <= now.getTime()) {
-      return res.status(400).json({
-        success: false,
-        message: "Cannot reschedule to a past date/time",
-      });
-    }
-
-    // ✅ Fetch doctor availability from Clinic Service
+    // Availability Check
+    let doctorAvailable = false;
     let availabilities = [];
+
     try {
-      const availRes = await axios.get(`${CLINIC_SERVICE_BASE_URL}/department-based/availability`, {
-        params: { doctorId: updatedDoctorId, clinicId },
+      const availRes = await axios.get(
+        `${CLINIC_SERVICE_BASE_URL}/department-based/availability`,
+        { params: { doctorId, clinicId, department } }
+      );
+
+      const doctors = availRes.data?.doctors || [];
+      const doctor = doctors.find(
+        (d) => d.doctorId?.toString() === doctorId.toString()
+      );
+
+      availabilities = doctor?.availability || [];
+
+      const [yyyy, mm, dd] = newDate.split("-").map(Number);
+      const localDate = new Date(yyyy, mm - 1, dd);
+      const days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+      const selectedDay = days[localDate.getDay()];
+
+      const [h, m] = newTime.split(":").map(Number);
+      const appointmentMinutes = h * 60 + m;
+
+      doctorAvailable = availabilities.some((slot) => {
+        if (!slot.isActive) return false;
+        if (slot.dayOfWeek.toLowerCase() !== selectedDay.toLowerCase())
+          return false;
+
+        const [sh, sm] = slot.startTime.split(":").map(Number);
+        const [eh, em] = slot.endTime.split(":").map(Number);
+        const slotStart = sh * 60 + sm;
+        const slotEnd = eh * 60 + em;
+
+        return appointmentMinutes >= slotStart && appointmentMinutes < slotEnd;
       });
 
-      availabilities = availRes.data?.doctors?.[0]?.availability || [];
-      if (!availabilities.length) {
-        return res.status(400).json({
-          success: false,
-          message: "Doctor has no availability in this clinic",
-        });
-      }
     } catch (err) {
-      return res.status(503).json({
-        success: false,
-        message: "Unable to fetch doctor availability from Clinic Service",
-        error: err.response?.data?.message || err.message,
-      });
+      console.log("⚠️ Availability Fetch Error:", err.message);
     }
 
-    // ✅ Validate against availability schedule
-    const daysOfWeek = [
-      "Sunday", "Monday", "Tuesday", "Wednesday",
-      "Thursday", "Friday", "Saturday",
-    ];
-    const appointmentDayIndex = new Date(newDate).getDay();
-    const appointmentDay = daysOfWeek[appointmentDayIndex];
-    const appointmentMinutes = hour * 60 + minute;
-
-    const isAvailable = availabilities.some((slot) => {
-      const slotClinicId = slot.clinicId?._id || slot.clinicId;
-      if (!slotClinicId || slotClinicId.toString() !== clinicId.toString()) return false;
-
-      if (!slot.dayOfWeek || slot.dayOfWeek.toLowerCase() !== appointmentDay.toLowerCase())
-        return false;
-
-      const [startH, startM] = slot.startTime.split(":").map(Number);
-      const [endH, endM] = slot.endTime.split(":").map(Number);
-      const slotStart = startH * 60 + startM;
-      const slotEnd = endH * 60 + endM;
-
-      return appointmentMinutes >= slotStart && appointmentMinutes < slotEnd;
-    });
-
-    if (!isAvailable) {
-      return res.status(400).json({
-        success: false,
-        message: `Doctor is not available on ${appointmentDay} at ${newTime}`,
-      });
-    }
-
-    // ✅ Prevent double booking for doctor at the same time
-    const existingAppointment = await Appointment.findOne({
-      _id: { $ne: appointmentId }, // exclude current appointment
-      doctorId: updatedDoctorId,
+    // Check for conflicting appointments
+    const conflictingAppointment = await Appointment.findOne({
+      doctorId,
       clinicId,
       appointmentDate: newDate,
       appointmentTime: newTime,
       status: { $in: ["scheduled", "confirmed"] },
+      _id: { $ne: appointmentId }
     });
 
-    if (existingAppointment) {
+    if (conflictingAppointment) {
       return res.status(400).json({
         success: false,
         message: "Doctor already has an appointment at this time",
       });
     }
 
-    // ✅ Apply updates
-    appointment.doctorId = updatedDoctorId;
+    // Update appointment
+    appointment.doctorId = doctorId;
     appointment.appointmentDate = newDate;
     appointment.appointmentTime = newTime;
+    appointment.doctorAvailable = doctorAvailable;
+    appointment.status = doctorAvailable ? "scheduled" : "needs_reschedule";
 
     await appointment.save();
 
     return res.status(200).json({
       success: true,
-      message: "Appointment rescheduled successfully",
-      appointment,
+      message: doctorAvailable
+        ? "Appointment rescheduled successfully"
+        : "Doctor not available — appointment updated but flagged for reschedule",
+      data: appointment,
     });
+
   } catch (error) {
-    console.error("❌ appointmentReschedule error:", error);
+    console.error("❌ RESCHEDULE ERROR:", error);
     return res.status(500).json({
       success: false,
       message: "Server error while rescheduling appointment",
@@ -880,6 +861,10 @@ const appointmentReschedule = async (req, res) => {
     });
   }
 };
+
+
+
+
 const cancelAppointment = async (req, res) => {
   try {
     const { id: appointmentId } = req.params;
