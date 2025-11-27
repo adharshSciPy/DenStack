@@ -282,6 +282,19 @@ const deleteProduct = async (req, res) => {
   }
 };
 
+const getProductsByIds = async (req, res) => {
+  try {
+    const { productIds } = req.body;
+    const products = await Product.find({ _id: { $in: productIds } });
+
+    res.json({
+      data: products,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 export {
   createProduct,
   productDetails,
@@ -290,4 +303,5 @@ export {
   getProductsByBrand,
   updateProduct,
   deleteProduct,
+  getProductsByIds
 };

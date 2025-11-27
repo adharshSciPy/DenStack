@@ -130,12 +130,28 @@ export const clinicPurchase = async (req, res) => {
 
 export const markDelivered = async (req, res) => {
   try {
-    const { clinicId, items } = req.body;
+    const { orderId, clinicId } = req.body;
 
-    for (const item of items) {
+    if (!orderId || !clinicId) {
+      return res.status(400).json({ message: "orderId and clinicId required" });
+    }
+
+    // Fetch order
+    const order = await ClinicPurchaseOrder.findById(orderId);
+    if (!order) return res.status(404).json({ message: "Order not found" });
+
+    // Prevent duplicate stock addition
+    if (order.status === "DELIVERED") {
+      return res.status(400).json({
+        message: "Order already delivered. Inventory update skipped.",
+      });
+    }
+
+    // Update inventory for each item
+    for (const item of order.items) {
       const existing = await ClinicInventory.findOne({
         clinicId,
-        productId: item.productId,
+        productId: item.itemId,
       });
 
       if (existing) {
@@ -144,7 +160,7 @@ export const markDelivered = async (req, res) => {
       } else {
         await ClinicInventory.create({
           clinicId,
-          productId: item.productId,
+          productId: item.itemId,
           quantity: item.quantity,
           inventoryType: "general",
           assignedTo: null,
@@ -152,12 +168,22 @@ export const markDelivered = async (req, res) => {
       }
     }
 
-    res.json({ message: "Clinic inventory updated successfully" });
+    // Update order status
+    order.status = "DELIVERED";
+    await order.save();
+
+    res.json({
+      message: "Order marked as delivered & inventory updated",
+      order,
+    });
+
   } catch (err) {
-    res.status(500).json({ message: "Server error", error: err.message });
+    res.status(500).json({
+      message: "Server error",
+      error: err.message,
+    });
   }
 };
-
 export const getClinicOrders = async (req, res) => {
   try {
     const { clinicId } = req.params;
