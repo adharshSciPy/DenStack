@@ -3,9 +3,9 @@ import Order from "../Model/OrderSchema.js"
 
 const createVendor = async (req, res) => {
     try {
-        const { name, companyName, email, phoneNumber, address, productsCount, totalRevenue, rating, performance, status, contactHistory } = req.body;
+        const { name, companyName, email, phoneNumber, address, productsCount, rating, performance, status, contactHistory } = req.body;
         const vendor = await Vendor.create({
-            name, companyName, email, phoneNumber, address, productsCount, totalRevenue, rating, performance, status, contactHistory
+            name, companyName, email, phoneNumber, address, productsCount, totalRevenue: 0, rating, performance, status, contactHistory
         })
         res.status(200).json({ message: "Successfully Created", data: vendor })
     } catch (error) {
@@ -80,45 +80,83 @@ const deleteVendor = async (req, res) => {
     }
 }
 
-const vendorCount = async (req, res) => {
+// const vendorCount = async (req, res) => {
+//     try {
+//         // 1️⃣ Total Vendors
+//         const totalVendors = await Vendor.countDocuments();
+
+//         // 2️⃣ Active Vendors — based on status field
+//         const activeVendors = await Vendor.countDocuments({ status: "Active" });
+
+//         // 3️⃣ Avg Rating (only works if vendor has "rating" field)
+//         const vendors = await Vendor.find();
+//         // 3️⃣ Calculate average vendor rating using aggregation
+//         const ratingAgg = await Vendor.aggregate([
+//             {
+//                 $match: {
+//                     rating: { $exists: true, $ne: null } // include only vendors with a rating
+//                 }
+//             },
+//             {
+//                 $project: {
+//                     rating: { $toDouble: "$rating" }  // convert string "4.5" to number 4.5
+//                 }
+//             },
+//             {
+//                 $group: {
+//                     _id: null,
+//                     avgRating: { $avg: "$rating" }
+//                 }
+//             }
+//         ]);
+
+//         const avgRating = ratingAgg.length > 0 ? ratingAgg[0].avgRating.toFixed(1) : "0.0";
+
+
+//         // 4️⃣ Total Revenue from Orders
+//         const revenue = await Order.aggregate([
+//             { $group: { _id: null, total: { $sum: "$vendorRevenue" } } },
+//         ]);
+
+//         const totalRevenue = revenue.length > 0 ? revenue[0].total : 0;
+
+//         res.status(200).json({
+//             success: true,
+//             data: {
+//                 totalVendors,
+//                 activeVendors,
+//                 avgRating,
+//                 totalRevenue,
+//             },
+//         });
+//     } catch (err) {
+//         res.status(500).json({ message: err.message });
+//     }
+// };
+
+const adminDashboardStats = async (req, res) => {
     try {
-        // 1️⃣ Total Vendors
+        // total vendors
         const totalVendors = await Vendor.countDocuments();
 
-        // 2️⃣ Active Vendors — based on status field
+        // active vendors
         const activeVendors = await Vendor.countDocuments({ status: "Active" });
 
-        // 3️⃣ Avg Rating (only works if vendor has "rating" field)
-        const vendors = await Vendor.find();
-        // 3️⃣ Calculate average vendor rating using aggregation
+        // average rating
         const ratingAgg = await Vendor.aggregate([
-            {
-                $match: {
-                    rating: { $exists: true, $ne: null } // include only vendors with a rating
-                }
-            },
-            {
-                $project: {
-                    rating: { $toDouble: "$rating" }  // convert string "4.5" to number 4.5
-                }
-            },
-            {
-                $group: {
-                    _id: null,
-                    avgRating: { $avg: "$rating" }
-                }
-            }
+            { $match: { rating: { $exists: true, $ne: null } } },
+            { $project: { rating: { $toDouble: "$rating" } } },
+            { $group: { _id: null, avgRating: { $avg: "$rating" } } }
         ]);
 
-        const avgRating = ratingAgg.length > 0 ? ratingAgg[0].avgRating.toFixed(1) : "0.0";
+        const avgRating = ratingAgg.length ? ratingAgg[0].avgRating.toFixed(1) : "0.0";
 
-
-        // 4️⃣ Total Revenue from Orders
+        // total revenue
         const revenue = await Order.aggregate([
-            { $group: { _id: null, total: { $sum: "$totalAmount" } } },
+            { $group: { _id: null, total: { $sum: "$totalAmount" } } }
         ]);
 
-        const totalRevenue = revenue.length > 0 ? revenue[0].total : 0;
+        const totalRevenue = revenue.length ? revenue[0].total : 0;
 
         res.status(200).json({
             success: true,
@@ -129,11 +167,14 @@ const vendorCount = async (req, res) => {
                 totalRevenue,
             },
         });
+
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
 };
 
+
 export {
-    createVendor, vendorDetails, editVendor, deleteVendor, vendorCount
+    createVendor, vendorDetails, editVendor, deleteVendor, adminDashboardStats
+    // vendorCount
 }

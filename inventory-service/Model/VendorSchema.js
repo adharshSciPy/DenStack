@@ -40,7 +40,8 @@ const vendorSchema = new Schema(
             type: Number
         },
         totalRevenue: {
-            type: Number
+            type: Number,
+            default: 0
         },
         rating: {
             type: String
