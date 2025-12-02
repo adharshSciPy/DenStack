@@ -1,9 +1,12 @@
-import express from "express";
-import { createPurchaseOrder, verifyPayment } from "../controller/clinicPurchaseController.js";
+import { Router } from "express";
+import { assignInventory } from "../controller/assignInventoryController.js"
+import { clinicPurchase, markDelivered ,getClinicOrders} from "../controller/clinicPurchaseController.js"
 
 
-const clinicPurchaseRouter = express.Router();
-clinicPurchaseRouter.post("/create-purchase-order", createPurchaseOrder);
-clinicPurchaseRouter.post("/verify-payment", verifyPayment);
+const clinicInventoryRouter=Router()
 
-export default clinicPurchaseRouter;
+clinicInventoryRouter.route("/purchase").post(clinicPurchase);
+clinicInventoryRouter.route("/inventory/assign").post(assignInventory);
+clinicInventoryRouter.route("/clinic/order/mark-delivered").post(markDelivered);
+clinicInventoryRouter.route("/orders/:clinicId").get( getClinicOrders);
+export default clinicInventoryRouter

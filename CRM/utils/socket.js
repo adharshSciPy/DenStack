@@ -18,25 +18,48 @@ export const initializeSocket = (server) => {
     socket.on("authenticate", (data) => {
       const { userId, userRole } = data;
       
-      if (userId) {
-        userSockets.set(userId.toString(), socket.id);
-        socket.userId = userId;
-        socket.userRole = userRole;
-        
-        console.log(`✅ User authenticated: ${userId} (${userRole})`);
-        
-        socket.emit("authenticated", { 
-          success: true, 
-          userId, 
-          userRole 
+      // ✅ CRITICAL: Validate userId before authentication
+      if (!userId || userId === 'undefined' || userId === 'null') {
+        console.error(`❌ Authentication failed: Invalid userId (${userId}) for role (${userRole})`);
+        socket.emit("auth_error", { 
+          success: false,
+          message: "Authentication failed: Invalid or missing userId" 
         });
+        socket.disconnect(true);
+        return;
       }
+      
+      // ✅ Validate ObjectId format (24-character hex string)
+      if (!/^[0-9a-fA-F]{24}$/.test(userId)) {
+        console.error(`❌ Authentication failed: Invalid userId format (${userId})`);
+        socket.emit("auth_error", { 
+          success: false,
+          message: "Authentication failed: Invalid userId format" 
+        });
+        socket.disconnect(true);
+        return;
+      }
+      
+      // ✅ Store authenticated user
+      userSockets.set(userId.toString(), socket.id);
+      socket.userId = userId;
+      socket.userRole = userRole;
+      
+      console.log(`✅ User authenticated: ${userId} (${userRole})`);
+      
+      socket.emit("authenticated", { 
+        success: true, 
+        userId, 
+        userRole 
+      });
     });
 
     socket.on("disconnect", () => {
       if (socket.userId) {
         userSockets.delete(socket.userId.toString());
         console.log(`🔌 User disconnected: ${socket.userId}`);
+      } else {
+        console.log(`🔌 Unauthenticated socket disconnected: ${socket.id}`);
       }
     });
   });
@@ -53,7 +76,13 @@ export const getIO = () => {
 
 export const emitToUser = (userId, event, data) => {
   if (!io) {
-    console.warn("Socket.io not initialized");
+    console.warn("⚠️ Socket.io not initialized");
+    return false;
+  }
+  
+  // ✅ Validate userId before emitting
+  if (!userId || userId === 'undefined' || userId === 'null') {
+    console.warn(`⚠️ Cannot emit to invalid userId: ${userId}`);
     return false;
   }
 

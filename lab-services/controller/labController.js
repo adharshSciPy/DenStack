@@ -1,31 +1,32 @@
 import LabVendor from "../model/LabVendor.js";
+import axios from "axios";
 
 const createLabVendor = async (req, res) => {
   try {
-    const { name, contactPerson, email, services, isActive } =
-      req.body;
+    const { name, contactPerson, email, services, isActive } = req.body;
 
     // Basic manual validations
     if (!name || name.trim().length < 2) {
-      return res
-        .status(400)
-        .json({
-          message:
-            "Vendor name is required and must be at least 2 characters long",
-        });
+      return res.status(400).json({
+        message:
+          "Vendor name is required and must be at least 2 characters long",
+      });
     }
 
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return res.status(400).json({ message: "Invalid email format" });
     }
+    // if (clinicId){
+    //   return res.status(400).json({ message: "Clinic ID is not allowed" });
+    // }
 
-    
     const vendor = new LabVendor({
       name: name.trim(),
       contactPerson: contactPerson?.trim(),
       email: email?.trim(),
       services,
-      isActive
+      type: "external",
+      isActive,
     });
 
     await vendor.save();
@@ -43,6 +44,73 @@ const createLabVendor = async (req, res) => {
   }
 };
 
+const createInHouseLabVendor = async (req, res) => {
+  const { name, contactPerson, email, services, isActive, clinicId } = req.body;
+
+  try {
+    if (!clinicId) {
+      return res
+        .status(400)
+        .json({ message: "Clinic ID is required for in-house vendors" });
+    }
+    
+    // 1️⃣ Create lab vendor
+    const vendor = new LabVendor({
+      name: name.trim(),
+      contactPerson: contactPerson?.trim(),
+      email: email?.trim(),
+      services,
+      type: "inHouse",
+      clinicId,
+      isActive,
+    });
+
+    await vendor.save();
+
+    const labId = vendor._id;
+
+    // 2️⃣ Update Clinic Microservice
+    try {
+      const clinicUpdate = await axios.patch(
+        `http://localhost:8001/api/v1/auth/clinic/add-ownlabs/${clinicId}`,
+        { labId }
+      );
+
+      // 3️⃣ Final response back to client
+      return res.status(201).json({
+        message: "In-house lab vendor created and linked successfully",
+        vendor,
+        clinicUpdate: clinicUpdate.data,
+      });
+
+    } catch (error) {
+      console.error("Clinic update error:", error);
+      return res
+        .status(500)
+        .json({ message: "Vendor created, but failed to link with clinic" });
+    }
+
+  } catch (error) {
+    if (error.name === "ValidationError") {
+      const messages = Object.values(error.errors).map((err) => err.message);
+      return res.status(400).json({ message: messages.join(", ") });
+    }
+    return res.status(500).json({ message: error.message });
+  }
+};
+
+const getLabByClinicId = async (req, res) => {
+  try {
+    const { clinicId } = req.params;
+    const vendor = await LabVendor.find({ clinicId });
+    if (!vendor) {
+      return res.status(404).json({ message: "Lab not found for this clinic" });
+    }
+    res.status(200).json(vendor);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  } 
+};
 const getAllLabVendors = async (req, res) => {
   try {
     const vendors = await LabVendor.find().sort({ createdAt: -1 });
@@ -84,11 +152,12 @@ const deleteLabVendor = async (req, res) => {
   }
 };
 
-
 export {
   createLabVendor,
   getAllLabVendors,
   getLabVendorById,
   updateLabVendor,
-  deleteLabVendor
+  deleteLabVendor,
+  createInHouseLabVendor,
+  getLabByClinicId
 };

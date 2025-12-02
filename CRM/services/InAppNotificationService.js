@@ -49,30 +49,40 @@ class InAppNotificationService {
   }
   
   async getNotifications(userId, { limit = 20, skip = 0, unreadOnly = false }) {
-    try {
-      const query = { userId };
-      if (unreadOnly) {
-        query.isRead = false;
-      }
-      
-      const notifications = await InAppNotification.find(query)
-        .sort({ createdAt: -1 })
-        .limit(limit)
-        .skip(skip)
-        .lean();
-      
-      const unreadCount = await InAppNotification.countDocuments({ 
-        userId, 
-        isRead: false 
-      });
-      
-      return { notifications, unreadCount };
-      
-    } catch (error) {
-      console.error("❌ Error fetching notifications:", error);
-      throw error;
+  try {
+    // ✅ Validate userId
+    if (!userId || userId === 'undefined' || userId === 'null') {
+      throw new Error('Valid userId is required');
     }
+    
+    // ✅ Validate ObjectId format
+    if (!/^[0-9a-fA-F]{24}$/.test(userId)) {
+      throw new Error(`Invalid userId format: ${userId}`);
+    }
+    
+    const query = { userId };
+    if (unreadOnly) {
+      query.isRead = false;
+    }
+    
+    const notifications = await InAppNotification.find(query)
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .skip(skip)
+      .lean();
+    
+    const unreadCount = await InAppNotification.countDocuments({ 
+      userId, 
+      isRead: false 
+    });
+    
+    return { notifications, unreadCount };
+    
+  } catch (error) {
+    console.error("❌ Error fetching notifications:", error);
+    throw error;
   }
+}
   
   async markAsRead(notificationId, userId) {
     try {

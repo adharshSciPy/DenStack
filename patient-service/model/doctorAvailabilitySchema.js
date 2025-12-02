@@ -52,3 +52,7 @@ const doctorAvailabilitySchema = new mongoose.Schema({
 doctorAvailabilitySchema.index({ doctorId: 1, clinicId: 1 }, { unique: true });
 
 export default mongoose.model("DoctorAvailability", doctorAvailabilitySchema);
+
+
+
+

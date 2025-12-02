@@ -15,12 +15,13 @@ import {
   getAppointmentsByDate  // ✅ NEW
 } from "../controller/patientAppointmentController.js";
 import { authClinicDoctor } from "../middleware/authClinicDoctor.js";
+import { authDoctor } from "../middleware/authDoctor.js";
 
 const patientAppointmentRouter = Router();
 
 // Existing routes
 patientAppointmentRouter.route("/book/:id").post(createAppointment);
-patientAppointmentRouter.route("/fetch").get(authClinicDoctor, getTodaysAppointments);
+patientAppointmentRouter.route("/fetch").get(authDoctor, getTodaysAppointments);
 patientAppointmentRouter.route("/fetch/:id").get(getAppointmentById);
 patientAppointmentRouter.route("/patient-history/:id")
   .get(getPatientHistory)
@@ -30,7 +31,6 @@ patientAppointmentRouter.route("/clinic-appointments/:id").get(getAppointmentsBy
 patientAppointmentRouter.route("/clear-doctor-from-appointments").patch(clearDoctorFromAppointments);
 patientAppointmentRouter.route("/reschedule/:id").patch(appointmentReschedule);
 patientAppointmentRouter.route("/cancel/:id").patch(cancelAppointment);
-
 // ✅ NEW ROUTE - For scheduler to fetch appointments by date
 patientAppointmentRouter.route("/by-date").get(getAppointmentsByDate);
 

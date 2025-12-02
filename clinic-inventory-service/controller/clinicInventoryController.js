@@ -1,11 +1,26 @@
-import ClinicInventory from "../models/ClinicInventory.js";
+import ClinicInventoryModel from "../model/ClinicInventoryModel.js";
 
-export const getClinicInventory = async (req, res) => {
-  try {
+
+const getProducts=async(req, res) => {
     const { clinicId } = req.params;
-    const inventory = await ClinicInventory.find({ clinicId }).populate("productId");
-    res.json({ success: true, inventory });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
+    try {
+        const products = await ClinicInventoryModel.find(clinicId)
+            .populate("productId", "name price stock")
+            .sort({ createdAt: -1 });
+        res.status(200).json({
+            message: "Products fetched successfully",
+            data: products,
+        });
+    } catch (error) {
+        res.status(500).json({
+            message: "Error fetching products",
+            error: error.message,
+        });
+    }
+}
+
+
+
+export  {
+    getProducts,
 };

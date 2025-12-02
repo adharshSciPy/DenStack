@@ -4,7 +4,7 @@ import axios from "axios";
 import Patient from "../model/patientSchema.js";
 import Appointment from "../model/appointmentSchema.js";
 import PatientHistory from "../model/patientHistorySchema.js";
-import DoctorAvailability from "../model/doctorAvailabilitySchema.js";
+import treatmentPlanSchema from "../model/treatmentPlanSchema.js";
 
 configDotenv();
 const AUTH_SERVICE_BASE_URL = process.env.AUTH_SERVICE_BASE_URL;
@@ -54,7 +54,7 @@ const createAppointment = async (req, res) => {
     if (!patient)
       return res.status(404).json({ success: false, message: "Patient not found in this clinic" });
 
-    // 🆕 Fetch clinic details early for notification
+    // Fetch clinic details early for notification
     let clinicName = "Our Clinic";
     try {
       const clinicRes = await axios.get(`${AUTH_SERVICE_BASE_URL}/clinic/view-clinic/${clinicId}`);
@@ -134,8 +134,11 @@ const createAppointment = async (req, res) => {
       }
     }
 
-    // 5️⃣ Doctor availability - Fetch from Clinic Service API
+    // 5️⃣ 🆕 Doctor availability - Check but DON'T block booking
     let availabilities = [];
+    let doctorAvailable = false;
+    let availabilityWarning = null;
+    
     try {
       const availRes = await axios.get(`${CLINIC_SERVICE_BASE_URL}/availability`, {
         params: { doctorId, clinicId },
@@ -145,99 +148,67 @@ const createAppointment = async (req, res) => {
 
       const availData = availRes.data?.availabilities || [];
       
-      if (!availData.length) {
-        return res.status(400).json({
-          success: false,
-          message: `Doctor has no availability set in this clinic`,
-        });
-      }
-
-      // Format availabilities - they should already have clinic info from the API
-      availabilities = availData
-        .filter(slot => slot.isActive)
-        .map(slot => ({
+      if (availData.length > 0) {
+        // Format availabilities - API already filters for isActive slots
+        availabilities = availData.map(slot => ({
           dayOfWeek: slot.dayOfWeek,
           startTime: slot.startTime,
           endTime: slot.endTime,
-          isActive: slot.isActive,
-          clinic: slot.clinic || { _id: clinicId }
+          isActive: true,
+          clinic: { _id: typeof slot.clinic === 'string' ? slot.clinic : slot.clinic?._id || clinicId }
         }));
 
-      console.log("✅ Active availabilities formatted:", availabilities);
+        console.log("✅ Active availabilities formatted:", availabilities);
 
-      if (availabilities.length === 0) {
-        return res.status(400).json({
-          success: false,
-          message: `Doctor has no active availability in this clinic`,
+        // 6️⃣ Check if appointment time falls within availability
+        const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+        const appointmentDay = daysOfWeek[new Date(appointmentDate).getDay()];
+        const appointmentMinutes = hour * 60 + minute;
+
+        console.log("🔍 Checking availability for:", { 
+          appointmentDay, 
+          appointmentTime, 
+          appointmentMinutes,
+          clinicId 
         });
+
+        doctorAvailable = availabilities.some((slot) => {
+          const slotClinicId = slot.clinic?._id || slot.clinic;
+          
+          if (!slotClinicId || slotClinicId.toString() !== clinicId.toString()) {
+            return false;
+          }
+          
+          if (!slot.dayOfWeek || slot.dayOfWeek.toLowerCase() !== appointmentDay.toLowerCase()) {
+            return false;
+          }
+          
+          const [startH, startM] = slot.startTime.split(":").map(Number);
+          const [endH, endM] = slot.endTime.split(":").map(Number);
+          const slotStart = startH * 60 + startM;
+          const slotEnd = endH * 60 + endM;
+          
+          const isInRange = appointmentMinutes >= slotStart && appointmentMinutes < slotEnd;
+          
+          console.log(`🔍 Time check: ${appointmentMinutes} in range [${slotStart}, ${slotEnd})? ${isInRange}`);
+          
+          return isInRange;
+        });
+
+        if (!doctorAvailable) {
+          availabilityWarning = `Doctor is not available on ${appointmentDay} at ${appointmentTime}. Appointment booked but may need rescheduling.`;
+          console.log(`⚠️ ${availabilityWarning}`);
+        }
+      } else {
+        availabilityWarning = "Doctor has no availability schedule set. Appointment booked but may need confirmation.";
+        console.log(`⚠️ ${availabilityWarning}`);
       }
     } catch (err) {
-      console.error("❌ Error fetching availability from Clinic Service:", err.response?.data || err.message);
-      return res.status(503).json({
-        success: false,
-        message: "Unable to fetch doctor availability",
-        error: err.response?.data?.message || err.message,
-      });
+      console.warn("⚠️ Unable to fetch doctor availability:", err.message);
+      availabilityWarning = "Unable to verify doctor availability. Appointment booked but may need confirmation.";
     }
 
-    // 6️⃣ Check if appointment time falls within availability
-    const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-    const appointmentDay = daysOfWeek[new Date(appointmentDate).getDay()];
-    const appointmentMinutes = hour * 60 + minute;
-
-    console.log("🔍 Checking availability for:", { 
-      appointmentDay, 
-      appointmentTime, 
-      appointmentMinutes,
-      clinicId 
-    });
-
-    const isAvailable = availabilities.some((slot) => {
-      const slotClinicId = slot.clinic?._id || slot.clinic;
-      
-      // Check clinic match
-      if (!slotClinicId || slotClinicId.toString() !== clinicId.toString()) {
-        console.log(`❌ Clinic mismatch: ${slotClinicId} !== ${clinicId}`);
-        return false;
-      }
-      
-      // Check day match (case-insensitive)
-      if (!slot.dayOfWeek || slot.dayOfWeek.toLowerCase() !== appointmentDay.toLowerCase()) {
-        console.log(`❌ Day mismatch: ${slot.dayOfWeek} !== ${appointmentDay}`);
-        return false;
-      }
-      
-      // Check time range
-      const [startH, startM] = slot.startTime.split(":").map(Number);
-      const [endH, endM] = slot.endTime.split(":").map(Number);
-      const slotStart = startH * 60 + startM;
-      const slotEnd = endH * 60 + endM;
-      
-      const isInRange = appointmentMinutes >= slotStart && appointmentMinutes < slotEnd;
-      
-      console.log(`🔍 Time check: ${appointmentMinutes} in range [${slotStart}, ${slotEnd})? ${isInRange}`);
-      
-      return isInRange;
-    });
-
-    if (!isAvailable) {
-      return res.status(400).json({
-        success: false,
-        message: `Doctor is not available on ${appointmentDay} at ${appointmentTime}`,
-        debug: {
-          availabilities: availabilities.map(a => ({
-            day: a.dayOfWeek,
-            time: `${a.startTime}-${a.endTime}`
-          })),
-          requested: {
-            day: appointmentDay,
-            time: appointmentTime
-          }
-        }
-      });
-    }
-
-    // 7️⃣ Prevent double booking
+    // 7️⃣ Prevent double booking (still enforce this - important!)
     const existingAppointment = await Appointment.findOne({
       doctorId,
       clinicId,
@@ -252,7 +223,7 @@ const createAppointment = async (req, res) => {
     const lastAppointmentToday = await Appointment.findOne({ clinicId, appointmentDate }).sort({ opNumber: -1 });
     const nextOpNumber = lastAppointmentToday ? Number(lastAppointmentToday.opNumber) + 1 : 1;
 
-    // 9️⃣ Create appointment
+    // 9️⃣ Create appointment (always create, with appropriate status based on availability)
     const appointment = new Appointment({
       clinicId,
       patientId,
@@ -261,8 +232,9 @@ const createAppointment = async (req, res) => {
       appointmentDate,
       appointmentTime,
       createdBy: userId,
-      status: "scheduled",
+      status: doctorAvailable ? "scheduled" : "needs_reschedule",
       opNumber: nextOpNumber,
+      doctorAvailable, // Store availability flag in appointment
     });
     await appointment.save();
 
@@ -283,10 +255,14 @@ const createAppointment = async (req, res) => {
       console.error("⚠️ Notification failed but appointment created:", notifError.message);
     }
 
+    // Return success with status-appropriate message
     return res.status(201).json({
       success: true,
-      message: "Appointment created successfully",
+      message: doctorAvailable 
+        ? "Appointment created successfully"
+        : "Doctor not available — appointment booked but marked for reschedule.",
       data: appointment,
+      doctorAvailable // Flag for frontend
     });
 
   } catch (error) {
@@ -299,23 +275,27 @@ const createAppointment = async (req, res) => {
   }
 };
 
+ 
 const getTodaysAppointments = async (req, res) => {
   try {
-    const { doctorId, clinicId } = req.doctorClinic;
+    const doctorId = req.doctorId;
     const { search = "", cursor = null, limit = 10, date } = req.query;
 
-    // 🗓️ Use date from query or default to today
-    const targetDate = date
-      ? new Date(date)
-      : new Date();
+    if (!doctorId) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing doctorId in token",
+      });
+    }
 
+    // 🗓️ Build today's date string
+    const targetDate = date ? new Date(date) : new Date();
     const todayStr = `${targetDate.getFullYear()}-${String(
       targetDate.getMonth() + 1
     ).padStart(2, "0")}-${String(targetDate.getDate()).padStart(2, "0")}`;
 
     const matchStage = {
       doctorId: new mongoose.Types.ObjectId(doctorId),
-      clinicId: new mongoose.Types.ObjectId(clinicId),
       appointmentDate: todayStr,
       status: "scheduled",
     };
@@ -326,77 +306,135 @@ const getTodaysAppointments = async (req, res) => {
 
     const pipeline = [
       { $match: matchStage },
+
+      // 👤 Lookup patient info
       {
         $lookup: {
           from: "patients",
           localField: "patientId",
           foreignField: "_id",
-          as: "patientId",
+          as: "patient",
         },
       },
-      { $unwind: "$patientId" },
+      { $unwind: { path: "$patient", preserveNullAndEmptyArrays: true } },
     ];
 
+    // 🔍 Optional search
     if (search.trim() !== "") {
       const s = search.trim();
       const searchRegex = new RegExp(s, "i");
       pipeline.push({
         $match: {
           $or: [
-            { "patientId.name": searchRegex },
-            { "patientId.phone": { $regex: s } },
-            { "patientId.patientUniqueId": searchRegex },
+            { "patient.name": searchRegex },
+            { "patient.phone": { $regex: s } },
+            { "patient.patientUniqueId": searchRegex },
           ],
         },
       });
     }
 
-    pipeline.push(
-      { $sort: { _id: -1 } },
-      { $limit: Number(limit) },
-      {
-        $project: {
-          _id: 1,
-          doctorId: 1,
-          clinicId: 1,
-          department: 1,
-          appointmentDate: 1,
-          appointmentTime: 1,
-          status: 1,
-          createdBy: 1,
-          opNumber: 1,
-          createdAt: 1,
-          updatedAt: 1,
-          "patientId._id": 1,
-          "patientId.name": 1,
-          "patientId.phone": 1,
-          "patientId.age": 1,
-          "patientId.gender": 1,
-          "patientId.patientUniqueId": 1,
+    // 🧩 Sort & group by clinic
+    pipeline.push({ $sort: { _id: -1 } });
+    pipeline.push({
+      $group: {
+        _id: "$clinicId",
+        appointments: {
+          $push: {
+            _id: "$_id",
+            appointmentDate: "$appointmentDate",
+            appointmentTime: "$appointmentTime",
+            status: "$status",
+            opNumber: "$opNumber",
+            patient: {
+              _id: "$patient._id",
+              name: "$patient.name",
+              phone: "$patient.phone",
+              age: "$patient.age",
+              gender: "$patient.gender",
+              patientUniqueId: "$patient.patientUniqueId",
+            },
+          },
         },
-      }
+      },
+    });
+    pipeline.push({ $limit: Number(limit) });
+
+    const groupedAppointments = await Appointment.aggregate(pipeline);
+
+    // ⚡ Cache to avoid multiple network calls for same clinic
+    const clinicCache = {};
+
+    // ---- 🔗 Fetch minimal clinic details (name + phoneNumber) ----
+    const results = await Promise.all(
+      groupedAppointments.map(async (group) => {
+        if (!group._id) {
+          return {
+            clinicId: null,
+            clinicName: "Unknown Clinic",
+            clinicPhone: null,
+            appointments: group.appointments,
+          };
+        }
+
+        // ✅ Use cached value if available
+        if (clinicCache[group._id]) {
+          return { ...clinicCache[group._id], appointments: group.appointments };
+        }
+
+        let clinicName = "Unknown Clinic";
+        let clinicPhone = null;
+
+        try {
+          const response = await axios.get(
+            `${AUTH_SERVICE_BASE_URL}/clinic/view-clinic/${group._id}`
+          );
+          const clinic = response.data?.data;
+          if (clinic) {
+            clinicName = clinic.name || clinicName;
+            clinicPhone = clinic.phoneNumber || null;
+          }
+        } catch (err) {
+          console.warn(
+            `⚠️ Failed to fetch clinic details for ${group._id}:`,
+            err.message
+          );
+        }
+
+        const clinicObj = {
+          clinicId: group._id,
+          clinicName,
+          clinicPhone,
+        };
+
+        clinicCache[group._id] = clinicObj; // 🧠 Cache it
+
+        return {
+          ...clinicObj,
+          appointments: group.appointments,
+        };
+      })
     );
 
-    const appointments = await Appointment.aggregate(pipeline);
     const nextCursor =
-      appointments.length > 0
-        ? appointments[appointments.length - 1]._id
+      groupedAppointments.length > 0
+        ? groupedAppointments[groupedAppointments.length - 1]?.appointments?.slice(-1)[0]?._id
         : null;
 
     return res.status(200).json({
       success: true,
-      message: "Appointments fetched successfully",
-      count: appointments.length,
+      message: "Today's appointments fetched successfully",
+      count: results.length,
       limit: Number(limit),
       nextCursor,
       hasMore: !!nextCursor,
-      data: appointments,
+      data: results,
     });
   } catch (err) {
     console.error("getTodaysAppointments error:", err);
     return res.status(500).json({
       success: false,
-      message: "Server error",
+      message: "Server error while fetching today's appointments",
       error: err.message,
     });
   }
@@ -435,18 +473,17 @@ const getAppointmentById = async (req, res) => {
 const getPatientHistory = async (req, res) => {
   try {
     const { id: patientId } = req.params;
-    const { clinicId } = req.body;
+  const { clinicId } = req.query;
 
     // ✅ 1. Validate IDs
     if (!mongoose.Types.ObjectId.isValid(patientId)) {
       return res.status(400).json({ success: false, message: "Invalid patientId" });
     }
-
     if (!mongoose.Types.ObjectId.isValid(clinicId)) {
       return res.status(400).json({ success: false, message: "Invalid clinicId" });
     }
 
-    // ✅ 2. Fetch patient history (lean + sorted descending by visitDate)
+    // ✅ 2. Fetch patient history
     const history = await PatientHistory.find(
       { patientId, clinicId },
       {
@@ -462,10 +499,11 @@ const getPatientHistory = async (req, res) => {
         referrals: 1,
         status: 1,
         createdAt: 1,
-        consultationFee: 1,      // ✅ ADDED
-        procedures: 1,            // ✅ ADDED
-        totalAmount: 1,           // ✅ ADDED
-        isPaid: 1,                // ✅ ADDED
+        consultationFee: 1,
+        procedures: 1,
+        totalAmount: 1,
+        isPaid: 1,
+        treatmentPlanId: 1,
       }
     )
       .sort({ visitDate: -1 })
@@ -475,10 +513,11 @@ const getPatientHistory = async (req, res) => {
       return res.status(404).json({ success: false, message: "No patient history found" });
     }
 
-    // ✅ 3. Extract unique doctor IDs
+    // ✅ 3. Extract unique doctor & treatment plan IDs
     const doctorIds = [...new Set(history.map(h => h.doctorId?.toString()).filter(Boolean))];
+    const treatmentPlanIds = [...new Set(history.map(h => h.treatmentPlanId?.toString()).filter(Boolean))];
 
-    // ✅ 4. Fetch doctor details from microservice in parallel
+    // ✅ 4. Fetch doctor details (microservice)
     const doctorMap = {};
     await Promise.all(
       doctorIds.map(async (doctorId) => {
@@ -486,8 +525,6 @@ const getPatientHistory = async (req, res) => {
           const { data } = await axios.get(
             `${process.env.AUTH_SERVICE_BASE_URL}/doctor/details/${doctorId}`
           );
-
-          // Corrected access
           if (data?.success && data?.data) {
             doctorMap[doctorId] = {
               name: data.data.name,
@@ -501,13 +538,27 @@ const getPatientHistory = async (req, res) => {
       })
     );
 
-    // ✅ 5. Merge doctor info into each patient history record
+    // ✅ 5. Fetch treatment plan details
+    const treatmentPlans = await mongoose.model("TreatmentPlan").find(
+      { _id: { $in: treatmentPlanIds } },
+      "planName description status createdAt completedAt stages"
+    ).lean();
+
+    const treatmentPlanMap = treatmentPlans.reduce((acc, plan) => {
+      acc[plan._id.toString()] = plan;
+      return acc;
+    }, {});
+
+    // ✅ 6. Merge doctor & treatment plan info into each history
     const enrichedHistory = history.map(h => ({
       ...h,
       doctor: doctorMap[h.doctorId?.toString()] || null,
+      treatmentPlan: h.treatmentPlanId
+        ? treatmentPlanMap[h.treatmentPlanId.toString()] || null
+        : null,
     }));
 
-    // ✅ 6. Respond
+    // ✅ 7. Respond
     return res.status(200).json({
       success: true,
       count: enrichedHistory.length,
@@ -523,6 +574,7 @@ const getPatientHistory = async (req, res) => {
     });
   }
 };
+
 const addLabOrderToPatientHistory = async (req, res) => {
   try {
     const { id: historyId } = req.params;
@@ -575,49 +627,94 @@ const getAppointmentsByClinic = async (req, res) => {
     const today = new Date();
     const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
 
+    // Calculate tomorrow’s date in same format (YYYY-MM-DD)
+    const tomorrow = new Date(today);
+    tomorrow.setDate(today.getDate() + 1);
+    const tomorrowStr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, "0")}-${String(tomorrow.getDate()).padStart(2, "0")}`;
+
+    // Date filter
     if (startDate && endDate) query.appointmentDate = { $gte: startDate, $lte: endDate };
     else if (startDate) query.appointmentDate = startDate;
     else query.appointmentDate = todayStr;
 
+    // Cursor pagination
     if (lastId && mongoose.Types.ObjectId.isValid(lastId)) {
-      query._id = { $gt: new mongoose.Types.ObjectId(lastId) }; // fetch after lastId
+      query._id = { $gt: new mongoose.Types.ObjectId(lastId) };
     }
 
+    // Search by patient name or ID
     if (search?.trim()) {
       const matchingIds = await Patient.find(
-        { clinicId, $or: [{ name: { $regex: search, $options: "i" } }, { patientUniqueId: { $regex: search, $options: "i" } }] },
+        {
+          clinicId,
+          $or: [
+            { name: { $regex: search, $options: "i" } },
+            { patientUniqueId: { $regex: search, $options: "i" } },
+          ],
+        },
         { _id: 1 }
-      ).lean().limit(50).then((res) => res.map((p) => p._id));
+      )
+        .lean()
+        .limit(50)
+        .then((res) => res.map((p) => p._id));
 
       query.patientId = matchingIds.length ? { $in: matchingIds } : { $in: [] };
     }
 
+    // Fetch appointments
     const appointments = await Appointment.find(query)
-      .sort({ _id: 1 }) // ascending for cursor
+      .sort({ _id: 1 })
       .limit(Number(limit))
       .populate("patientId", "name phone email age gender patientUniqueId")
       .select("patientId appointmentDate appointmentTime opNumber status createdAt")
       .lean();
 
-    const totalAppointments = await Appointment.countDocuments({ clinicId, appointmentDate: query.appointmentDate });
+    const totalAppointments = await Appointment.countDocuments({
+      clinicId,
+      appointmentDate: query.appointmentDate,
+    });
 
-    // Calculate nextCursor
-    const nextCursor = appointments.length === Number(limit) ? appointments[appointments.length - 1]._id : null;
+    // Cursor pagination
+    const nextCursor =
+      appointments.length === Number(limit)
+        ? appointments[appointments.length - 1]._id
+        : null;
 
-    // Stats aggregation
+    // Daily stats aggregation
     const counts = await Appointment.aggregate([
-      { $match: { clinicId: new mongoose.Types.ObjectId(clinicId), appointmentDate: query.appointmentDate } },
-      { $group: {
+      {
+        $match: {
+          clinicId: new mongoose.Types.ObjectId(clinicId),
+          appointmentDate: query.appointmentDate,
+        },
+      },
+      {
+        $group: {
           _id: null,
           totalAppointments: { $sum: 1 },
           completedCount: { $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] } },
           cancelledCount: { $sum: { $cond: [{ $eq: ["$status", "cancelled"] }, 1, 0] } },
           scheduledCount: { $sum: { $cond: [{ $eq: ["$status", "scheduled"] }, 1, 0] } },
-      }},
+        },
+      },
     ]);
 
-    const stats = counts[0] || { totalAppointments: 0, completedCount: 0, cancelledCount: 0, scheduledCount: 0 };
+    const stats =
+      counts[0] || {
+        totalAppointments: 0,
+        completedCount: 0,
+        cancelledCount: 0,
+        scheduledCount: 0,
+      };
 
+    // 🟡 New: Tomorrow’s "needs_reschedule" appointments
+    const tomorrowRescheduleCount = await Appointment.countDocuments({
+      clinicId,
+      appointmentDate: tomorrowStr,
+      status: { $in: ["rescheduled", "needs_reschedule"] },
+    });
+
+    // Final response
     return res.status(200).json({
       success: true,
       message: "Appointments fetched successfully",
@@ -625,13 +722,18 @@ const getAppointmentsByClinic = async (req, res) => {
       totalAppointments,
       nextCursor,
       stats,
+      tomorrowRescheduleCount, // 👈 new key for admin dashboard
     });
-
   } catch (error) {
     console.error("getAppointmentsByClinic error:", error);
-    return res.status(500).json({ success: false, message: "Server error while fetching appointments", error: error.message });
+    return res.status(500).json({
+      success: false,
+      message: "Server error while fetching appointments",
+      error: error.message,
+    });
   }
 };
+
 
 const clearDoctorFromAppointments = async (req, res) => {
   try {
@@ -676,154 +778,133 @@ const clearDoctorFromAppointments = async (req, res) => {
 const appointmentReschedule = async (req, res) => {
   try {
     const { id: appointmentId } = req.params;
-    const { newDate, newTime, doctorId } = req.body;
-
-    // ✅ Validate appointmentId
-    if (!appointmentId || !mongoose.Types.ObjectId.isValid(appointmentId)) {
+    const {
+      doctorId,
+      newDate,
+      newTime,
+      userId,
+      userRole,
+      forceReschedule
+    } = req.body;
+    if (!mongoose.Types.ObjectId.isValid(appointmentId))
       return res.status(400).json({ success: false, message: "Invalid appointmentId" });
-    }
 
-    // ✅ Validate date & time format
-    if (!newDate || !/^\d{4}-\d{2}-\d{2}$/.test(newDate)) {
-      return res.status(400).json({ success: false, message: "Invalid newDate format (use YYYY-MM-DD)" });
-    }
-    if (!newTime || !/^\d{2}:\d{2}$/.test(newTime)) {
-      return res.status(400).json({ success: false, message: "Invalid newTime format (use HH:mm)" });
-    }
+    if (!doctorId || !mongoose.Types.ObjectId.isValid(doctorId))
+      return res.status(400).json({ success: false, message: "Invalid doctorId" });
 
-    // ✅ Fetch appointment
+    if (!newDate || !/^\d{4}-\d{2}-\d{2}$/.test(newDate))
+      return res.status(400).json({ success: false, message: "Invalid newDate format" });
+
+    if (!newTime || !/^\d{2}:\d{2}$/.test(newTime))
+      return res.status(400).json({ success: false, message: "Invalid newTime format" });
+
+    if (!["admin", "receptionist"].includes(userRole))
+      return res.status(400).json({ success: false, message: "Invalid userRole" });
+
     const appointment = await Appointment.findById(appointmentId);
-    if (!appointment) {
+    if (!appointment)
       return res.status(404).json({ success: false, message: "Appointment not found" });
-    }
-
-    // ✅ Only scheduled appointments can be rescheduled
-    if (appointment.status !== "scheduled") {
+    const selectedDateTime = new Date(`${newDate}T${newTime}:00`);
+    if (selectedDateTime <= new Date()) {
       return res.status(400).json({
         success: false,
-        message: "Only scheduled appointments can be rescheduled",
+        message: "Cannot reschedule to a past time"
       });
     }
 
     const clinicId = appointment.clinicId;
-    let updatedDoctorId = appointment.doctorId;
-
-    // ✅ If appointment has no doctorId, require a new one
-    if (!updatedDoctorId && !doctorId) {
+    const department = appointment.department;
+    if (appointment.status !== "needs_reschedule" && !forceReschedule) {
       return res.status(400).json({
         success: false,
-        message:
-          "This appointment has no assigned doctor. Please provide a doctorId to assign.",
+        message: "Cannot reschedule this appointment without forceReschedule=true"
       });
     }
+let doctorAvailable = false;
+let availabilities = [];
 
-    // ✅ If doctorId provided, validate and assign it
-    if (doctorId) {
-      if (!mongoose.Types.ObjectId.isValid(doctorId)) {
-        return res.status(400).json({ success: false, message: "Invalid doctorId" });
-      }
-      updatedDoctorId = doctorId;
-    }
+try {
+  const availRes = await axios.get(
+    `${CLINIC_SERVICE_BASE_URL}/department-based/availability`,
+    { params: { doctorId, clinicId, department } }
+  );
 
-    // ✅ Parse and validate new date/time
-    const [hour, minute] = newTime.split(":").map(Number);
-    if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
-      return res.status(400).json({ success: false, message: "Invalid time values" });
-    }
+  // ✔ Match correct doctor
+  const doctors = availRes.data?.doctors || [];
+  const matchedDoctor = doctors.find(
+    (d) => d.doctorId?.toString() === doctorId.toString()
+  );
 
-    const appointmentDateTime = new Date(`${newDate}T${newTime}:00`);
-    const now = new Date();
-    if (appointmentDateTime.getTime() <= now.getTime()) {
-      return res.status(400).json({
-        success: false,
-        message: "Cannot reschedule to a past date/time",
-      });
-    }
+  availabilities = matchedDoctor?.availability || [];
 
-    // ✅ Fetch doctor availability from Clinic Service
-    let availabilities = [];
-    try {
-      const availRes = await axios.get(`${CLINIC_SERVICE_BASE_URL}/department-based/availability`, {
-        params: { doctorId: updatedDoctorId, clinicId },
-      });
+  if (availabilities.length) {
+    const days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+    const selectedDay = days[new Date(newDate).getDay()];
+    const [h, m] = newTime.split(":").map(Number);
+    const appointmentMinutes = h * 60 + m;
 
-      availabilities = availRes.data?.doctors?.[0]?.availability || [];
-      if (!availabilities.length) {
-        return res.status(400).json({
-          success: false,
-          message: "Doctor has no availability in this clinic",
-        });
-      }
-    } catch (err) {
-      return res.status(503).json({
-        success: false,
-        message: "Unable to fetch doctor availability from Clinic Service",
-        error: err.response?.data?.message || err.message,
-      });
-    }
-
-    // ✅ Validate against availability schedule
-    const daysOfWeek = [
-      "Sunday", "Monday", "Tuesday", "Wednesday",
-      "Thursday", "Friday", "Saturday",
-    ];
-    const appointmentDayIndex = new Date(newDate).getDay();
-    const appointmentDay = daysOfWeek[appointmentDayIndex];
-    const appointmentMinutes = hour * 60 + minute;
-
-    const isAvailable = availabilities.some((slot) => {
-      const slotClinicId = slot.clinicId?._id || slot.clinicId;
+    doctorAvailable = availabilities.some((slot) => {
+      const slotClinicId = slot.clinic?._id || slot.clinic;
       if (!slotClinicId || slotClinicId.toString() !== clinicId.toString()) return false;
-
-      if (!slot.dayOfWeek || slot.dayOfWeek.toLowerCase() !== appointmentDay.toLowerCase())
-        return false;
-
+      if (!slot.isActive) return false;
+      if (!slot.dayOfWeek || slot.dayOfWeek.toLowerCase() !== selectedDay.toLowerCase()) return false;
       const [startH, startM] = slot.startTime.split(":").map(Number);
       const [endH, endM] = slot.endTime.split(":").map(Number);
       const slotStart = startH * 60 + startM;
       const slotEnd = endH * 60 + endM;
-
       return appointmentMinutes >= slotStart && appointmentMinutes < slotEnd;
     });
+  }
 
-    if (!isAvailable) {
+} catch (err) {
+  console.log("⚠️ Error fetching availability:", err.message);
+}
+
+
+
+    if (!doctorAvailable) {
       return res.status(400).json({
         success: false,
-        message: `Doctor is not available on ${appointmentDay} at ${newTime}`,
+        message: "Doctor not available at the selected time"
       });
     }
-
-    // ✅ Prevent double booking for doctor at the same time
-    const existingAppointment = await Appointment.findOne({
-      _id: { $ne: appointmentId }, // exclude current appointment
-      doctorId: updatedDoctorId,
+    const conflict = await Appointment.findOne({
+      doctorId,
       clinicId,
       appointmentDate: newDate,
       appointmentTime: newTime,
       status: { $in: ["scheduled", "confirmed"] },
+      _id: { $ne: appointmentId }
     });
 
-    if (existingAppointment) {
+    if (conflict) {
       return res.status(400).json({
         success: false,
-        message: "Doctor already has an appointment at this time",
+        message: "Doctor already has an appointment at this time"
       });
     }
-
-    // ✅ Apply updates
-    appointment.doctorId = updatedDoctorId;
+    appointment.doctorId = doctorId;
     appointment.appointmentDate = newDate;
     appointment.appointmentTime = newTime;
+    appointment.updatedBy = userId;
+   appointment.status = doctorAvailable ? "scheduled" : "needs_reschedule";
+appointment.doctorAvailable = doctorAvailable;
+
 
     await appointment.save();
 
     return res.status(200).json({
-      success: true,
-      message: "Appointment rescheduled successfully",
-      appointment,
-    });
+  success: true,
+  forceUsed: !!forceReschedule,
+  doctorAvailable,
+  message: doctorAvailable
+    ? "Appointment rescheduled successfully."
+    : "Appointment rescheduled but marked for reschedule — doctor not available.",
+  data: appointment
+});
+
+
   } catch (error) {
-    console.error("❌ appointmentReschedule error:", error);
     return res.status(500).json({
       success: false,
       message: "Server error while rescheduling appointment",
@@ -831,6 +912,9 @@ const appointmentReschedule = async (req, res) => {
     });
   }
 };
+
+
+
 const cancelAppointment = async (req, res) => {
   try {
     const { id: appointmentId } = req.params;
@@ -871,6 +955,47 @@ const cancelAppointment = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Server error while cancelling appointment",
+      error: error.message,
+    });
+  }
+};
+const getPatientTreatmentPlans = async (req, res) => {
+  try {
+    const { id:patientId } = req.params;
+
+    if (!patientId) {
+      return res.status(400).json({
+        success: false,
+        message: "Patient ID is required",
+      });
+    }
+
+    // ✅ Fetch all treatment plans for this patient
+    const treatmentPlans = await treatmentPlanSchema.find({ patientId })
+      .populate({
+        path: "patientId",
+        select: "name phone email patientUniqueId patientRandomId",
+      })
+      .populate({
+        path: "clinicId",
+        select: "name phone address",
+      })
+      .populate({
+        path: "createdByDoctorId",
+        select: "name specialization phoneNumber",
+      })
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      count: treatmentPlans.length,
+      data: treatmentPlans,
+    });
+  } catch (error) {
+    console.error("❌ Error fetching treatment plans:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error while fetching treatment plans",
       error: error.message,
     });
   }
@@ -922,4 +1047,4 @@ const getAppointmentsByDate = async (req, res) => {
     });
   }
 };
-export { createAppointment ,getTodaysAppointments,getAppointmentById, getPatientHistory, addLabOrderToPatientHistory,getAppointmentsByClinic,clearDoctorFromAppointments,appointmentReschedule, cancelAppointment,getAppointmentsByDate};
+export { createAppointment ,getTodaysAppointments,getAppointmentById, getPatientHistory, addLabOrderToPatientHistory,getAppointmentsByClinic,clearDoctorFromAppointments,appointmentReschedule, cancelAppointment,getPatientTreatmentPlans,getAppointmentsByDate};

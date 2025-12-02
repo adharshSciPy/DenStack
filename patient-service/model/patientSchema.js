@@ -24,8 +24,8 @@ const patientSchema = new mongoose.Schema({
   },
   email: {
     type: String,
-    unique: true,
-    sparse: true,
+    lowercase: true,
+  trim: true,
     match: [/^\S+@\S+\.\S+$/, "Please enter a valid email address"]
   },
   password: {
@@ -45,6 +45,7 @@ const patientSchema = new mongoose.Schema({
   },
 
   patientUniqueId: { type: String, unique: true },
+   patientRandomId: { type: String, unique: true }, 
   parentPatient: { type: mongoose.Schema.Types.ObjectId, ref: "Patient" },
   linkedPatients: [{ type: mongoose.Schema.Types.ObjectId, ref: "Patient" }],
   role: { type: String, default: PATIENT_ROLE },
@@ -69,40 +70,76 @@ const patientSchema = new mongoose.Schema({
 
 // Generate OP number before saving
 patientSchema.pre("save", async function (next) {
-  if (this.patientUniqueId) return next();
-
   try {
-    const url = `${AUTH_SERVICE_BASE_URL}/clinic/view-clinic/${this.clinicId}`;
-    // console.log("Fetching clinic from:", url);
+    const Patient = mongoose.model("Patient");
 
-    const clinicRes = await axios.get(url);
-    // console.log("Clinic fetch response:", clinicRes.data);
+    const normalizedName = this.name.trim().toLowerCase();
+    const normalizedEmail = this.email?.trim().toLowerCase();
+    const phone = this.phone;
 
-    let prefix = "DEN-CLC";
-    if (clinicRes?.data?.data?.name) {
-      const rawName = clinicRes.data.data.name.replace(/[^a-zA-Z]/g, "");
-      prefix = rawName.substring(0, 3).toUpperCase() || "DEN";
+    let existingPatient = null;
+
+    // -------- Matching Logic --------
+    if (normalizedEmail) {
+      existingPatient = await Patient.findOne({
+        email: normalizedEmail,
+        name: new RegExp(`^${this.name}$`, "i"),
+        phone
+      }).lean();
+    } else {
+      existingPatient = await Patient.findOne({
+        name: new RegExp(`^${this.name}$`, "i"),
+        phone
+      }).lean();
     }
 
-    const count = await mongoose.model("Patient").countDocuments({ clinicId: this.clinicId });
-    this.patientUniqueId = `${prefix}-${String(count + 1).padStart(6, "0")}`;
-    // console.log("Generated OP Number:", this.patientUniqueId);
+    // Same (Name + Email) OR (Name + Phone) → SAME Random ID
+    if (existingPatient?.patientRandomId) {
+      this.patientRandomId = existingPatient.patientRandomId;
+    }
+
+    // If NO matching global patient → Generate new ID
+    if (!this.patientRandomId) {
+      const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+      const randomLetter = letters[Math.floor(Math.random() * letters.length)];
+      const randomDigits = Math.floor(100000 + Math.random() * 900000);
+      this.patientRandomId = `P${randomLetter}-${randomDigits}`;
+    }
+
+    // -------- Generate Clinic-Based Unique ID --------
+    if (!this.patientUniqueId) {
+      let prefix = "DEN";
+
+      try {
+        const response = await axios.get(
+          `${process.env.AUTH_SERVICE_BASE_URL}/clinic/view-clinic/${this.clinicId}`
+        );
+        if (response?.data?.data?.name) {
+          prefix = response.data.data.name.replace(/[^A-Za-z]/g, "").slice(0, 3).toUpperCase() || "DEN";
+        }
+      } catch {
+        prefix = "DEN";
+      }
+
+      const count = await Patient.countDocuments({ clinicId: this.clinicId });
+      this.patientUniqueId = `${prefix}-${String(count + 1).padStart(5, "0")}`;
+    }
 
   } catch (err) {
-    console.error("Clinic fetch failed, using fallback OP:", err.message);
-    const random = Math.floor(100000 + Math.random() * 900000);
-    this.patientUniqueId = `DEN-CLC-${random}`;
+    console.error("❌ Patient pre-save hook error:", err.message);
   }
 
   next();
 });
 
 
-// Good indexes for large-scale reads:
-patientSchema.index({ clinicId: 1, createdAt: -1 });
-patientSchema.index({ clinicId: 1, name: 1 });
+
+
+// ✅ Useful indexes
+patientSchema.index({ clinicId: 1, phone: 1 }, { unique: false });
+patientSchema.index({ clinicId: 1, email: 1 }, { unique: false });
+
 patientSchema.index({ clinicId: 1, patientUniqueId: 1 }, { unique: true });
-patientSchema.index({ clinicId: 1, phone: 1 }, { unique: true });
 
 
 

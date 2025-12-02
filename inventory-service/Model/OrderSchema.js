@@ -7,12 +7,12 @@ const orderSchema = new Schema({
             itemId: { type: mongoose.Schema.Types.ObjectId, ref: "Product" },
             quantity: Number,
             unitCost: Number,
-            totalCost:Number
+            totalCost: Number
         },
     ],
     totalAmount: { type: Number },
-    paymentStatus: { type: String, enum: ["PENDING", "PAID"], default: "PENDING" },
-    orderStatus: { type: String, enum: ["PROCESSING", "SHIPPED", "DELIVERED"], default: "PROCESSING" },
+    paymentStatus: { type: String, enum: ["PENDING", "PAID", "PENDING_REFUND"], default: "PENDING" },
+    orderStatus: { type: String, enum: ["PROCESSING", "SHIPPED", "DELIVERED", "CANCELLED"], default: "PROCESSING" },
 })
 
 const Order = new mongoose.model("Order", orderSchema);
