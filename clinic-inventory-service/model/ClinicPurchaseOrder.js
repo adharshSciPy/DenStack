@@ -13,8 +13,8 @@ const clinicPurchaseOrderSchema = new mongoose.Schema({
     totalAmount: Number,
     status: {
         type: String,
-        enum: ["PENDING", "SHIPPED", "DELIVERED", "CANCELLED"],
-        default: "PENDING"
+        enum: ["PENDING", "DELIVERED", "CANCELLED"],
+        default: "PENDING"  
     },
 }, { timestamps: true });
 

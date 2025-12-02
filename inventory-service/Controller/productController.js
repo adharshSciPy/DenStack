@@ -117,7 +117,7 @@ const productDetails = async (req, res) => {
 const getProduct = async (req, res) => {
   try {
     const { id } = req.params;
-    const response = await Product.findById(id);
+    const response = await Product.findById(id)
     res.status(200).json({ message: "Product Fetched", data: response });
   } catch (error) {
     res
@@ -282,6 +282,48 @@ const deleteProduct = async (req, res) => {
   }
 };
 
+const getProductsByIds = async (req, res) => {
+  try {
+    const { productIds, search } = req.body;
+
+    // Base filter
+    let filter = { _id: { $in: productIds } };
+
+    // Add search filter if provided
+    if (search && search.trim() !== "") {
+      filter.$or = [
+        { name: { $regex: search, $options: "i" } },
+
+        // Search by brand name
+        // (brand is an ObjectId so we use populate + match)
+      ];
+    }
+
+    const products = await Product.find(filter)
+      .populate({
+        path: "brand",
+        match: search
+          ? { name: { $regex: search, $options: "i" } }
+          : {}, // apply search to brand name
+      })
+      .populate("mainCategory")
+      .populate("subCategory");
+
+    // ❗ Remove products whose brand did NOT match search
+    const filteredProducts = products.filter((p) => {
+      if (!search) return true; // if no search, return all
+      if (p.brand) return true; // brand matched
+      if (p.name?.toLowerCase().includes(search.toLowerCase())) return true;
+      return false;
+    });
+
+    res.json({ data: filteredProducts });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+
 export {
   createProduct,
   productDetails,
@@ -290,4 +332,5 @@ export {
   getProductsByBrand,
   updateProduct,
   deleteProduct,
+  getProductsByIds
 };

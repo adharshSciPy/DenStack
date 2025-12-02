@@ -40,7 +40,8 @@ const vendorSchema = new Schema(
             type: Number
         },
         totalRevenue: {
-            type: Number
+            type: Number,
+            default: 0
         },
         rating: {
             type: String
@@ -62,7 +63,6 @@ const vendorSchema = new Schema(
                 contactMethod: {
                     type: String,
                     enum: ["call", "email", "meeting", "message"],
-                    required: true,
                 },
                 summary: { type: String, trim: true },
                 notes: { type: String, trim: true },
