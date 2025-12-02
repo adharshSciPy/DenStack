@@ -909,5 +909,41 @@ const assignClinicLab = async (req, res) => {
   }
 };
 
+const clicnicCount = async (req, res) => {
+  try {
+    const now = new Date();
 
-export { registerClinic, loginClinic, viewAllClinics, viewClinicById, editClinic,getClinicStaffs ,getTheme,editTheme,subscribeClinic,getClinicDashboardDetails, addShiftToStaff,removeStaffFromClinic,getClinicStaffCounts,registerSubClinic,assignClinicLab };
+    // Total clinics
+    const totalClinics = await Clinic.countDocuments();
+
+    // Active clinics
+    const activeClinics = await Clinic.countDocuments({
+      "subscription.endDate": { $gte: now }
+    });
+
+    // Expired clinics
+    const expiredClinics = await Clinic.countDocuments({
+      "subscription.endDate": { $lt: now }
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Clinic Count fetched successfully",
+      data: {
+        totalClinics,
+        activeClinics,
+        expiredClinics
+      }
+    });
+
+  } catch (error) {
+    console.log("Summary Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error"
+    });
+  }
+};
+
+
+export { registerClinic, loginClinic, viewAllClinics, viewClinicById, editClinic,getClinicStaffs ,getTheme,editTheme,subscribeClinic,getClinicDashboardDetails, addShiftToStaff,removeStaffFromClinic,getClinicStaffCounts,registerSubClinic,assignClinicLab,clicnicCount };
