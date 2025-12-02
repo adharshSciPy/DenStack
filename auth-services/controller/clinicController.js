@@ -239,12 +239,43 @@ const viewAllClinics = async (req, res) => {
 const viewClinicById = async (req, res) => {
   try {
     const { id } = req.params;
-    const clinic = await Clinic.findById(id);
-    res.status(200).json({ message: "View Clinic", data: clinic })
+    const { basic } = req.query;
+
+    let clinic;
+
+    // If query "basic" exists → fetch only required fields
+    if (basic) {
+      clinic = await Clinic.findById(
+        id,
+        {
+          name: 1,
+          email: 1,
+          phoneNumber: 1
+        }
+      ).lean();
+    } else {
+      // full response
+      clinic = await Clinic.findById(id).lean();
+    }
+
+    if (!clinic) {
+      return res.status(404).json({ success: false, message: "Clinic not found" });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Clinic details fetched successfully",
+      data: clinic
+    });
+
   } catch (error) {
-    res.status(500).json({ message: "Internal Server Error", error: error.message })
+    return res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+      error: error.message
+    });
   }
-}
+};
 
 const editClinic = async (req, res) => {
   try {

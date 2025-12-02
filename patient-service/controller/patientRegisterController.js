@@ -439,7 +439,128 @@ const login = async (req, res) => {
   }
 };
 
+const getPatientByRandomId = async (req, res) => {
+  try {
+    const { id: randomId } = req.params;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+
+    if (!randomId)
+      return res.status(400).json({ success: false, message: "Random ID is required" });
+
+    const patients = await Patient.find({ patientRandomId: randomId })
+      .select("-otpToken -otpTokenExpiry -password")
+      .lean();
+
+    if (!patients.length)
+      return res.status(404).json({ success: false, message: "Patient not found" });
+
+    const consolidatedResponse = [];
+    const clinicCache = {};
+    const doctorCache = {};
+
+    for (const patient of patients) {
+      // Fetch all visit history for this patient
+     const allVisits = await PatientHistory.find({
+  patientId: patient._id,
+  clinicId: patient.clinicId
+})
+.sort({ visitDate: -1 })
+.lean();
 
 
+      // Paginate visit history for this clinic
+      const totalVisits = allVisits.length;
+      const totalPages = Math.ceil(totalVisits / limit);
+      const startIndex = (page - 1) * limit;
+      const endIndex = startIndex + limit;
+      const paginatedVisits = allVisits.slice(startIndex, endIndex);
 
-export { registerPatient, getPatientWithUniqueId, getAllPatients, patientCheck, getPatientsByClinic, getPatientById, sendSMSLink, setPassword, login }
+      // Fetch doctor details for paginated visits
+      const doctorIds = [...new Set(paginatedVisits.map(v => v.doctorId).filter(Boolean))];
+      await Promise.all(
+        doctorIds.map(async (id) => {
+          if (!doctorCache[id]) {
+            try {
+              const { data } = await axios.get(
+                `${process.env.AUTH_SERVICE_BASE_URL}/doctor/details/${id}`
+              );
+              doctorCache[id] = data?.data || null;
+            } catch (err) {
+              console.warn(`⚠️ Doctor fetch failed ${id}: ${err.message}`);
+              doctorCache[id] = null;
+            }
+          }
+        })
+      );
+
+      // Fetch treatment plans for paginated visits
+      const treatmentPlanIds = [...new Set(paginatedVisits.map(v => v.treatmentPlanId).filter(Boolean))];
+      const treatmentPlans = await mongoose.model("TreatmentPlan").find(
+        { _id: { $in: treatmentPlanIds } },
+        "planName status createdAt completedAt stages"
+      ).lean();
+      const treatmentPlanMap = treatmentPlans.reduce((acc, plan) => {
+        acc[plan._id.toString()] = plan;
+        return acc;
+      }, {});
+
+      // Fetch clinic details (cache)
+      let clinicDetails = clinicCache[patient.clinicId];
+      if (!clinicDetails) {
+        try {
+          const { data } = await axios.get(
+            `${process.env.AUTH_SERVICE_BASE_URL}/clinic/view-clinic/${patient.clinicId}?basic=true`
+          );
+          clinicDetails = data?.data || null;
+          clinicCache[patient.clinicId] = clinicDetails;
+        } catch (err) {
+          console.warn(`Clinic fetch failed ${patient.clinicId}: ${err.message}`);
+          clinicDetails = null;
+        }
+      }
+
+      // Enrich visits with doctor and treatment plan
+      const enrichedVisits = paginatedVisits.map(v => ({
+        ...v,
+        doctor: doctorCache[v.doctorId] || null,
+        treatmentPlan: treatmentPlanMap[v.treatmentPlanId?.toString()] || null
+      }));
+
+      consolidatedResponse.push({
+        clinicId: patient.clinicId,
+        clinicDetails,
+        patientUniqueId: patient.patientUniqueId,
+        patientId: patient._id,
+        profile: patient,
+        visitHistory: enrichedVisits,
+        pagination: {
+          page,
+          limit,
+          totalVisits,
+          totalPages
+        }
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Patient data fetched with pagination",
+      data: {
+        patientRandomId: randomId,
+        records: consolidatedResponse
+      }
+    });
+
+  } catch (err) {
+    console.error("getPatientByRandomId error:", err.message);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: err.message,
+    });
+  }
+};
+
+
+export { registerPatient, getPatientWithUniqueId, getAllPatients, patientCheck, getPatientsByClinic, getPatientById, sendSMSLink, setPassword, login,getPatientByRandomId }

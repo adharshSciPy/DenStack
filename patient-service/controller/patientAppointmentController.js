@@ -9,6 +9,7 @@ import treatmentPlanSchema from "../model/treatmentPlanSchema.js";
 configDotenv();
 const AUTH_SERVICE_BASE_URL = process.env.AUTH_SERVICE_BASE_URL;
 const CLINIC_SERVICE_BASE_URL = process.env.CLINIC_SERVICE_BASE_URL;
+const NOTIFICATION_SERVICE_URL = process.env.NOTIFICATION_SERVICE_URL;
 
 const createAppointment = async (req, res) => {
   const { id: clinicId } = req.params;
@@ -20,50 +21,49 @@ const createAppointment = async (req, res) => {
     department,
     appointmentDate,
     appointmentTime,
-    forceBooking
+    forceBooking 
   } = req.body;
 
   try {
     // 1️⃣ Basic validations
     if (!clinicId || !mongoose.Types.ObjectId.isValid(clinicId))
       return res.status(400).json({ success: false, message: "Invalid clinicId" });
-
     if (!patientId || !mongoose.Types.ObjectId.isValid(patientId))
       return res.status(400).json({ success: false, message: "Invalid patientId" });
-
     if (!doctorId || !mongoose.Types.ObjectId.isValid(doctorId))
       return res.status(400).json({ success: false, message: "Invalid doctorId" });
-
     if (!userId || !mongoose.Types.ObjectId.isValid(userId))
       return res.status(400).json({ success: false, message: "Invalid userId" });
-
     if (!userRole || !["receptionist", "admin"].includes(userRole))
       return res.status(400).json({ success: false, message: "Invalid userRole" });
-
     if (!department)
       return res.status(400).json({ success: false, message: "Department is required" });
-
     if (!appointmentDate || !/^\d{4}-\d{2}-\d{2}$/.test(appointmentDate))
       return res.status(400).json({ success: false, message: "Invalid appointmentDate format" });
-
     if (!appointmentTime || !/^\d{2}:\d{2}$/.test(appointmentTime))
       return res.status(400).json({ success: false, message: "Invalid appointmentTime format" });
 
     // 2️⃣ Time validation
     const [hour, minute] = appointmentTime.split(":").map(Number);
     const appointmentDateTime = new Date(`${appointmentDate}T${appointmentTime}:00`);
-
     if (appointmentDateTime <= new Date())
       return res.status(400).json({ success: false, message: "Cannot book appointment in the past" });
 
-
-    // 3️⃣ Validate patient in clinic
+    // 3️⃣ Validate patient and receptionist
     const patient = await Patient.findOne({ _id: patientId, clinicId });
     if (!patient)
       return res.status(404).json({ success: false, message: "Patient not found in this clinic" });
 
+    // Fetch clinic details early for notification
+    let clinicName = "Our Clinic";
+    try {
+      const clinicRes = await axios.get(`${AUTH_SERVICE_BASE_URL}/clinic/view-clinic/${clinicId}`);
+      clinicName = clinicRes.data?.data?.name || clinicRes.data?.name || "Our Clinic";
+      console.log(`✅ Clinic name fetched: ${clinicName}`);
+    } catch (err) {
+      console.warn("Could not fetch clinic name:", err.message);
+    }
 
-    // 4️⃣ Validate receptionist only if needed
     if (userRole === "receptionist") {
       try {
         const staffRes = await axios.get(`${AUTH_SERVICE_BASE_URL}/clinic/all-staffs/${clinicId}`);
@@ -71,10 +71,8 @@ const createAppointment = async (req, res) => {
         const isReceptionistInClinic = staff?.receptionists?.some(
           (rec) => rec._id.toString() === userId.toString()
         );
-
         if (!isReceptionistInClinic)
           return res.status(403).json({ success: false, message: "Receptionist does not belong to this clinic" });
-
       } catch (err) {
         return res.status(503).json({
           success: false,
@@ -84,83 +82,133 @@ const createAppointment = async (req, res) => {
       }
     }
 
+    // 4️⃣ Referral logic (no populate, use clinic-service API)
+    const activeReferral = await PatientHistory.findOne({
+      patientId,
+      clinicId,
+      "referral.status": "pending",
+    })
+      .sort({ createdAt: -1 })
+      .lean();
 
-    // 5️⃣ Doctor Availability Check (FULL DEBUG)
-    let availabilities = [];
-    let doctorAvailable = false;
+    if (activeReferral?.referral?.referredToDoctorId) {
+      try {
+        const doctorRes = await axios.get(
+          `${CLINIC_SERVICE_BASE_URL}/active-doctors?clinicId=${clinicId}`
+        );
 
-    try {
-      const availRes = await axios.get(
-        `${CLINIC_SERVICE_BASE_URL}/department-based/availability`,
-        { params: { doctorId, clinicId, department } }
-      );
+        const allDoctors = doctorRes.data?.doctors || [];
+        const referredDoctor = allDoctors.find(
+          (doc) => doc.doctorId?.toString() === activeReferral.referral.referredToDoctorId.toString()
+        );
 
-    const doctors = availRes.data?.doctors || [];
-
-const doctor = doctors.find(
-  (d) => d.doctorId?.toString() === doctorId.toString()
-);
-
-availabilities = doctor?.availability || [];
-
-
-      // Compute correct local day
-      const [yyyy, mm, dd] = appointmentDate.split("-").map(Number);
-      const localDate = new Date(yyyy, mm - 1, dd);
-
-      const daysOfWeek = [
-        "Sunday", "Monday", "Tuesday",
-        "Wednesday", "Thursday", "Friday", "Saturday"
-      ];
-
-      const appointmentDay = daysOfWeek[localDate.getDay()];
-      const appointmentMinutes = hour * 60 + minute;
-
-      // 🚨 DEBUG LOGS
-      console.log("========== AVAILABILITY DEBUG ==========");
-      console.log("📌 appointmentDate:", appointmentDate);
-      console.log("📌 localDate:", localDate);
-      console.log("📌 Computed Day:", appointmentDay);
-      console.log("📌 Received Availabilities:", availabilities);
-      console.log("========================================");
-
-      doctorAvailable = availabilities.some((slot) => {
-        if (!slot.isActive) return false;
-
-        console.log("➡ Checking slot:", slot.dayOfWeek, slot.startTime, slot.endTime);
-
-        if (slot.dayOfWeek.toLowerCase() !== appointmentDay.toLowerCase()) {
-          console.log("❌ Day mismatch:", slot.dayOfWeek, "!=", appointmentDay);
-          return false;
+        if (referredDoctor) {
+          activeReferral.referral.referredToDoctor = {
+            name: referredDoctor.doctor?.name,
+            specialization: referredDoctor.doctor?.specialization,
+            doctorId: referredDoctor.doctorId,
+          };
         }
 
-        const [startH, startM] = slot.startTime.split(":").map(Number);
-        const [endH, endM] = slot.endTime.split(":").map(Number);
+        if (
+          !forceBooking &&
+          referredDoctor &&
+          referredDoctor.doctorId.toString() !== doctorId.toString()
+        ) {
+          return res.status(409).json({
+            success: false,
+            message: `This patient has a pending referral to ${referredDoctor.doctor?.name} (${referredDoctor.doctor?.specialization}). Please advise the patient before booking another doctor.`,
+            referral: activeReferral.referral,
+            requireConfirmation: true,
+          });
+        }
 
-        const slotStart = startH * 60 + startM;
-        const slotEnd = endH * 60 + endM;
+        if (referredDoctor && referredDoctor.doctorId.toString() === doctorId.toString()) {
+          await PatientHistory.updateOne(
+            { _id: activeReferral._id },
+            { $set: { "referral.status": "accepted" } }
+          );
+        }
+      } catch (err) {
+        console.warn("Could not fetch referred doctor details:", err.message);
+      }
+    }
 
-        const within =
-          appointmentMinutes >= slotStart && appointmentMinutes < slotEnd;
-
-        console.log("⏱ Time check:", within);
-
-        return within;
+    // 5️⃣ 🆕 Doctor availability - Check but DON'T block booking
+    let availabilities = [];
+    let doctorAvailable = false;
+    let availabilityWarning = null;
+    
+    try {
+      const availRes = await axios.get(`${CLINIC_SERVICE_BASE_URL}/availability`, {
+        params: { doctorId, clinicId },
       });
 
-      console.log("🔍 doctorAvailable =", doctorAvailable);
+      console.log("🔍 Availability API response:", JSON.stringify(availRes.data, null, 2));
 
+      const availData = availRes.data?.availabilities || [];
+      
+      if (availData.length > 0) {
+        // Format availabilities - API already filters for isActive slots
+        availabilities = availData.map(slot => ({
+          dayOfWeek: slot.dayOfWeek,
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+          isActive: true,
+          clinic: { _id: typeof slot.clinic === 'string' ? slot.clinic : slot.clinic?._id || clinicId }
+        }));
+
+        console.log("✅ Active availabilities formatted:", availabilities);
+
+        // 6️⃣ Check if appointment time falls within availability
+        const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+        const appointmentDay = daysOfWeek[new Date(appointmentDate).getDay()];
+        const appointmentMinutes = hour * 60 + minute;
+
+        console.log("🔍 Checking availability for:", { 
+          appointmentDay, 
+          appointmentTime, 
+          appointmentMinutes,
+          clinicId 
+        });
+
+        doctorAvailable = availabilities.some((slot) => {
+          const slotClinicId = slot.clinic?._id || slot.clinic;
+          
+          if (!slotClinicId || slotClinicId.toString() !== clinicId.toString()) {
+            return false;
+          }
+          
+          if (!slot.dayOfWeek || slot.dayOfWeek.toLowerCase() !== appointmentDay.toLowerCase()) {
+            return false;
+          }
+          
+          const [startH, startM] = slot.startTime.split(":").map(Number);
+          const [endH, endM] = slot.endTime.split(":").map(Number);
+          const slotStart = startH * 60 + startM;
+          const slotEnd = endH * 60 + endM;
+          
+          const isInRange = appointmentMinutes >= slotStart && appointmentMinutes < slotEnd;
+          
+          console.log(`🔍 Time check: ${appointmentMinutes} in range [${slotStart}, ${slotEnd})? ${isInRange}`);
+          
+          return isInRange;
+        });
+
+        if (!doctorAvailable) {
+          availabilityWarning = `Doctor is not available on ${appointmentDay} at ${appointmentTime}. Appointment booked but may need rescheduling.`;
+          console.log(`⚠️ ${availabilityWarning}`);
+        }
+      } else {
+        availabilityWarning = "Doctor has no availability schedule set. Appointment booked but may need confirmation.";
+        console.log(`⚠️ ${availabilityWarning}`);
+      }
     } catch (err) {
-      console.warn("Unable to fetch doctor availability:", err.message);
+      console.warn("⚠️ Unable to fetch doctor availability:", err.message);
+      availabilityWarning = "Unable to verify doctor availability. Appointment booked but may need confirmation.";
     }
 
-
-    if (!doctorAvailable) {
-      console.log(`⚠️ Doctor NOT available on ${appointmentDate} at ${appointmentTime}`);
-    }
-
-
-    // 6️⃣ Prevent double-booking
+    // 7️⃣ Prevent double booking (still enforce this - important!)
     const existingAppointment = await Appointment.findOne({
       doctorId,
       clinicId,
@@ -168,27 +216,14 @@ availabilities = doctor?.availability || [];
       appointmentTime,
       status: { $in: ["scheduled", "confirmed"] },
     });
+    if (existingAppointment)
+      return res.status(400).json({ success: false, message: "Doctor already has an appointment at this time" });
 
-    if (existingAppointment) {
-      return res.status(400).json({
-        success: false,
-        message: "Doctor already has an appointment at this time",
-      });
-    }
+    // 8️⃣ Generate OP number
+    const lastAppointmentToday = await Appointment.findOne({ clinicId, appointmentDate }).sort({ opNumber: -1 });
+    const nextOpNumber = lastAppointmentToday ? Number(lastAppointmentToday.opNumber) + 1 : 1;
 
-
-    // 7️⃣ Generate OP number
-    const lastAppointmentToday = await Appointment.findOne({
-      clinicId,
-      appointmentDate
-    }).sort({ opNumber: -1 });
-
-    const nextOpNumber = lastAppointmentToday
-      ? Number(lastAppointmentToday.opNumber) + 1
-      : 1;
-
-
-    // 8️⃣ Create Appointment
+    // 9️⃣ Create appointment (always create, with appropriate status based on availability)
     const appointment = new Appointment({
       clinicId,
       patientId,
@@ -199,17 +234,35 @@ availabilities = doctor?.availability || [];
       createdBy: userId,
       status: doctorAvailable ? "scheduled" : "needs_reschedule",
       opNumber: nextOpNumber,
-      doctorAvailable
+      doctorAvailable, // Store availability flag in appointment
     });
-
     await appointment.save();
 
+    // 🔟 Send confirmation notification (non-blocking)
+    try {
+      await axios.post(`${NOTIFICATION_SERVICE_URL}/api/notifications/send-confirmation`, {
+        appointmentId: appointment._id,
+        clinicId,
+        patientId,
+        doctorId,
+        appointmentDate,
+        appointmentTime,
+        opNumber: nextOpNumber,
+        clinicName
+      });
+      console.log("✅ Confirmation notification sent to patient");
+    } catch (notifError) {
+      console.error("⚠️ Notification failed but appointment created:", notifError.message);
+    }
+
+    // Return success with status-appropriate message
     return res.status(201).json({
       success: true,
-      message: doctorAvailable
-        ? "Appointment created successfully."
+      message: doctorAvailable 
+        ? "Appointment created successfully"
         : "Doctor not available — appointment booked but marked for reschedule.",
       data: appointment,
+      doctorAvailable // Flag for frontend
     });
 
   } catch (error) {
@@ -222,8 +275,8 @@ availabilities = doctor?.availability || [];
   }
 };
 
-
- const getTodaysAppointments = async (req, res) => {
+ 
+const getTodaysAppointments = async (req, res) => {
   try {
     const doctorId = req.doctorId;
     const { search = "", cursor = null, limit = 10, date } = req.query;
@@ -724,16 +777,15 @@ const clearDoctorFromAppointments = async (req, res) => {
 };
 const appointmentReschedule = async (req, res) => {
   try {
-    const { id:appointmentId } = req.params;
-    const { doctorId, newDate, newTime } = req.body;
-
-    console.log("========== RESCHEDULE DEBUG ==========");
-    console.log("📌 appointmentId:", appointmentId);
-    console.log("📌 doctorId:", doctorId);
-    console.log("📌 newDate:", newDate);
-    console.log("📌 newTime:", newTime);
-
-    // Validate IDs
+    const { id: appointmentId } = req.params;
+    const {
+      doctorId,
+      newDate,
+      newTime,
+      userId,
+      userRole,
+      forceReschedule
+    } = req.body;
     if (!mongoose.Types.ObjectId.isValid(appointmentId))
       return res.status(400).json({ success: false, message: "Invalid appointmentId" });
 
@@ -746,80 +798,77 @@ const appointmentReschedule = async (req, res) => {
     if (!newTime || !/^\d{2}:\d{2}$/.test(newTime))
       return res.status(400).json({ success: false, message: "Invalid newTime format" });
 
-    // Fetch appointment
+    if (!["admin", "receptionist"].includes(userRole))
+      return res.status(400).json({ success: false, message: "Invalid userRole" });
+
     const appointment = await Appointment.findById(appointmentId);
     if (!appointment)
       return res.status(404).json({ success: false, message: "Appointment not found" });
-
-    // Extract from DB instead of body (IMPORTANT)
-    const clinicId = appointment.clinicId;
-    const department = appointment.department;
-
-    console.log("📌 Loaded clinicId from DB:", clinicId);
-    console.log("📌 Loaded department from DB:", department);
-
-    // Patient validation
-    const patientId = appointment.patientId;
-    const patient = await Patient.findOne({ _id: patientId, clinicId });
-
-    if (!patient)
-      return res.status(404).json({
-        success: false,
-        message: "Patient does not belong to this clinic",
-      });
-
-    // Prevent past time reschedule
     const selectedDateTime = new Date(`${newDate}T${newTime}:00`);
-    if (selectedDateTime <= new Date())
+    if (selectedDateTime <= new Date()) {
       return res.status(400).json({
         success: false,
-        message: "Cannot reschedule to a past time",
+        message: "Cannot reschedule to a past time"
       });
-
-    // Availability Check
-    let doctorAvailable = false;
-    let availabilities = [];
-
-    try {
-      const availRes = await axios.get(
-        `${CLINIC_SERVICE_BASE_URL}/department-based/availability`,
-        { params: { doctorId, clinicId, department } }
-      );
-
-      const doctors = availRes.data?.doctors || [];
-      const doctor = doctors.find(
-        (d) => d.doctorId?.toString() === doctorId.toString()
-      );
-
-      availabilities = doctor?.availability || [];
-
-      const [yyyy, mm, dd] = newDate.split("-").map(Number);
-      const localDate = new Date(yyyy, mm - 1, dd);
-      const days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
-      const selectedDay = days[localDate.getDay()];
-
-      const [h, m] = newTime.split(":").map(Number);
-      const appointmentMinutes = h * 60 + m;
-
-      doctorAvailable = availabilities.some((slot) => {
-        if (!slot.isActive) return false;
-        if (slot.dayOfWeek.toLowerCase() !== selectedDay.toLowerCase())
-          return false;
-
-        const [sh, sm] = slot.startTime.split(":").map(Number);
-        const [eh, em] = slot.endTime.split(":").map(Number);
-        const slotStart = sh * 60 + sm;
-        const slotEnd = eh * 60 + em;
-
-        return appointmentMinutes >= slotStart && appointmentMinutes < slotEnd;
-      });
-
-    } catch (err) {
-      console.log("⚠️ Availability Fetch Error:", err.message);
     }
 
-    // Check for conflicting appointments
-    const conflictingAppointment = await Appointment.findOne({
+    const clinicId = appointment.clinicId;
+    const department = appointment.department;
+    if (appointment.status !== "needs_reschedule" && !forceReschedule) {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot reschedule this appointment without forceReschedule=true"
+      });
+    }
+let doctorAvailable = false;
+let availabilities = [];
+
+try {
+  const availRes = await axios.get(
+    `${CLINIC_SERVICE_BASE_URL}/department-based/availability`,
+    { params: { doctorId, clinicId, department } }
+  );
+
+  // ✔ Match correct doctor
+  const doctors = availRes.data?.doctors || [];
+  const matchedDoctor = doctors.find(
+    (d) => d.doctorId?.toString() === doctorId.toString()
+  );
+
+  availabilities = matchedDoctor?.availability || [];
+
+  if (availabilities.length) {
+    const days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+    const selectedDay = days[new Date(newDate).getDay()];
+    const [h, m] = newTime.split(":").map(Number);
+    const appointmentMinutes = h * 60 + m;
+
+    doctorAvailable = availabilities.some((slot) => {
+      const slotClinicId = slot.clinic?._id || slot.clinic;
+      if (!slotClinicId || slotClinicId.toString() !== clinicId.toString()) return false;
+      if (!slot.isActive) return false;
+      if (!slot.dayOfWeek || slot.dayOfWeek.toLowerCase() !== selectedDay.toLowerCase()) return false;
+      const [startH, startM] = slot.startTime.split(":").map(Number);
+      const [endH, endM] = slot.endTime.split(":").map(Number);
+      const slotStart = startH * 60 + startM;
+      const slotEnd = endH * 60 + endM;
+      return appointmentMinutes >= slotStart && appointmentMinutes < slotEnd;
+    });
+  }
+
+} catch (err) {
+  console.log("⚠️ Error fetching availability:", err.message);
+}
+
+
+
+    if (!doctorAvailable) {
+      return res.status(400).json({
+        success: false,
+        message: "Doctor not available at the selected time"
+      });
+    }
+    const conflict = await Appointment.findOne({
       doctorId,
       clinicId,
       appointmentDate: newDate,
@@ -828,32 +877,34 @@ const appointmentReschedule = async (req, res) => {
       _id: { $ne: appointmentId }
     });
 
-    if (conflictingAppointment) {
+    if (conflict) {
       return res.status(400).json({
         success: false,
-        message: "Doctor already has an appointment at this time",
+        message: "Doctor already has an appointment at this time"
       });
     }
-
-    // Update appointment
     appointment.doctorId = doctorId;
     appointment.appointmentDate = newDate;
     appointment.appointmentTime = newTime;
-    appointment.doctorAvailable = doctorAvailable;
-    appointment.status = doctorAvailable ? "scheduled" : "needs_reschedule";
+    appointment.updatedBy = userId;
+   appointment.status = doctorAvailable ? "scheduled" : "needs_reschedule";
+appointment.doctorAvailable = doctorAvailable;
+
 
     await appointment.save();
 
     return res.status(200).json({
-      success: true,
-      message: doctorAvailable
-        ? "Appointment rescheduled successfully"
-        : "Doctor not available — appointment updated but flagged for reschedule",
-      data: appointment,
-    });
+  success: true,
+  forceUsed: !!forceReschedule,
+  doctorAvailable,
+  message: doctorAvailable
+    ? "Appointment rescheduled successfully."
+    : "Appointment rescheduled but marked for reschedule — doctor not available.",
+  data: appointment
+});
+
 
   } catch (error) {
-    console.error("❌ RESCHEDULE ERROR:", error);
     return res.status(500).json({
       success: false,
       message: "Server error while rescheduling appointment",
@@ -861,7 +912,6 @@ const appointmentReschedule = async (req, res) => {
     });
   }
 };
-
 
 
 
@@ -950,5 +1000,51 @@ const getPatientTreatmentPlans = async (req, res) => {
     });
   }
 };
-
-export { createAppointment ,getTodaysAppointments,getAppointmentById, getPatientHistory, addLabOrderToPatientHistory,getAppointmentsByClinic,clearDoctorFromAppointments,appointmentReschedule, cancelAppointment,getPatientTreatmentPlans};
+const getAppointmentsByDate = async (req, res) => {
+  try {
+    const { date, status } = req.query;
+    
+    if (!date) {
+      return res.status(400).json({
+        success: false,
+        message: 'Date parameter is required (format: YYYY-MM-DD)'
+      });
+    }
+    
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid date format. Use YYYY-MM-DD'
+      });
+    }
+    
+    const query = { appointmentDate: date };
+    
+    if (status) {
+      query.status = status;
+    }
+    
+    // ✅ FIXED: Only populate patientId
+    const appointments = await Appointment.find(query)
+      .populate('patientId', 'name email phone whatsappNumber')
+      .sort({ appointmentTime: 1 })
+      .lean();
+    
+    console.log(`📋 Found ${appointments.length} appointments for ${date}`);
+    
+    res.status(200).json({
+      success: true,
+      count: appointments.length,
+      data: appointments
+    });
+    
+  } catch (error) {
+    console.error('❌ Error fetching appointments by date:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch appointments',
+      error: error.message
+    });
+  }
+};
+export { createAppointment ,getTodaysAppointments,getAppointmentById, getPatientHistory, addLabOrderToPatientHistory,getAppointmentsByClinic,clearDoctorFromAppointments,appointmentReschedule, cancelAppointment,getPatientTreatmentPlans,getAppointmentsByDate};
