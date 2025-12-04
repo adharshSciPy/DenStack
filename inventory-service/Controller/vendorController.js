@@ -1,5 +1,8 @@
 import Vendor from "../Model/VendorSchema.js";
 import Order from "../Model/OrderSchema.js"
+import Category from "../Model/CategorySchema.js";
+import Product from "../Model/ProductSchema.js";
+import mongoose from "mongoose";
 
 const createVendor = async (req, res) => {
     try {
@@ -80,59 +83,6 @@ const deleteVendor = async (req, res) => {
     }
 }
 
-// const vendorCount = async (req, res) => {
-//     try {
-//         // 1️⃣ Total Vendors
-//         const totalVendors = await Vendor.countDocuments();
-
-//         // 2️⃣ Active Vendors — based on status field
-//         const activeVendors = await Vendor.countDocuments({ status: "Active" });
-
-//         // 3️⃣ Avg Rating (only works if vendor has "rating" field)
-//         const vendors = await Vendor.find();
-//         // 3️⃣ Calculate average vendor rating using aggregation
-//         const ratingAgg = await Vendor.aggregate([
-//             {
-//                 $match: {
-//                     rating: { $exists: true, $ne: null } // include only vendors with a rating
-//                 }
-//             },
-//             {
-//                 $project: {
-//                     rating: { $toDouble: "$rating" }  // convert string "4.5" to number 4.5
-//                 }
-//             },
-//             {
-//                 $group: {
-//                     _id: null,
-//                     avgRating: { $avg: "$rating" }
-//                 }
-//             }
-//         ]);
-
-//         const avgRating = ratingAgg.length > 0 ? ratingAgg[0].avgRating.toFixed(1) : "0.0";
-
-
-//         // 4️⃣ Total Revenue from Orders
-//         const revenue = await Order.aggregate([
-//             { $group: { _id: null, total: { $sum: "$vendorRevenue" } } },
-//         ]);
-
-//         const totalRevenue = revenue.length > 0 ? revenue[0].total : 0;
-
-//         res.status(200).json({
-//             success: true,
-//             data: {
-//                 totalVendors,
-//                 activeVendors,
-//                 avgRating,
-//                 totalRevenue,
-//             },
-//         });
-//     } catch (err) {
-//         res.status(500).json({ message: err.message });
-//     }
-// };
 
 const adminDashboardStats = async (req, res) => {
     try {
@@ -173,8 +123,91 @@ const adminDashboardStats = async (req, res) => {
     }
 };
 
+const getVendorCategoryAnalytics = async (req, res) => {
+    try {
+        // 1️⃣ Fetch all MAIN categories (parentCategory === null)
+        const categories = await Category.find({ parentCategory: null }).lean();
+
+        let results = [];
+
+        for (let cat of categories) {
+            const categoryId = cat._id;
+
+            // 2️⃣ Vendors who have products in this main category
+            const products = await Product.find({
+                mainCategory: categoryId
+            }).select("addedById addedByType");
+
+            // Extract vendor IDs only (skip superadmin-added products)
+            const vendorIds = [
+                ...new Set(
+                    products
+                        .filter(p => p.addedByType === "vendor")
+                        .map(p => p.addedById.toString())
+                )
+            ];
+
+            // 3️⃣ Revenue from orders associated with products in this category
+            const revenueData = await Order.aggregate([
+                { $unwind: "$items" },
+
+                // join with product collection
+                {
+                    $lookup: {
+                        from: "products",
+                        localField: "items.itemId",
+                        foreignField: "_id",
+                        as: "prod"
+                    }
+                },
+                { $unwind: "$prod" },
+
+                // filter only products under this main category
+                {
+                    $match: {
+                        "prod.mainCategory": new mongoose.Types.ObjectId(categoryId)
+                    }
+                },
+
+                {
+                    $group: {
+                        _id: null,
+                        totalRevenue: { $sum: "$items.totalCost" }
+                    }
+                }
+            ]);
+
+            const totalRevenue = revenueData[0]?.totalRevenue || 0;
+            const totalVendors = vendorIds.length;
+            const avgPerVendor =
+                totalVendors === 0 ? 0 : Math.round(totalRevenue / totalVendors);
+
+            // 4️⃣ Push final payload
+            results.push({
+                categoryName: cat.categoryName,
+                vendors: totalVendors,
+                revenue: totalRevenue,
+                avgPerVendor
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: "Vendor category analytics loaded successfully",
+            data: results
+        });
+
+    } catch (error) {
+        console.log("Vendor category analytics error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Server error",
+            error: error.message
+        });
+    }
+};
+
 
 export {
-    createVendor, vendorDetails, editVendor, deleteVendor, adminDashboardStats
-    // vendorCount
+    createVendor, vendorDetails, editVendor, deleteVendor, adminDashboardStats, getVendorCategoryAnalytics
 }

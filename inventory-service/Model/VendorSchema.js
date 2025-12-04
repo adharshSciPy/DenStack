@@ -63,7 +63,6 @@ const vendorSchema = new Schema(
                 contactMethod: {
                     type: String,
                     enum: ["call", "email", "meeting", "message"],
-                    required: true,
                 },
                 summary: { type: String, trim: true },
                 notes: { type: String, trim: true },

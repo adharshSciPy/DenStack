@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getAllPatients,getPatientById, getPatientsByClinic, getPatientWithUniqueId, patientCheck, registerPatient, sendSMSLink, setPassword, login } from "../controller/patientRegisterController.js";
+import { getAllPatients,getPatientById, getPatientsByClinic, getPatientWithUniqueId, patientCheck, registerPatient, sendSMSLink, setPassword, login,getPatientByRandomId } from "../controller/patientRegisterController.js";
 const patientRegisterRouter = Router();
 
 patientRegisterRouter.route("/register/:id").post(registerPatient)//{id:clinicId}
@@ -11,6 +11,7 @@ patientRegisterRouter.route("/details/:id").get(getPatientById)//{id:patientId}
 patientRegisterRouter.post("/send-login-link", sendSMSLink);
 patientRegisterRouter.post("/set-password", setPassword);
 patientRegisterRouter.post("/patientLogin", login);
+patientRegisterRouter.route("/patient-by-randomId/:id").get(getPatientByRandomId);
 // patientRegisterRouter.route("/:id").get(getPatientById);
 
 export default patientRegisterRouter;

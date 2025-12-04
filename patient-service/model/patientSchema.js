@@ -24,8 +24,8 @@ const patientSchema = new mongoose.Schema({
   },
   email: {
     type: String,
-    unique: true,
-    sparse: true,
+    lowercase: true,
+  trim: true,
     match: [/^\S+@\S+\.\S+$/, "Please enter a valid email address"]
   },
   password: {
@@ -71,53 +71,75 @@ const patientSchema = new mongoose.Schema({
 // Generate OP number before saving
 patientSchema.pre("save", async function (next) {
   try {
-    // Prevent duplicate generation
-    if (!this.patientUniqueId || !this.patientRandomId) {
-      // === Sequential ID generation ===
-      const url = `${AUTH_SERVICE_BASE_URL}/clinic/view-clinic/${this.clinicId}`;
-      let prefix = "DEN-CLC";
+    const Patient = mongoose.model("Patient");
+
+    const normalizedName = this.name.trim().toLowerCase();
+    const normalizedEmail = this.email?.trim().toLowerCase();
+    const phone = this.phone;
+
+    let existingPatient = null;
+
+    // -------- Matching Logic --------
+    if (normalizedEmail) {
+      existingPatient = await Patient.findOne({
+        email: normalizedEmail,
+        name: new RegExp(`^${this.name}$`, "i"),
+        phone
+      }).lean();
+    } else {
+      existingPatient = await Patient.findOne({
+        name: new RegExp(`^${this.name}$`, "i"),
+        phone
+      }).lean();
+    }
+
+    // Same (Name + Email) OR (Name + Phone) → SAME Random ID
+    if (existingPatient?.patientRandomId) {
+      this.patientRandomId = existingPatient.patientRandomId;
+    }
+
+    // If NO matching global patient → Generate new ID
+    if (!this.patientRandomId) {
+      const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+      const randomLetter = letters[Math.floor(Math.random() * letters.length)];
+      const randomDigits = Math.floor(100000 + Math.random() * 900000);
+      this.patientRandomId = `P${randomLetter}-${randomDigits}`;
+    }
+
+    // -------- Generate Clinic-Based Unique ID --------
+    if (!this.patientUniqueId) {
+      let prefix = "DEN";
 
       try {
-        const clinicRes = await axios.get(url);
-        if (clinicRes?.data?.data?.name) {
-          const rawName = clinicRes.data.data.name.replace(/[^a-zA-Z]/g, "");
-          prefix = rawName.substring(0, 3).toUpperCase() || "DEN";
+        const response = await axios.get(
+          `${process.env.AUTH_SERVICE_BASE_URL}/clinic/view-clinic/${this.clinicId}`
+        );
+        if (response?.data?.data?.name) {
+          prefix = response.data.data.name.replace(/[^A-Za-z]/g, "").slice(0, 3).toUpperCase() || "DEN";
         }
-      } catch (err) {
-        console.error("Clinic fetch failed, using fallback prefix:", err.message);
+      } catch {
+        prefix = "DEN";
       }
 
-      const count = await mongoose.model("Patient").countDocuments({ clinicId: this.clinicId });
-      const formattedNumber = String(count + 1).padStart(6, "0");
-
-      // Generate sequential ID if missing
-      if (!this.patientUniqueId)
-        this.patientUniqueId = `${prefix}-${formattedNumber}`;
-
-      // === Random ID generation ===
-      if (!this.patientRandomId) {
-        const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-        const randomLetter = letters.charAt(Math.floor(Math.random() * letters.length));
-        const randomDigits = Math.floor(100000 + Math.random() * 900000); // 6 random digits
-        this.patientRandomId = `P${randomLetter}-${randomDigits}`;
-      }
+      const count = await Patient.countDocuments({ clinicId: this.clinicId });
+      this.patientUniqueId = `${prefix}-${String(count + 1).padStart(5, "0")}`;
     }
+
   } catch (err) {
-    console.error("Error generating patient IDs:", err.message);
-    const fallbackRandom = Math.floor(100000 + Math.random() * 900000);
-    if (!this.patientUniqueId) this.patientUniqueId = `DEN-CLC-${fallbackRandom}`;
-    if (!this.patientRandomId) this.patientRandomId = `PX-${fallbackRandom}`;
+    console.error("❌ Patient pre-save hook error:", err.message);
   }
 
   next();
 });
 
 
+
+
 // ✅ Useful indexes
-patientSchema.index({ clinicId: 1, createdAt: -1 });
-patientSchema.index({ clinicId: 1, name: 1 });
+patientSchema.index({ clinicId: 1, phone: 1 }, { unique: false });
+patientSchema.index({ clinicId: 1, email: 1 }, { unique: false });
+
 patientSchema.index({ clinicId: 1, patientUniqueId: 1 }, { unique: true });
-patientSchema.index({ clinicId: 1, phone: 1 }, { unique: true });
 
 
 
