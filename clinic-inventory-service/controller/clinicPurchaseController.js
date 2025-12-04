@@ -1,5 +1,6 @@
 import ClinicPurchaseOrder from "../model/ClinicPurchaseOrder.js";
 import ClinicInventory from "../model/ClinicInventoryModel.js";
+import ClinicProduct from "../model/ClinicProduct.js";
 import axios from "axios";
 
 const INVENTORY_SERVICE_URL = 'http://localhost:8004/api/v1/'
@@ -140,30 +141,40 @@ export const markDelivered = async (req, res) => {
     const order = await ClinicPurchaseOrder.findById(orderId);
     if (!order) return res.status(404).json({ message: "Order not found" });
 
-    // Prevent duplicate stock addition
+    // Prevent duplicate updates
     if (order.status === "DELIVERED") {
       return res.status(400).json({
         message: "Order already delivered. Inventory update skipped.",
       });
     }
 
-    // Update inventory for each item
+    // LOOP ITEMS
     for (const item of order.items) {
       const existing = await ClinicInventory.findOne({
         clinicId,
         productId: item.itemId,
       });
 
+      const threshold = existing?.lowStockThreshold || 20;
+
       if (existing) {
+        // Update quantity
         existing.quantity += item.quantity;
+
+        // AUTO UPDATE LOW STOCK FLAG
+        existing.isLowStock = existing.quantity <= threshold;
+
         await existing.save();
       } else {
+        // Create new inventory record
         await ClinicInventory.create({
           clinicId,
           productId: item.itemId,
           quantity: item.quantity,
           inventoryType: "general",
           assignedTo: null,
+          lowStockThreshold: threshold,
+          isLowStock: item.quantity <= threshold
         });
       }
     }
@@ -176,7 +187,6 @@ export const markDelivered = async (req, res) => {
       message: "Order marked as delivered & inventory updated",
       order,
     });
-
   } catch (err) {
     res.status(500).json({
       message: "Server error",
@@ -184,6 +194,7 @@ export const markDelivered = async (req, res) => {
     });
   }
 };
+  
 export const getClinicOrders = async (req, res) => {
   try {
     const { clinicId } = req.params;
@@ -227,4 +238,84 @@ export const getClinicOrders = async (req, res) => {
     res.status(500).json({ success: false, message: "Server Error" });
   }
 };
+
+export const manualAddInventory = async (req, res) => {
+  try {
+    const {
+      clinicId,
+      productId,
+      quantity,
+      vendor,
+      notes
+    } = req.body;
+
+    if (!clinicId || !productId || !quantity) {
+      return res.status(400).json({
+        message: "clinicId, productId & quantity are required",
+      });
+    }
+    let finalProductType = "local";
+    // 🔥 Auto-detect local product (force productType = local)
+    // let finalProductType = productType;
+    const isLocalProduct = await ClinicProduct.findOne({
+      _id: productId, 
+      clinicId,
+    });
+
+    if (isLocalProduct) {
+      finalProductType = "local";
+    }
+
+    // Check if inventory entry already exists
+    const existing = await ClinicInventory.findOne({
+      clinicId,
+      productId,
+    });
+
+    // Determine low-stock threshold
+    const threshold =
+      existing?.lowStockThreshold ||
+      isLocalProduct?.lowStockThreshold ||
+      20;
+
+    // 🟢 If inventory exists → update stock
+    if (existing) {
+      existing.quantity += Number(quantity);
+      existing.isLowStock = existing.quantity <= threshold;
+      await existing.save();
+
+      return res.status(200).json({
+        message: "Stock updated successfully",
+        updatedQuantity: existing.quantity,
+        isLowStock: existing.isLowStock,
+      });
+    }
+
+    // 🟠 If inventory does NOT exist → create a new entry
+    const newEntry = await ClinicInventory.create({
+      clinicId,
+      productId,
+      productType: finalProductType,
+      quantity,
+      inventoryType: "general",
+      assignedTo: null,
+      lowStockThreshold: threshold,
+      isLowStock: quantity <= threshold,
+      vendor: vendor || "Manual Entry",
+      notes: notes || "",
+    });
+
+    return res.status(201).json({
+      message: "Manual inventory added successfully",
+      data: newEntry,
+    });
+
+  } catch (err) {
+    return res.status(500).json({
+      message: "Server error",
+      error: err.message,
+    });
+  }
+};
+
 
