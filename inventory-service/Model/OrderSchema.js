@@ -1,7 +1,16 @@
 import mongoose, { Schema } from "mongoose"
 
 const orderSchema = new Schema({
-    userId: { type: mongoose.Schema.Types.ObjectId, ref: "Clinic" },
+    clinicId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Clinic",
+        required: true
+    },
+    vendorId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Vendor",
+        required: true
+    },
     items: [
         {
             itemId: { type: mongoose.Schema.Types.ObjectId, ref: "Product" },
