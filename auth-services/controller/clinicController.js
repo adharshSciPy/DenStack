@@ -33,12 +33,12 @@ const registerClinic = async (req, res) => {
       address,
       description,
       theme,
-      features, 
-        isMultipleClinic = false,
+      features,
+      isMultipleClinic = false,
       isOwnLab = false,
     } = req.body;
 
-   
+
     if (!name || !nameValidator(name)) {
       return res.status(400).json({ success: false, message: "Invalid name" });
     }
@@ -71,7 +71,7 @@ const registerClinic = async (req, res) => {
         message: "Phone number already exists",
       });
 
-  
+
     const newClinic = new Clinic({
       name,
       type,
@@ -81,7 +81,7 @@ const registerClinic = async (req, res) => {
       address,
       description,
       theme,
-        isMultipleClinic, 
+      isMultipleClinic,
       isOwnLab,
     });
 
@@ -128,7 +128,7 @@ const registerClinic = async (req, res) => {
         subscription: newClinic.subscription,
         features: newClinic.features,
         theme: newClinic.theme,
-          isMultipleClinic: newClinic.isMultipleClinic,
+        isMultipleClinic: newClinic.isMultipleClinic,
         isOwnLab: newClinic.isOwnLab,
       },
       accessToken,
@@ -172,7 +172,7 @@ const loginClinic = async (req, res) => {
     // ====== GENERATE TOKENS ======
     const accessToken = clinic.generateAccessToken();
     const refreshToken = clinic.generateRefreshToken();
-      let subClinics = [];
+    let subClinics = [];
     if (clinic.isMultipleClinic) {
       subClinics = await Clinic.find({ parentClinicId: clinic._id })
         .select("_id name email phoneNumber type isOwnLab subscription isActive")
@@ -189,7 +189,7 @@ const loginClinic = async (req, res) => {
         type: clinic.type,
         role: clinic.role,
         subscription: clinic.subscription,
-           subClinics,
+        subClinics,
       },
       accessToken,
       refreshToken,
@@ -381,7 +381,7 @@ const getClinicStaffs = async (req, res) => {
 
 
 
-const getTheme=async (req, res) => {
+const getTheme = async (req, res) => {
   try {
     const clinic = await Clinic.findById(req.params.clinicId).select("theme");
     if (!clinic) return res.status(404).json({ message: "Clinic not found" });
@@ -391,12 +391,12 @@ const getTheme=async (req, res) => {
   }
 }
 
-const editTheme=async (req, res) => {
+const editTheme = async (req, res) => {
   try {
-    const { startColor, endColor, primaryForeground, sidebarForeground,secondary } = req.body;
+    const { startColor, endColor, primaryForeground, sidebarForeground, secondary } = req.body;
     const clinic = await Clinic.findByIdAndUpdate(
       req.params.clinicId,
-      { theme: { startColor, endColor, primaryForeground, sidebarForeground ,secondary} },
+      { theme: { startColor, endColor, primaryForeground, sidebarForeground, secondary } },
       { new: true }
     );
     res.json({ message: "Theme updated successfully", theme: clinic.theme });
@@ -485,22 +485,22 @@ const getClinicDashboardDetails = async (req, res) => {
       }
     };
 
-  const fetchPendingLabOrders = async () => {
-  try {
-    const response = await axios.get(
-      `${LAB_SERVICE_BASE_URL}/api/v1/lab-order/pending-orders/${clinicId}`
-    );
-    // console.log("1212",response);
-    
-    return {
-      count: response.data?.count || 0,
-      orders: response.data?.pendingOrders || [],
+    const fetchPendingLabOrders = async () => {
+      try {
+        const response = await axios.get(
+          `${LAB_SERVICE_BASE_URL}/api/v1/lab-order/pending-orders/${clinicId}`
+        );
+        // console.log("1212",response);
+
+        return {
+          count: response.data?.count || 0,
+          orders: response.data?.pendingOrders || [],
+        };
+      } catch (err) {
+        console.error("❌ Error fetching pending lab orders:", err.message);
+        return { count: 0, orders: [] };
+      }
     };
-  } catch (err) {
-    console.error("❌ Error fetching pending lab orders:", err.message);
-    return { count: 0, orders: [] };
-  }
-};
 
 
     // ✅ Run all 4 external requests in parallel
@@ -706,7 +706,7 @@ const getClinicStaffCounts = async (req, res) => {
       technicians: clinic.staffs?.technicians?.length || 0,
     };
 
-    
+
 
     const total =
       staffCounts.nurses +
@@ -733,7 +733,7 @@ const getClinicStaffCounts = async (req, res) => {
 };
 const registerSubClinic = async (req, res) => {
   try {
-    const{id:parentClinicId}=req.params;
+    const { id: parentClinicId } = req.params;
     const {
       name,
       type,
@@ -976,5 +976,107 @@ const clicnicCount = async (req, res) => {
   }
 };
 
+const allClinicsStatus = async (req, res) => {
+  try {
+    let { page, limit } = req.query;
 
-export { registerClinic, loginClinic, viewAllClinics, viewClinicById, editClinic,getClinicStaffs ,getTheme,editTheme,subscribeClinic,getClinicDashboardDetails, addShiftToStaff,removeStaffFromClinic,getClinicStaffCounts,registerSubClinic,assignClinicLab,clicnicCount };
+    // Convert to number and set defaults
+    page = parseInt(page) || 1;
+    limit = parseInt(limit) || 10;
+
+    const skip = (page - 1) * limit;
+
+    // Fetch clinics with pagination
+    const clinics = await Clinic.find()
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+
+    function timeAgo(date) {
+      const seconds = Math.floor((new Date() - new Date(date)) / 1000);
+      if (seconds < 60) return "just now";
+      const minutes = Math.floor(seconds / 60);
+      if (minutes < 60) return `${minutes} minutes ago`;
+      const hours = Math.floor(minutes / 60);
+      if (hours < 24) return `${hours} hours ago`;
+      const days = Math.floor(hours / 24);
+      return `${days} days ago`;
+    }
+
+    clinics.forEach(c => {
+      const nurses = c.staffs?.nurses?.length || 0;
+      const receptionists = c.staffs?.receptionists?.length || 0;
+      const pharmacists = c.staffs?.pharmacists?.length || 0;
+      const accountants = c.staffs?.accountants?.length || 0;
+      const technicians = c.staffs?.technicians?.length || 0;
+
+      c.staffsCount = {
+        nurses,
+        receptionists,
+        pharmacists,
+        accountants,
+        technicians,
+        total: nurses + receptionists + pharmacists + accountants + technicians
+      };
+
+      c.lastActiveAgo = c.lastActive ? timeAgo(c.lastActive) : "N/A";
+    });
+
+    // Get total count for frontend pagination
+    const total = await Clinic.countDocuments();
+
+    res.status(200).json({
+      message: "Clinics Fetched Successfully",
+      data: clinics,
+      pagination: {
+        total,
+        page,
+        pages: Math.ceil(total / limit),
+        limit
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: "Internal Server Error",
+      error: error.message
+    });
+  }
+};
+
+const getSubscriptionStats = async (req, res) => {
+  try {
+    const stats = await Clinic.aggregate([
+      {
+        $group: {
+          _id: "$subscription.package",  // starter, growth, enterprise
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          plan: "$_id",
+          count: 1
+        }
+      }
+    ]);
+
+    return res.status(200).json({
+      message: "Subscription stats fetched successfully",
+      data: stats
+    });
+
+  } catch (error) {
+    console.error("Subscription Stats Error:", error);
+    return res.status(500).json({
+      message: "Internal server error"
+    });
+  }
+};
+
+
+export {
+  registerClinic, loginClinic, viewAllClinics, viewClinicById, editClinic, getClinicStaffs, getTheme, editTheme, subscribeClinic, getClinicDashboardDetails, addShiftToStaff, removeStaffFromClinic, getClinicStaffCounts, registerSubClinic, assignClinicLab, clicnicCount, allClinicsStatus,
+  getSubscriptionStats
+}

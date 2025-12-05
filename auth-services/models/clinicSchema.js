@@ -104,6 +104,10 @@ const clinicSchema = new Schema(
       type: Boolean,
       default: true,
     },
+    lastActive: {
+      type: Date,
+      default: null
+    },
     isMultipleClinic: {
       type: Boolean,
       default: false,
@@ -112,13 +116,13 @@ const clinicSchema = new Schema(
       type: Boolean,
       default: false,
     },
-  labIds: [
-  {
-    type: Schema.Types.ObjectId,
-    ref: "Lab",
-  },
-],
-  // ===== Staff References =====
+    labIds: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: "Lab",
+      },
+    ],
+    // ===== Staff References =====
     staffs: {
       nurses: [{ type: Schema.Types.ObjectId, ref: "Nurse" }],
       receptionists: [{ type: Schema.Types.ObjectId, ref: "Reception" }],
@@ -143,18 +147,18 @@ const clinicSchema = new Schema(
       canAccessReports: { type: Boolean, default: false },
     },
     // ===== Clinic Hierarchy =====
-parentClinicId: {
-  type: Schema.Types.ObjectId,
-  ref: "Clinic",
-  default: null, // null for main clinics
-},
+    parentClinicId: {
+      type: Schema.Types.ObjectId,
+      ref: "Clinic",
+      default: null, // null for main clinics
+    },
 
-subClinics: [
-  {
-    type: Schema.Types.ObjectId,
-    ref: "Clinic",
-  },
-],
+    subClinics: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: "Clinic",
+      },
+    ],
 
 
   },
