@@ -5,6 +5,10 @@ const orderSchema = new Schema({
         type: String,
         unique: true
     },
+    superadminId:{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "SuperAdmin",
+    },
     clinicId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "Clinic",

@@ -3,7 +3,7 @@ import Product from "../Model/ProductSchema.js";
 
 const createOrder = async (req, res) => {
     try {
-        const { clinicId, items } = req.body;
+        const { clinicId, vendorId, superadminId, items } = req.body;
 
         if (!items || items.length === 0)
             return res.status(400).json({ message: "No items provided" });
@@ -12,8 +12,42 @@ const createOrder = async (req, res) => {
         const orderItems = [];
 
         for (const item of items) {
+            let product = null;
 
-            const product = await Product.findById(item.productId);
+            // SUPERADMIN ORDER
+            if (superadminId) {
+                product = await Product.findOne({
+                    _id: item.productId,
+                    addedByType: "superadmin",
+                    addedById: superadminId,
+                });
+            }
+
+            // CLINIC ORDER
+            if (!product && clinicId) {
+                product = await Product.findOne({
+                    _id: item.productId,
+                    addedByType: "clinic",
+                    addedById: clinicId,
+                });
+            }
+
+            // VENDOR ORDER
+            if (!product && vendorId) {
+                product = await Product.findOne({
+                    _id: item.productId,
+                    addedByType: "vendor",
+                    addedById: vendorId,
+                });
+            }
+
+            // PRODUCT DOES NOT BELONG TO THIS USER
+            if (!product) {
+                return res.status(404).json({
+                    message: `Product does not belong to this owner or not found: ${item.productId}`,
+                });
+            }
+
             if (!product)
                 return res.status(404).json({ message: `Product not found: ${item.productId}` });
 
@@ -50,6 +84,8 @@ const createOrder = async (req, res) => {
 
         const newOrder = new Order({
             clinicId,
+            superadminId,
+            vendorId,
             items: orderItems,
             totalAmount,
             paymentStatus: "PENDING",

@@ -4,7 +4,7 @@ const productSchema = new Schema(
     {
         addedByType: {
             type: String,
-            enum: ["vendor", "superadmin"],
+            enum: ["vendor", "superadmin", "clinic"],
             required: true,
         },
 

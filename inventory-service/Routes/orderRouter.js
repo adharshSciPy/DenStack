@@ -6,7 +6,7 @@ const SUPERADMIN_ROLE = process.env.SUPERADMIN_ROLE
 
 const orderRouter = Router();
 
-orderRouter.post("/createOrder", verifyAuthToken, authorizeRoles(CLINIC_ROLE), createOrder)
+orderRouter.post("/createOrder", verifyAuthToken, authorizeRoles(CLINIC_ROLE, SUPERADMIN_ROLE), createOrder)
 orderRouter.get("/allOrders", verifyAuthToken, authorizeRoles(CLINIC_ROLE), getAllOrders);
 orderRouter.get("/user/:userId", verifyAuthToken, authorizeRoles(CLINIC_ROLE), getUserOrders);
 orderRouter.patch("/cancelOrder/:orderId", verifyAuthToken, authorizeRoles(CLINIC_ROLE), cancelOrder);
