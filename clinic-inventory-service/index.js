@@ -4,6 +4,8 @@ import cors from "cors";
 import connectDB from "./mongoDB/connectDB.js"; 
 import clinicPurchaseRoute from "./routes/clinicPurchaseRoute.js"
 import clinicInventoryRoute from "./routes/clinicInventoryRoute.js";
+import clinicProductRoute from "./routes/clinicProductRoute.js";
+import assignRouter from "./routes/assignRouter.js";
 dotenv.config();
 console.log("url", process.env.MONGO_URL)
 connectDB();
@@ -22,6 +24,9 @@ app.get("/", (req, res) => {
 
 app.use("/api/v1/clinicPurchase",clinicPurchaseRoute)
 app.use("/api/v1/clinicInventory", clinicInventoryRoute);
+app.use("/api/v1/clinicProduct", clinicProductRoute);
+app.use("/api/v1/assign",assignRouter)
+
 const PORT = process.env.PORT || 8010;
 app.listen(PORT, () => {
   console.log(`✅ Server running on port:${PORT}`);

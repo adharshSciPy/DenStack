@@ -4,6 +4,7 @@ import cors from "cors";
 import connectDB from "./mongoDB/connectDB.js";
 import labRouter from "./routes/labRoutes.js";
 import labOrderRouter from "./routes/labOrderRoutes.js";
+import labInventoryRouter from "./routes/LabInventoryRouter.js";
 import path from "path";
 dotenv.config();
 connectDB();
@@ -24,7 +25,7 @@ app.get("/", (req, res) => {
 });
 app.use("/api/v1/lab",labRouter)
 app.use("/api/v1/lab-orders",labOrderRouter)
-
+app.use("/api/v1/lab-inventory",labInventoryRouter)
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 
 

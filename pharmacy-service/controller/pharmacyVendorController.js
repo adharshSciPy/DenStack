@@ -1,5 +1,6 @@
 import PharmacyVendor from "../model/PharmacyVendor.js";
 
+
 // Create Vendor
 export const createVendor = async (req, res) => {
   try {
@@ -40,5 +41,25 @@ export const deleteVendor = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+export const getVendorsByClinic = async (req, res) => {
+  try {
+    const { clinicId } = req.params;
+
+    const vendors = await PharmacyVendor.find({ clinicId }).select("_id name");
+
+    return res.status(200).json({
+      success: true,
+      vendors,
+    });
+
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
 
 export default { createVendor, getVendors, updateVendor, deleteVendor };
