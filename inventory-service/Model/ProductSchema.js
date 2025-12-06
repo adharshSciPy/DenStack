@@ -4,14 +4,14 @@ const productSchema = new Schema(
     {
         addedByType: {
             type: String,
-            enum: ["vendor", "superadmin", "clinic"],
+            enum: ["vendor", "superadmin"],
             required: true,
         },
 
         addedById: {
             type: mongoose.Schema.Types.ObjectId,
             required: true,
-            refPath: "addedByType",  // Dynamically reference Vendor OR Admin
+            ref: "addedByType",  // Dynamically reference Vendor OR Admin
         },
         productId: {
             type: String,

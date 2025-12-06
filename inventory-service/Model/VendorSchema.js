@@ -1,4 +1,6 @@
 import mongoose, { Schema } from "mongoose"
+import bcrypt from "bcryptjs";
+const VENDOR_ROLE = process.env.VENDOR_ROLE
 
 const vendorSchema = new Schema(
     {
@@ -12,6 +14,10 @@ const vendorSchema = new Schema(
             type: String,
             required: [true, "Vendor name is required"],
             trim: true,
+        },
+        role: {
+            type: String,
+            default: VENDOR_ROLE
         },
 
         companyName: {
@@ -35,6 +41,11 @@ const vendorSchema = new Schema(
 
         address: {
             type: String
+        },
+        password: {
+            type: String,
+            required: [true, "Password is required"],
+            minlength: 6,
         },
         productsCount: {
             type: Number
@@ -89,6 +100,18 @@ vendorSchema.pre("save", async function (next) {
     }
     next();
 });
+
+// 🔐 HASH PASSWORD BEFORE SAVE
+vendorSchema.pre("save", async function (next) {
+    if (!this.isModified("password")) return next();
+    this.password = await bcrypt.hash(this.password, 10);
+    next();
+});
+
+// 🔑 CHECK PASSWORD MATCH
+vendorSchema.methods.matchPassword = async function (enteredPassword) {
+    return await bcrypt.compare(enteredPassword, this.password);
+};
 
 
 const Vendor = mongoose.model("Vendor", vendorSchema);

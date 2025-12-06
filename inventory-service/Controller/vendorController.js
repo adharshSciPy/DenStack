@@ -3,6 +3,77 @@ import Order from "../Model/OrderSchema.js"
 import Category from "../Model/CategorySchema.js";
 import Product from "../Model/ProductSchema.js";
 import mongoose from "mongoose";
+import jwt from "jsonwebtoken";
+import bcrypt from "bcryptjs";
+
+
+const vendorRegister = async (req, res) => {
+    try {
+        const { name, companyName, email, phoneNumber, address, password } = req.body;
+
+        if (!name || !email || !password || !phoneNumber) {
+            return res
+                .status(400)
+                .json({ message: "Name, Email, Phone & Password required" });
+        }
+
+        const exists = await Vendor.findOne({ email });
+        if (exists)
+            return res.status(400).json({ message: "Email already registered" });
+
+        const vendor = await Vendor.create({
+            name,
+            companyName,
+            email,
+            phoneNumber,
+            address,
+            password,
+        });
+
+        return res.status(201).json({
+            message: "Vendor registered successfully",
+            vendor,
+        });
+    } catch (error) {
+        return res.status(500).json({ message: "Server Error", error: error.message });
+    }
+};
+
+/* ============================================================
+   🔵 VENDOR LOGIN
+============================================================ */
+const vendorLogin = async (req, res) => {
+    try {
+        const { email, password } = req.body;
+
+        if (!email || !password)
+            return res.status(400).json({ message: "Email & Password required" });
+
+        const vendor = await Vendor.findOne({ email });
+        if (!vendor) return res.status(404).json({ message: "Vendor not found" });
+
+        const isMatch = await vendor.matchPassword(password);
+        if (!isMatch)
+            return res.status(400).json({ message: "Invalid credentials" });
+
+        const token = jwt.sign(
+            {
+                id: vendor._id,
+                role: "VENDOR",
+            },
+            process.env.ACCESS_TOKEN_SECRET,
+            { expiresIn: "2d" }
+        );
+
+        return res.status(200).json({
+            message: "Vendor login successful",
+            vendor,
+            token,
+        });
+    } catch (error) {
+        return res.status(500).json({ message: "Server Error", error: error.message });
+    }
+};
 
 const createVendor = async (req, res) => {
     try {
@@ -209,5 +280,5 @@ const getVendorCategoryAnalytics = async (req, res) => {
 
 
 export {
-    createVendor, vendorDetails, editVendor, deleteVendor, adminDashboardStats, getVendorCategoryAnalytics
+    createVendor, vendorDetails, editVendor, deleteVendor, adminDashboardStats, getVendorCategoryAnalytics, vendorRegister, vendorLogin
 }
