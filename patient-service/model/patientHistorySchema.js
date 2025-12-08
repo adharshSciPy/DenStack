@@ -1,4 +1,21 @@
-import mongoose from "mongoose";
+import mongoose,{Schema} from "mongoose";
+const dentalChartSchema = new Schema({
+    toothNumber: { type: Number, required: true, min: 1, max: 32 },
+    status: {
+      type: String,
+      enum: ['healthy', 'filled', 'crowned', 'root-canal', 'missing', 'decayed'],
+      default: 'healthy'
+    },
+  notes: String,
+  procedures: [
+    {
+      name: String,
+      performedBy: { type: Schema.Types.ObjectId, ref: "Doctor" },
+      performedAt: Date,
+    }
+  ]
+});
+
 
 const patientHistorySchema = new mongoose.Schema(
   {
@@ -37,15 +54,13 @@ const patientHistorySchema = new mongoose.Schema(
     ],
     notes: { type: String, maxlength: [1000, "Notes cannot exceed 1000 characters"] },
     files: [
-      {
-        url: { 
-          type: String,
-          match: [/^https?:\/\/.+\..+/, "Please enter a valid URL"] 
-        },
-        type: { type: String, enum: ["image", "pdf", "report", "other"], default: "other" },
-        uploadedAt: { type: Date, default: Date.now }
-      }
-    ],
+  {
+    url: { type: String, required: true }, // Accept relative URL
+    type: { type: String, enum: ["image", "pdf", "report", "other"], default: "other" },
+    uploadedAt: { type: Date, default: Date.now }
+  }
+]
+,
     labHistory: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -82,6 +97,8 @@ const patientHistorySchema = new mongoose.Schema(
       referralDate: { type: Date },
       status: { type: String, enum: ["pending", "accepted", "completed"], default: "pending" },
     },
+    dentalChart: { type: [dentalChartSchema], required: false }
+
 
   },
   

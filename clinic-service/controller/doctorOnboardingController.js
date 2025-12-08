@@ -563,6 +563,7 @@ if (department.trim()) {
         endTime: slot.endTime,
         isActive: slot.isActive,
         clinicId: clinicId,
+         availabilityId: rec._id,
       }))
   );
 
