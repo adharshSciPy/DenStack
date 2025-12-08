@@ -1,7 +1,7 @@
 import { Router } from "express";
 import {
-    editTheme, getTheme, loginClinic, registerClinic, viewAllClinics, viewClinicById, editClinic, getClinicStaffs, subscribeClinic, getClinicDashboardDetails, addShiftToStaff, removeStaffFromClinic, getClinicStaffCounts, registerSubClinic, assignClinicLab, clicnicCount, allClinicsStatus, 
-    getSubscriptionStats
+    editTheme, getTheme, loginClinic, registerClinic, viewAllClinics, viewClinicById, editClinic, getClinicStaffs, subscribeClinic, getClinicDashboardDetails, addShiftToStaff, removeStaffFromClinic, getClinicStaffCounts, registerSubClinic, assignClinicLab, clicnicCount, allClinicsStatus,
+    getSubscriptionStats, toggleClinicAccess
 } from "../controller/clinicController.js";
 
 const clinicAuthRoutes = Router();
@@ -25,4 +25,5 @@ clinicAuthRoutes.route("/add-ownlabs/:id").patch(assignClinicLab)
 clinicAuthRoutes.route("/clicnicCount").get(clicnicCount)
 clinicAuthRoutes.route("/allClinicsStatus").get(allClinicsStatus)
 clinicAuthRoutes.route("/clinicSubscriptionCount").get(getSubscriptionStats)
+clinicAuthRoutes.route("/toggleClinicAccess/:clinicId").patch(toggleClinicAccess)
 export default clinicAuthRoutes
