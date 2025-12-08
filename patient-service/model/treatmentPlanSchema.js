@@ -17,6 +17,22 @@ const stageSchema = new Schema({
   status: { type: String, enum: ["pending", "completed"], default: "pending" },
   scheduledDate: { type: Date },
 });
+const dentalChartSchema = new Schema({
+    toothNumber: { type: Number, required: true, min: 1, max: 32 },
+    status: {
+      type: String,
+      enum: ['healthy', 'filled', 'crowned', 'root-canal', 'missing', 'decayed'],
+      default: 'healthy'
+    },
+  notes: String,
+  procedures: [
+    {
+      name: String,
+      performedBy: { type: Schema.Types.ObjectId, ref: "Doctor" },
+      performedAt: Date,
+    }
+  ]
+});
 
 const treatmentPlanSchema = new Schema(
   {
@@ -29,6 +45,8 @@ const treatmentPlanSchema = new Schema(
     status: { type: String, enum: ["ongoing", "completed"], default: "ongoing" },
     startedAt: { type: Date, default: Date.now },
     completedAt: { type: Date },
+    dentalChart: { type: [dentalChartSchema], required: false }
+
   },
   { timestamps: true }
 );

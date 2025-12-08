@@ -562,5 +562,48 @@ const getPatientByRandomId = async (req, res) => {
   }
 };
 
+//to patch laborders to patient model
+const addLabOrderToPatient = async (req, res) => {
+  try {
+    const { id: patientId } = req.params;
+    const { labOrderId } = req.body;
 
-export { registerPatient, getPatientWithUniqueId, getAllPatients, patientCheck, getPatientsByClinic, getPatientById, sendSMSLink, setPassword, login,getPatientByRandomId }
+    // Validate Patient ID
+    if (!mongoose.Types.ObjectId.isValid(patientId)) {
+      return res.status(400).json({ success: false, message: "Invalid patient ID" });
+    }
+
+    // Validate lab order ID
+    if (!labOrderId || !mongoose.Types.ObjectId.isValid(labOrderId)) {
+      return res.status(400).json({ success: false, message: "Invalid or missing labOrderId" });
+    }
+
+    // Push labOrderId into labHistory array (avoid duplicates)
+    const updatedPatient = await Patient.findByIdAndUpdate(
+      patientId,
+      { $addToSet: { labHistory: labOrderId } }, // avoids duplicates
+      { new: true }
+    ).populate("labHistory");
+
+    if (!updatedPatient) {
+      return res.status(404).json({ success: false, message: "Patient not found" });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Lab order added to patient successfully",
+      labHistory: updatedPatient.labHistory,
+    });
+
+  } catch (error) {
+    console.error("Error adding lab order to patient:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error while updating patient",
+      error: error.message,
+    });
+  }
+};
+
+
+export { registerPatient, getPatientWithUniqueId, getAllPatients, patientCheck, getPatientsByClinic, getPatientById, sendSMSLink, setPassword, login,getPatientByRandomId ,addLabOrderToPatient}

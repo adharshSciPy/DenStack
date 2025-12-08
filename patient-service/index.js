@@ -5,6 +5,8 @@ import connectDB from "./mongoDB/connectDb.js";
 import patientRegisterRouter from "./routes/patientRegisterRoutes.js";
 import patientAppointmentRouter from "./routes/patientAppointmentRoute.js";
 import doctorConsultationRouter from "./routes/doctorConsultationRoute.js";
+import path from "path";
+import fs from "fs"
 
 
 dotenv.config();
@@ -15,6 +17,7 @@ const app = express();
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use("/uploads", express.static(path.join(path.resolve(), "uploads")));
 
 // Routes
 app.get("/", (req, res) => {
