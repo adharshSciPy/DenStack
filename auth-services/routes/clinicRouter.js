@@ -1,5 +1,8 @@
 import { Router } from "express";
-import { editTheme, getTheme, loginClinic, registerClinic, viewAllClinics, viewClinicById, editClinic, getClinicStaffs, subscribeClinic, getClinicDashboardDetails, addShiftToStaff, removeStaffFromClinic, getClinicStaffCounts, registerSubClinic, assignClinicLab, clicnicCount } from "../controller/clinicController.js";
+import {
+    editTheme, getTheme, loginClinic, registerClinic, viewAllClinics, viewClinicById, editClinic, getClinicStaffs, subscribeClinic, getClinicDashboardDetails, addShiftToStaff, removeStaffFromClinic, getClinicStaffCounts, registerSubClinic, assignClinicLab, clicnicCount, allClinicsStatus,
+    getSubscriptionStats, toggleClinicAccess
+} from "../controller/clinicController.js";
 
 const clinicAuthRoutes = Router();
 clinicAuthRoutes.route("/register").post(registerClinic);
@@ -20,4 +23,7 @@ clinicAuthRoutes.route("/getStaff/:id").get(getClinicStaffCounts)//to get staff 
 clinicAuthRoutes.route("/register-subclinic/:id").post(registerSubClinic)//to register sub clinic inside the clinic
 clinicAuthRoutes.route("/add-ownlabs/:id").patch(assignClinicLab)
 clinicAuthRoutes.route("/clicnicCount").get(clicnicCount)
+clinicAuthRoutes.route("/allClinicsStatus").get(allClinicsStatus)
+clinicAuthRoutes.route("/clinicSubscriptionCount").get(getSubscriptionStats)
+clinicAuthRoutes.route("/toggleClinicAccess/:clinicId").patch(toggleClinicAccess)
 export default clinicAuthRoutes

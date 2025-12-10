@@ -14,16 +14,40 @@ const consultPatient = async (req, res) => {
   try {
     const { id: appointmentId } = req.params;
       const doctorId = req.doctorId; 
-    const {
-      symptoms,
-      diagnosis,
-      prescriptions,
-      notes,
-      files = [],
-      procedures = [],
-      treatmentPlan,
-      referral,
-    } = req.body;
+    // const {
+    //   symptoms,
+    //   diagnosis,
+    //   prescriptions,
+    //   notes,
+    //   files = [],
+    //   procedures = [],
+    //   treatmentPlan,
+    //   referral,
+    //     dentalChart = [] 
+    // } = req.body;
+      const parseJSONField = (field) => {
+      if (!field) return [];
+      return typeof field === "string" ? JSON.parse(field) : field;
+    };
+
+    const symptoms = parseJSONField(req.body.symptoms);
+    const diagnosis = parseJSONField(req.body.diagnosis);
+    const prescriptions = parseJSONField(req.body.prescriptions);
+    const procedures = parseJSONField(req.body.procedures);
+    const dentalChart = parseJSONField(req.body.dentalChart);
+    const treatmentPlan = req.body.treatmentPlan
+      ? typeof req.body.treatmentPlan === "string"
+        ? JSON.parse(req.body.treatmentPlan)
+        : req.body.treatmentPlan
+      : null;
+    const referral = req.body.referral
+      ? typeof req.body.referral === "string"
+        ? JSON.parse(req.body.referral)
+        : req.body.referral
+      : null;
+    const notes = req.body.notes || "";
+    const files = parseJSONField(req.body.files);
+
 
     // 🧩 Basic validations
     if (!appointmentId || !mongoose.Types.ObjectId.isValid(appointmentId)) {
@@ -65,7 +89,18 @@ const consultPatient = async (req, res) => {
 
     // ⚙️ Start transaction
     session.startTransaction();
+ const uploadedFiles = (req.files || []).map((file) => ({
+      url: `/uploads/${file.filename}`,
+      type: file.mimetype.includes("image")
+        ? "image"
+        : file.mimetype.includes("pdf")
+        ? "pdf"
+        : "other",
+      uploadedAt: new Date(),
+    }));
 
+    // Merge manually provided URLs + uploaded files
+    const allFiles = [...files, ...uploadedFiles];
     // 🧾 Create new patient visit record
     const newVisit = new PatientHistory({
       patientId: appointment.patientId,
@@ -76,10 +111,24 @@ const consultPatient = async (req, res) => {
       diagnosis: Array.isArray(diagnosis) ? diagnosis : diagnosis ? [diagnosis] : [],
       prescriptions: prescriptions || [],
       notes: notes || "",
-      files,
+      files:allFiles,
       procedures,
       consultationFee,
       createdBy: doctorId,
+  dentalChart: Array.isArray(dentalChart)
+        ? dentalChart.map((tooth) => ({
+            toothNumber: tooth.toothNumber,
+            status: tooth.status,
+            notes: tooth.notes,
+            procedures: Array.isArray(tooth.procedures)
+              ? tooth.procedures.map((p) => ({
+                  name: p.name,
+                  performedBy: p.performedBy || doctorId,
+                  performedAt: p.performedAt ? new Date(p.performedAt) : new Date(),
+                }))
+              : [],
+          }))
+        : []
     });
 
     // 🩺 Referral details (if present)
@@ -121,6 +170,20 @@ const consultPatient = async (req, res) => {
         description: treatmentPlan.description || "",
         stages: preparedStages,
         status: "ongoing",
+         dentalChart: Array.isArray(treatmentPlan.dentalChart)
+    ? treatmentPlan.dentalChart.map((tooth) => ({
+        toothNumber: tooth.toothNumber,
+        status: tooth.status,
+        notes: tooth.notes,
+        procedures: Array.isArray(tooth.procedures)
+          ? tooth.procedures.map((p) => ({
+              name: p.name,
+              performedBy: p.performedBy || doctorId,
+              performedAt: p.performedAt ? new Date(p.performedAt) : new Date(),
+            }))
+          : [],
+      }))
+    : [],
       });
 
       await newPlan.save({ session });
@@ -153,6 +216,7 @@ const consultPatient = async (req, res) => {
       patientHistoryId: newVisit._id,
       visit: newVisit,
       treatmentPlan: newPlan || null,
+      files:allFiles
     });
   } catch (error) {
     console.error("❌ consultPatient error:", error);

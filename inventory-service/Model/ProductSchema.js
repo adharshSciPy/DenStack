@@ -11,7 +11,7 @@ const productSchema = new Schema(
         addedById: {
             type: mongoose.Schema.Types.ObjectId,
             required: true,
-            refPath: "addedByType",  // Dynamically reference Vendor OR Admin
+            ref: "addedByType",  // Dynamically reference Vendor OR Admin
         },
         productId: {
             type: String,

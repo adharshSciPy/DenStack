@@ -548,23 +548,25 @@ if (department.trim()) {
       const id = docClinic.doctorId.toString();
       const doctorDetails = doctorDetailsMap[id];
 
-      const availabilities = allAvailabilities
-        .filter(
-          (a) =>
-            a.doctorId.toString() === id &&
-            a.clinicId?._id?.toString() === clinicId
-        )
-        .flatMap((rec) =>
-          (rec.availability || [])
-            .filter((a) => a.isActive)
-            .map((a) => ({
-              dayOfWeek: a.dayOfWeek,
-              startTime: a.startTime,
-              endTime: a.endTime,
-              isActive: a.isActive,
-              clinic: rec.clinicId,
-            }))
-        );
+ const availabilities = allAvailabilities
+  .filter((rec) => {
+    const recClinic = rec.clinicId?._id?.toString() || rec.clinicId?.toString();
+    const matchClinic = recClinic === clinicId;
+    return rec.doctorId.toString() === id && matchClinic;
+  })
+  .flatMap((rec) =>
+    (rec.availability || [])
+      .filter((slot) => slot.isActive)
+      .map((slot) => ({
+        dayOfWeek: slot.dayOfWeek,
+        startTime: slot.startTime,
+        endTime: slot.endTime,
+        isActive: slot.isActive,
+        clinicId: clinicId,
+         availabilityId: rec._id,
+      }))
+  );
+
 
       return {
         doctorId: id,
@@ -944,105 +946,170 @@ const getSingleDoctorWithinClinic = async (req, res) => {
   }
 };
 const editDoctorAvailability = async (req, res) => {
-  try {
-    const { id: availabilityId } = req.params; // DoctorAvailability document _id
-    const { index, dayOfWeek, startTime, endTime, updatedBy } = req.body;
+  const { id: availabilityId } = req.params;
+  const { clinicId, availability = [], updatedBy } = req.body;
 
-    // ✅ Validate index
-    if (index === undefined || index === null) {
-      return res.status(400).json({ success: false, message: "Availability index is required" });
+  console.log("==== editDoctorAvailability called ====");
+  console.log("Params:", req.params);
+  console.log("Body:", req.body);
+
+  try {
+    // ===== Basic validations =====
+    if (!availabilityId) {
+      console.log("❌ No availabilityId provided");
+      return res.status(400).json({ success: false, message: "Availability ID is required" });
     }
 
-    // ✅ Convert time to minutes
-    const toMinutes = (time) => {
-      const [h, m] = time.split(":").map(Number);
+    if (!mongoose.Types.ObjectId.isValid(clinicId)) {
+      console.log("❌ Invalid clinicId:", clinicId);
+      return res.status(400).json({ success: false, message: "Invalid clinicId" });
+    }
+
+    if (!Array.isArray(availability) || availability.length === 0) {
+      console.log("❌ Empty availability array");
+      return res.status(400).json({ success: false, message: "Non-empty availability[] is required" });
+    }
+
+    // ===== Fetch existing availability document =====
+    const availabilityDoc = await DoctorAvailability.findOne({ _id: availabilityId, clinicId });
+    console.log("Fetched availabilityDoc:", availabilityDoc);
+    if (!availabilityDoc) {
+      console.log("❌ Doctor availability not found");
+      return res.status(404).json({ success: false, message: "Doctor availability not found" });
+    }
+
+    // ===== Ensure doctor is onboarded =====
+    const onboarded = await DoctorClinic.findOne({
+      doctorId: availabilityDoc.doctorId,
+      clinicId,
+      status: "active",
+    });
+    console.log("Doctor onboarded check:", onboarded);
+    if (!onboarded) {
+      console.log("❌ Doctor is not onboarded to this clinic");
+      return res.status(403).json({ success: false, message: "Doctor is not onboarded to this clinic" });
+    }
+
+    const toMinutes = (t) => {
+      const [h, m] = t.split(":").map(Number);
       return h * 60 + m;
     };
+    const validDays = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
+    const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
-    if (!startTime || !endTime) {
-      return res.status(400).json({
-        success: false,
-        message: "Both startTime and endTime are required",
-      });
+    // ===== Phase 1: Validate new slots =====
+    for (const slot of availability) {
+      console.log("Validating slot:", slot);
+      const { dayOfWeek, startTime, endTime } = slot;
+
+      if (!dayOfWeek || !startTime || !endTime) {
+        console.log("❌ Slot missing fields:", slot);
+        return res.status(400).json({ success: false, message: "Each slot must include dayOfWeek, startTime, endTime" });
+      }
+
+      if (!validDays.includes(dayOfWeek)) {
+        console.log("❌ Invalid day:", dayOfWeek);
+        return res.status(400).json({ success: false, message: `Invalid day '${dayOfWeek}'. Allowed: ${validDays.join(", ")}` });
+      }
+
+      if (!timeRegex.test(startTime) || !timeRegex.test(endTime)) {
+        console.log("❌ Invalid time format:", startTime, endTime);
+        return res.status(400).json({ success: false, message: "StartTime and EndTime must be in HH:mm format" });
+      }
+
+      if (toMinutes(endTime) <= toMinutes(startTime)) {
+        console.log("❌ End time <= start time:", slot);
+        return res.status(400).json({ success: false, message: `End time must be later than start time for ${dayOfWeek}` });
+      }
     }
 
-    const newStart = toMinutes(startTime);
-    const newEnd = toMinutes(endTime);
-
-    if (newEnd <= newStart) {
-      return res.status(400).json({
-        success: false,
-        message: "End time must be later than start time",
-      });
+    // ===== Phase 2: Check conflicts within new slots =====
+    const byDay = {};
+    for (const slot of availability) {
+      if (!byDay[slot.dayOfWeek]) byDay[slot.dayOfWeek] = [];
+      byDay[slot.dayOfWeek].push(slot);
     }
 
-    // ✅ Fetch the document
-    const availabilityDoc = await DoctorAvailability.findById(availabilityId);
-    if (!availabilityDoc) {
-      return res.status(404).json({
-        success: false,
-        message: "Doctor availability document not found",
-      });
-    }
-
-    // ✅ Validate index range
-    if (index < 0 || index >= availabilityDoc.availability.length) {
-      return res.status(400).json({ success: false, message: "Invalid availability index" });
-    }
-
-    const targetSlot = availabilityDoc.availability[index];
-    const newDay = dayOfWeek || targetSlot.dayOfWeek;
-
-    // ✅ Fetch all existing availabilities for this doctor
-    const existingAvailabilities = await DoctorAvailability.find({
-      doctorId: availabilityDoc.doctorId,
-    });
-
-    // ✅ Check conflicts across all clinics
-    for (const entry of existingAvailabilities) {
-      for (const [i, s] of entry.availability.entries()) {
-        if (entry._id.toString() === availabilityDoc._id.toString() && i === index) continue; // skip current slot
-        if (s.dayOfWeek !== newDay || !s.isActive) continue;
-
-        const existingStart = toMinutes(s.startTime);
-        const existingEnd = toMinutes(s.endTime);
-
-        if (newStart < existingEnd && newEnd > existingStart) {
-          const clinicMsg =
-            entry.clinicId.toString() === availabilityDoc.clinicId.toString()
-              ? "this clinic"
-              : "another clinic";
-
-          return res.status(400).json({
-            success: false,
-            message: `Doctor already has overlapping availability on ${newDay} (${s.startTime}–${s.endTime}) in ${clinicMsg}.`,
-          });
+    for (const day in byDay) {
+      const slots = byDay[day].sort((a,b) => toMinutes(a.startTime) - toMinutes(b.startTime));
+      console.log(`Checking conflicts for day: ${day}`, slots);
+      for (let i = 0; i < slots.length - 1; i++) {
+        if (toMinutes(slots[i+1].startTime) < toMinutes(slots[i].endTime)) {
+          console.log("❌ Overlap detected:", slots[i], slots[i+1]);
+          return res.status(400).json({ success: false, message: `Conflict on ${day}: overlapping (${slots[i].startTime}-${slots[i].endTime}) and (${slots[i+1].startTime}-${slots[i+1].endTime})` });
         }
       }
     }
 
-    // ✅ Update the specific entry
-    targetSlot.dayOfWeek = newDay;
-    targetSlot.startTime = startTime;
-    targetSlot.endTime = endTime;
-    targetSlot.updatedBy = updatedBy || null;
-    availabilityDoc.updatedAt = new Date();
-
-    await availabilityDoc.save();
-
-    // ✅ Optionally re-fetch to confirm changes
-    const updatedDoc = await DoctorAvailability.findById(availabilityId);
-
-    res.status(200).json({
-      success: true,
-      message: "Availability updated successfully",
-      data: updatedDoc,
+    // ===== Phase 3: Check conflicts with other clinics =====
+    const otherClinics = await DoctorAvailability.find({
+      doctorId: availabilityDoc.doctorId,
+      _id: { $ne: availabilityId },
     });
+    console.log("Other clinic availabilities:", otherClinics);
+
+    for (const newSlot of availability) {
+      const newStart = toMinutes(newSlot.startTime);
+      const newEnd = toMinutes(newSlot.endTime);
+
+      for (const entry of otherClinics) {
+        console.log("Checking against other clinic entry:", entry);
+        for (const s of entry.availability) {
+          console.log("Existing slot:", s);
+          if (!s.isActive || s.dayOfWeek !== newSlot.dayOfWeek) continue;
+
+          const existingStart = toMinutes(s.startTime);
+          const existingEnd = toMinutes(s.endTime);
+
+          if (newStart < existingEnd && newEnd > existingStart) {
+            const clinicMsg = entry.clinicId.toString() === clinicId ? "this clinic" : "another clinic";
+            console.log(`❌ Overlap with other clinic (${clinicMsg}):`, s);
+            return res.status(400).json({
+              success: false,
+              message: `Doctor already has overlapping availability on ${newSlot.dayOfWeek} (${s.startTime}-${s.endTime}) in ${clinicMsg}.`,
+            });
+          }
+        }
+      }
+    }
+
+    // ===== Phase 4: Replace availability array =====
+    console.log("Updating availabilityDoc with new slots...");
+    availabilityDoc.availability = availability.map((slot) => ({
+      dayOfWeek: slot.dayOfWeek,
+      startTime: slot.startTime.length === 4 ? "0"+slot.startTime : slot.startTime,
+      endTime: slot.endTime.length === 4 ? "0"+slot.endTime : slot.endTime,
+      isActive: true,
+     
+    }));
+
+    // ===== UpdatedBy handling =====
+    console.log("Raw updatedBy:", updatedBy);
+    if (updatedBy && mongoose.Types.ObjectId.isValid(updatedBy)) {
+     availabilityDoc.updatedBy = typeof updatedBy === "string" 
+  ? new mongoose.Types.ObjectId(updatedBy)
+  : updatedBy;
+
+      console.log("Assigned updatedBy ObjectId:", availabilityDoc.updatedBy);
+    } else {
+      console.log("Invalid updatedBy value, skipping assignment");
+      availabilityDoc.updatedBy = undefined;
+    }
+
+    const savedDoc = await availabilityDoc.save();
+    console.log("Saved availabilityDoc:", savedDoc);
+
+    return res.status(200).json({
+      success: true,
+      message: "Doctor availability updated successfully",
+      availability: savedDoc.availability,
+    });
+
   } catch (err) {
     console.error("❌ editDoctorAvailability error:", err);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message: "Error updating doctor availability",
+      message: "Server error while updating availability",
       details: err.message,
     });
   }

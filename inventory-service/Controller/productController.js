@@ -4,6 +4,12 @@ import Category from "../Model/CategorySchema.js";
 // Create a new product with image upload
 const createProduct = async (req, res) => {
   try {
+    req.body.addedByType =
+      req.user.role === "800" ? "superadmin" :
+        req.user.role === "812" ? "vendor" :
+          null;
+
+
     const {
       name,
       mainCategory,
@@ -13,14 +19,18 @@ const createProduct = async (req, res) => {
       stock,
       brand,
       expiryDate,
+      addedById,
+      addedByType
     } = req.body;
 
+    // Basic validations
     if (!name || !mainCategory || !price || !brand) {
       return res.status(400).json({
         message: "Name, mainCategory, brand, and price are required",
       });
     }
 
+    // Main Category validation
     const mainCat = await Category.findById(mainCategory);
     if (!mainCat)
       return res.status(404).json({ message: "Main category not found" });
@@ -30,6 +40,7 @@ const createProduct = async (req, res) => {
         message: "Main category must not have a parentCategory",
       });
 
+    // Subcategory validation
     if (subCategory) {
       const subCat = await Category.findById(subCategory);
       if (!subCat)
@@ -46,6 +57,7 @@ const createProduct = async (req, res) => {
         });
     }
 
+    // Image upload handling
     let imagePath = [];
     if (req.files && req.files.length > 0) {
       imagePath = req.files.map((file) => `/uploads/${file.filename}`);
@@ -57,30 +69,31 @@ const createProduct = async (req, res) => {
       });
     }
 
+    // Create product
     const newProduct = new Product({
       name,
+      description,
       mainCategory,
       subCategory: subCategory || null,
-      description,
       price,
-      brand,
       stock: stock || 0,
+      brand,
       image: imagePath,
       expiryDate,
+      addedById,
+      addedByType
     });
 
     await newProduct.save();
 
-    return res.status(201).json({
+    res.status(201).json({
       message: "Product created successfully",
       product: newProduct,
     });
+
   } catch (error) {
     console.error("Create Product Error:", error);
-    return res.status(500).json({
-      message: "Server Error",
-      error: error.message,
-    });
+    res.status(500).json({ message: "Server Error", error: error.message });
   }
 };
 

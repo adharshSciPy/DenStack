@@ -54,7 +54,11 @@ const patientSchema = new mongoose.Schema({
   visitHistory: [
     { type: mongoose.Schema.Types.ObjectId, ref: "PatientHistory" }
   ],
-
+  labHistory: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+      }
+    ],
   otpToken: { type: String, select: false },
   otpTokenExpiry: { type: Date, select: false },
   treatmentPlans: [

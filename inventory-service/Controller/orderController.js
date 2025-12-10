@@ -13,11 +13,45 @@ const createOrder = async (req, res) => {
     const orderItems = [];
     let vendorId = null; // ⭐ FINAL vendor assigned here
 
-    for (const item of items) {
-      const product = await Product.findById(item.productId);
+        for (const item of items) {
+            let product = null;
 
-      if (!product)
-        return res.status(404).json({ message: `Product not found: ${item.productId}` });
+            // SUPERADMIN ORDER
+            if (superadminId) {
+                product = await Product.findOne({
+                    _id: item.productId,
+                    addedByType: "superadmin",
+                    addedById: superadminId,
+                });
+            }
+
+            // CLINIC ORDER
+            if (!product && clinicId) {
+                product = await Product.findOne({
+                    _id: item.productId,
+                    addedByType: "clinic",
+                    addedById: clinicId,
+                });
+            }
+
+            // VENDOR ORDER
+            if (!product && vendorId) {
+                product = await Product.findOne({
+                    _id: item.productId,
+                    addedByType: "vendor",
+                    addedById: vendorId,
+                });
+            }
+
+            // PRODUCT DOES NOT BELONG TO THIS USER
+            if (!product) {
+                return res.status(404).json({
+                    message: `Product does not belong to this owner or not found: ${item.productId}`,
+                });
+            }
+
+            if (!product)
+                return res.status(404).json({ message: `Product not found: ${item.productId}` });
 
       if (product.stock < item.quantity)
         return res.status(400).json({ message: `Not enough stock for ${product.name}` });
@@ -41,21 +75,23 @@ const createOrder = async (req, res) => {
         totalCost
       });
 
-      product.stock -= item.quantity;
-      product.isLowStock = product.stock < 10;
-      await product.save();
-    }
-    console.log("this",orderItems);
-    
-    // ⭐ Create order with vendorId at ROOT level
-    const newOrder = await Order.create({
-      clinicId,
-      vendorId,
-      items: orderItems,
-      totalAmount,
-      paymentStatus: "PENDING",
-      orderStatus: "PROCESSING",
-    });
+            // Low stock flag
+            product.isLowStock = product.stock - item.quantity < 10;
+
+            // Reduce stock
+            product.stock -= item.quantity;
+            await product.save();
+        }
+
+        const newOrder = new Order({
+            clinicId,
+            superadminId,
+            vendorId,
+            items: orderItems,
+            totalAmount,
+            paymentStatus: "PENDING",
+            orderStatus: "PROCESSING",
+        });
 
     // ⭐ Create notification correctly
     await Notification.create({
@@ -171,55 +207,145 @@ const cancelOrder = async (req, res) => {
 }
 
 const getOrdersByClinicId = async (req, res) => {
-  try {
-    const { clinicId } = req.params;
-    const limit = parseInt(req.query.limit) || 10;
-    const cursor = req.query.cursor || null; // the last orderId received
+    try {
+        const { clinicId } = req.params;
+        const limit = parseInt(req.query.limit) || 10;
+        const cursor = req.query.cursor || null; // the last orderId received
 
-    if (!clinicId) {
-      return res.status(400).json({ message: "Clinic ID is required" });
+        if (!clinicId) {
+            return res.status(400).json({ message: "Clinic ID is required" });
+        }
+
+        // Query object
+        let query = { userId: clinicId };
+
+        // If cursor exists → only fetch orders created BEFORE cursor
+        if (cursor) {
+            query._id = { $lt: cursor };
+        }
+
+        // Fetch orders
+        const orders = await Order.find(query)
+            .sort({ _id: -1 })        // newest first
+            .limit(limit + 1)         // fetch one extra to check "hasNext"
+            .populate("items.itemId", "name price image")
+
+
+        let nextCursor = null;
+
+        if (orders.length > limit) {
+            // Remove extra item
+            const nextOrder = orders.pop();
+            nextCursor = nextOrder._id;  // use this for next page
+        }
+
+        res.status(200).json({
+            message: "Orders fetched successfully",
+            data: orders,
+            nextCursor,         // null means no more pages
+            hasMore: !!nextCursor
+        });
+
+    } catch (error) {
+        console.error("Cursor Pagination Error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Server Error",
+            error: error.message
+        });
     }
+};
 
-    // Query object
-    let query = { userId: clinicId };
+const getOrderStats = async (req, res) => {
+    try {
+        const totalOrders = await Order.countDocuments();
 
-    // If cursor exists → only fetch orders created BEFORE cursor
-    if (cursor) {
-      query._id = { $lt: cursor };
+        const processing = await Order.countDocuments({ orderStatus: "PROCESSING" });
+        const shipped = await Order.countDocuments({ orderStatus: "SHIPPED" });
+        const delivered = await Order.countDocuments({ orderStatus: "DELIVERED" });
+        const cancelled = await Order.countDocuments({ orderStatus: "CANCELLED" });
+
+        return res.status(200).json({
+            message: "Order stats fetched successfully",
+            stats: {
+                totalOrders,
+                processing,
+                shipped,
+                delivered,
+                cancelled
+            }
+        });
+    } catch (error) {
+        console.error("Order Stats Error:", error);
+        return res.status(500).json({ message: "Server Error", error: error.message });
     }
+};
 
-    // Fetch orders
-    const orders = await Order.find(query)
-      .sort({ _id: -1 })        // newest first
-      .limit(limit + 1)         // fetch one extra to check "hasNext"
-      .populate("items.itemId", "name price image")
+const getRecentOrders = async (req, res) => {
+    try {
+        // ⭐ Fetch vendor & product details via populate
+        const orders = await Order.find()
+            .sort({ createdAt: -1 })
+            .limit(10)
+            .populate("vendorId", "name companyName")
+            .populate("items.itemId", "name price image");
 
+        const results = [];
 
-    let nextCursor = null;
+        for (const order of orders) {
+            /* -----------------------------
+               1️⃣ Fetch Clinic Name (external)
+            ------------------------------ */
+            let clinicName = "Unknown Clinic";
+            try {
+                const clinicRes = await axios.get(
+                    `${AUTH_BASE}/clinic/view-clinic/${order.clinicId}`
+                );
+                clinicName = clinicRes.data?.data?.name || "Unknown Clinic";
+            } catch (err) {
+                console.log("❌ Clinic API failed:", order.clinicId);
+            }
 
-    if (orders.length > limit) {
-      // Remove extra item
-      const nextOrder = orders.pop();
-      nextCursor = nextOrder._id;  // use this for next page
+            /* -----------------------------
+               2️⃣ Vendor name from populate
+            ------------------------------ */
+            const vendorName =
+                order.vendorId?.companyName ||
+                order.vendorId?.name ||
+                "Unknown Vendor";
+
+            /* -----------------------------
+               3️⃣ Product names from populate
+            ------------------------------ */
+            const itemsFormatted = order.items.map((item) => ({
+                name: item.itemId?.name || "Unknown Product",
+                quantity: item.quantity,
+            }));
+
+            results.push({
+                orderId: order.orderId,     // ✅ Use your custom order ID
+                date: order.createdAt,
+                clinic: clinicName,
+                vendor: vendorName,
+                items: itemsFormatted,
+                totalAmount: order.totalAmount,
+                orderStatus: order.orderStatus,
+            });
+        }
+
+        return res.status(200).json({
+            message: "Recent orders fetched successfully",
+            data: results,
+        });
+    } catch (error) {
+        console.error("❌ Recent Orders Error:", error.message);
+        return res.status(500).json({
+            message: "Server Error",
+            error: error.message,
+        });
     }
-
-    res.status(200).json({
-      message: "Orders fetched successfully",
-      data: orders,
-      nextCursor,         // null means no more pages
-      hasMore: !!nextCursor
-    });
-
-  } catch (error) {
-    console.error("Cursor Pagination Error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server Error",
-      error: error.message
-    });
-  }
 };
 
 export {
-    createOrder, getAllOrders, getUserOrders, cancelOrder ,getOrdersByClinicId
+    createOrder, getAllOrders, getUserOrders, cancelOrder, getOrdersByClinicId, getOrderStats, getRecentOrders
 }
