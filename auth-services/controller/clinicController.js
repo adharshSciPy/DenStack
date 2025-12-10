@@ -1075,8 +1075,28 @@ const getSubscriptionStats = async (req, res) => {
   }
 };
 
+const toggleClinicAccess = async (req, res) => {
+  try {
+    const { clinicId } = req.params;
+
+    const clinic = await Clinic.findById(clinicId);
+    if (!clinic) return res.status(404).json({ message: "Clinic not found" });
+    
+
+    clinic.isActive = !clinic.isActive;
+    await clinic.save();
+
+    res.json({
+      message: `Clinic is now ${clinic.isActive ? "ENABLED" : "DISABLED"}`,
+      isActive: clinic.isActive,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 
 export {
   registerClinic, loginClinic, viewAllClinics, viewClinicById, editClinic, getClinicStaffs, getTheme, editTheme, subscribeClinic, getClinicDashboardDetails, addShiftToStaff, removeStaffFromClinic, getClinicStaffCounts, registerSubClinic, assignClinicLab, clicnicCount, allClinicsStatus,
-  getSubscriptionStats
+  getSubscriptionStats, toggleClinicAccess
 }

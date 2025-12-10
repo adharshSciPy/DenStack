@@ -1,6 +1,5 @@
 import ClinicInventoryModel from "../model/ClinicInventoryModel.js";
-import axios from "axios";
-import { count, log } from "console";
+import axios from "axios";;
 import http from "http";
 import https from "https";
 import ClinicProduct from "../model/ClinicProduct.js";
@@ -141,13 +140,13 @@ const getProducts = async (req, res) => {
 
 const getLowStockProducts = async (req, res) => {
   const { clinicId } = req.params;
-  const LOW_STOCK_THRESHOLD = 15; // Define low stock threshold
+  const LOW_STOCK_THRESHOLD = 21; // Define low stock threshold
   try {
     const results = await ClinicInventoryModel.find({
       clinicId,
       quantity: { $lt: LOW_STOCK_THRESHOLD },
     }).lean();
-
+    
     return res.status(200).json({
       message: "Low stock products fetched successfully",
       data: results,

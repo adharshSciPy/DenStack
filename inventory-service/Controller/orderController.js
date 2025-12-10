@@ -1,15 +1,17 @@
 import Order from "../Model/OrderSchema.js";
 import Product from "../Model/ProductSchema.js";
+import Notification from "../Model/NotificationSchema.js";
 
 const createOrder = async (req, res) => {
-    try {
-        const { clinicId, vendorId, superadminId, items } = req.body;
+  try {
+    const { clinicId, items } = req.body;
 
-        if (!items || items.length === 0)
-            return res.status(400).json({ message: "No items provided" });
+    if (!items || items.length === 0)
+      return res.status(400).json({ message: "No items provided" });
 
-        let totalAmount = 0;
-        const orderItems = [];
+    let totalAmount = 0;
+    const orderItems = [];
+    let vendorId = null; // ⭐ FINAL vendor assigned here
 
         for (const item of items) {
             let product = null;
@@ -51,28 +53,27 @@ const createOrder = async (req, res) => {
             if (!product)
                 return res.status(404).json({ message: `Product not found: ${item.productId}` });
 
-            if (product.stock < item.quantity)
-                return res.status(400).json({ message: `Not enough stock for ${product.name}` });
+      if (product.stock < item.quantity)
+        return res.status(400).json({ message: `Not enough stock for ${product.name}` });
 
-            // Check expiry
-            const now = new Date();
-            if (product.expiryDate && product.expiryDate < now) {
-                return res.status(400).json({ message: `Product expired: ${product.name}` });
-            }
+      if (product.expiryDate < new Date())
+        return res.status(400).json({ message: `Product expired: ${product.name}` });
 
-            // Pricing
-            const unitCost = product.price;
-            const totalCost = unitCost * item.quantity;
+      // ⭐ Extract vendorId once
+      if (!vendorId) vendorId = product.addedById;
 
-            totalAmount += totalCost;
+      const unitCost = product.price;
+      const totalCost = unitCost * item.quantity;
 
-            // ⭐ FIXED — match schema
-            orderItems.push({
-                itemId: product._id,      // product reference
-                quantity: item.quantity,
-                unitCost: unitCost,
-                totalCost: totalCost
-            });
+      totalAmount += totalCost;
+
+      orderItems.push({
+        productId: product._id,
+        quantity: item.quantity,
+        vendorId: product.addedById,
+        unitCost,
+        totalCost
+      });
 
             // Low stock flag
             product.isLowStock = product.stock - item.quantity < 10;
@@ -92,18 +93,25 @@ const createOrder = async (req, res) => {
             orderStatus: "PROCESSING",
         });
 
-        await newOrder.save();
+    // ⭐ Create notification correctly
+    await Notification.create({
+      vendorId,
+      orderId: newOrder._id,
+      message: `New order received from Clinic ${clinicId}`,
+    });
 
-        res.status(201).json({
-            message: "Order created successfully",
-            order: newOrder
-        });
+    return res.status(201).json({
+      message: "Order created successfully",
+      order: newOrder
+    });
 
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: "Server error" });
-    }
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: "Server error", error: error.message });
+  }
 };
+
+
 
 const getAllOrders = async (req, res) => {
     try {
