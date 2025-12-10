@@ -9,6 +9,7 @@ import productRoute from "./Routes/productRouter.js";
 import orderRouter from "./Routes/orderRouter.js";
 import vendorRouter from "./Routes/vendorRouter.js";
 import brandRouter from "./Routes/brandRouter.js";
+import notificationRouter from "./Routes/notificationRouter.js";
 
 
 import lowStockAlertsCron from "./middlewares/lowStockCron.js";
@@ -45,6 +46,8 @@ app.use("/api/v1/product", productRoute);
 app.use("/api/v1/order", orderRouter);
 app.use("/api/v1/vendor", vendorRouter);
 app.use("/api/v1/brand", brandRouter);
+app.use("/api/v1/notification", notificationRouter);
+
 
 
 
