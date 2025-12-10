@@ -80,46 +80,54 @@ export const clinicPurchase = async (req, res) => {
     if (!clinicId) {
       return res.status(400).json({ message: "No clinicId provided" });
     }
-    // Extract token from incoming request
+
+    // Extract auth token
     const authHeader = req.headers["authorization"];
     if (!authHeader) {
-      return res
-        .status(401)
-        .json({ message: "No authorization token provided" });
+      return res.status(401).json({ message: "No authorization token provided" });
     }
 
-    // Send order request to Inventory
-    const response = await axios.post(
-      `${process.env.INVENTORY_SERVICE_URL}order/createOrder`,
-      { clinicId, items },
-      {
-        headers: {
-          Authorization: authHeader, // forward token
-        },
+    let createdOrders = [];
+
+    // 🔥 LOOP THROUGH EACH ITEM → CREATE SEPARATE ORDER
+    for (const singleItem of items) {
+      const response = await axios.post(
+        `${process.env.INVENTORY_SERVICE_URL}order/createOrder`,
+        { clinicId, items: [singleItem] }, // 👈 IMPORTANT: send only 1 item
+        {
+          headers: {
+            Authorization: authHeader,
+          },
+        }
+      );
+
+      const inventoryOrder = response.data?.order;
+
+      if (!inventoryOrder) {
+        return res.status(500).json({
+          message: "Invalid response from Inventory for item",
+          item: singleItem,
+        });
       }
-    );
-    
-    const inventoryOrder = response.data?.order;
+      console.log(inventoryOrder);
+      
+      // Save in Clinic DB
+      const createdOrder = await ClinicPurchaseOrder.create({
+        clinicId,
+        items: inventoryOrder.items,
+        totalAmount: inventoryOrder.totalAmount,
+        status: "PENDING",
+        linkedInventoryOrderId: inventoryOrder._id,
+      });
 
-    if (!inventoryOrder) {
-      return res
-        .status(500)
-        .json({ message: "Invalid response from Inventory" });
+      createdOrders.push(createdOrder);
     }
-
-    // Save in Clinic DB
-    const createdOrder = await ClinicPurchaseOrder.create({
-      clinicId,
-      items: inventoryOrder.items,
-      totalAmount: inventoryOrder.totalAmount,
-      status: "PENDING",
-      linkedInventoryOrderId: inventoryOrder._id,
-    });
 
     res.status(201).json({
-      message: "Order placed successfully",
-      order: createdOrder,
+      message: "Orders created successfully (one per item)",
+      orders: createdOrders,
     });
+
   } catch (err) {
     console.log("Purchase Error →", err.response?.data || err.message);
     res.status(500).json({
@@ -128,6 +136,7 @@ export const clinicPurchase = async (req, res) => {
     });
   }
 };
+
 
 export const markDelivered = async (req, res) => {
   try {
@@ -150,9 +159,10 @@ export const markDelivered = async (req, res) => {
 
     // LOOP ITEMS
     for (const item of order.items) {
+      console.log("Processing item:", item);
       const existing = await ClinicInventory.findOne({
         clinicId,
-        productId: item.itemId,
+        productId: item.productId,
       });
 
       const threshold = existing?.lowStockThreshold || 20;
@@ -169,7 +179,7 @@ export const markDelivered = async (req, res) => {
         // Create new inventory record
         await ClinicInventory.create({
           clinicId,
-          productId: item.itemId,
+          productId: item.productId,
           quantity: item.quantity,
           inventoryType: "general",
           assignedTo: null,

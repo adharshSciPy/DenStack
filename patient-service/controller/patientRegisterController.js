@@ -324,14 +324,26 @@ const patientCheck = async (req, res) => {
 const getPatientsByClinic = async (req, res) => {
   try {
     const { id: clinicId } = req.params;
+    const { search } = req.query;
 
     if (!clinicId) {
       return res.status(400).json({ success: false, message: "Clinic ID is required" });
     }
 
-    const patients = await Patient.find({ clinicId }).lean();
+    const query = { clinicId };
 
-    return res.status(200).json({ success: true, count: patients.length, data: patients });
+    // Search only starting letters of the name
+    if (search) {
+      query.name = { $regex: `^${search}`, $options: "i" };
+    }
+
+    const patients = await Patient.find(query).lean();
+
+    return res.status(200).json({
+      success: true,
+      count: patients.length,
+      data: patients,
+    });
   } catch (error) {
     console.error("getPatientsByClinic error:", error);
     return res.status(500).json({ success: false, message: "Server error" });

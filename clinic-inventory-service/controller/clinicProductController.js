@@ -5,7 +5,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const LAB_SERVICE_URL = process.env.LAB_SERVICE_URL;
-const PHARMACY_SERVICE_URL = process.env.PHARMACY_SERVICE_URL
+const PHARMACY_SERVICE_URL = process.env.PHARMACY_SERVICE_URL;
 export const createClinicProductAndAssignInventory = async (req, res) => {
   try {
     const { clinicId } = req.params;
@@ -114,29 +114,27 @@ export const getClinicProducts = async (req, res) => {
   }
 };
 
-
 export const getClinicVendorIds = async (req, res) => {
   try {
-    const {clinicId } = req.params;
+    const { clinicId } = req.params;
 
- // ============================
-//         LAB VENDORS
-// ============================
-let labs = [];
-try {
-  const labRes = await axios.get(
-    `${LAB_SERVICE_URL}lab/vendor-by-clinic/${clinicId}`
-  );
+    // ============================
+    //         LAB VENDORS
+    // ============================
+    let labs = [];
+    try {
+      const labRes = await axios.get(
+        `${LAB_SERVICE_URL}lab/vendor-by-clinic/${clinicId}`
+      );
 
-  labs =
-    labRes.data?.map((lab) => ({
-      _id: lab._id,
-      name: lab.name,
-    })) || [];
-} catch (err) {
-  console.log("❌ Lab service unreachable:", err.message);
-}
-
+      labs =
+        labRes.data?.map((lab) => ({
+          _id: lab._id,
+          name: lab.name,
+        })) || [];
+    } catch (err) {
+      console.log("❌ Lab service unreachable:", err.message);
+    }
 
     // ============================
     //      PHARMACY VENDORS
@@ -145,7 +143,7 @@ try {
     try {
       const pharmRes = await axios.get(
         `${PHARMACY_SERVICE_URL}pharmacy-details/vendors/by-clinic/${clinicId}`
-      );      
+      );
       pharmacies =
         pharmRes.data?.vendors?.map((v) => ({
           _id: v._id,
@@ -173,6 +171,33 @@ try {
   }
 };
 
+export const getClinicLabs = async (req, res) => {
+  const { clinicId } = req.params;
+  let labs = [];
+  try {
+    const labRes = await axios.get(
+      `${LAB_SERVICE_URL}lab/vendor-by-clinic/${clinicId}`
+    );
+
+    labs =
+      labRes.data?.map((lab) => ({
+        _id: lab._id,
+        name: lab.name,
+      })) || [];
+
+    return res.status(200).json({
+      success: true,
+      message: "Vendor details fetched successfully",
+      labs,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching vendors",
+      details: error.message,
+    });
+  }
+};
 
 export const updateClinicProduct = async (req, res) => {
   try {

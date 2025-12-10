@@ -4,7 +4,7 @@ const clinicPurchaseOrderSchema = new mongoose.Schema({
     clinicId: String,
     items: [
         {
-            itemId: mongoose.Schema.Types.ObjectId,
+            productId: mongoose.Schema.Types.ObjectId,
             quantity: Number,
             unitCost: Number,
             totalCost: Number,

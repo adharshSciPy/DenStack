@@ -15,7 +15,7 @@ export const createDentalLabOrder = async (req, res) => {
       deliveryDate,
       note,
       price,
-      appointmentId,
+      appointmentId,  
     } = req.body;
 
     if (
@@ -341,3 +341,51 @@ export const getLabStatsUsingClinicId = async (req, res) => {
     });
   }
 };
+
+export const getMonthlyInHouseLabRevenue = async (req, res) => {
+  try {
+    const { clinicId } = req.params;
+    let { month, year } = req.query;
+
+    // If no month/year → use current date
+    const now = new Date();
+    month = month ? Number(month) : now.getMonth() + 1; // JS month starts from 0
+    year = year ? Number(year) : now.getFullYear();
+
+    // Get start and end of selected month
+    const startDate = new Date(year, month - 1, 1);
+    const endDate = new Date(year, month, 1); // next month's first day
+
+    // Get clinic-owned labs
+    const vendors = await LabVendor.find({ clinicId, type: "inHouse" });
+    const vendorIds = vendors.map(v => v._id);
+
+    const stats = await DentalLabOrder.aggregate([
+      {
+        $match: {
+          vendor: { $in: vendorIds },
+          createdAt: { $gte: startDate, $lt: endDate }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalRevenue: { $sum: "$price" },
+          totalOrders: { $sum: 1 }
+        }
+      }
+    ]);
+
+    return res.status(200).json({
+      message: `Revenue for ${month}-${year}`,
+      month,
+      year,
+      stats: stats[0] || { totalRevenue: 0, totalOrders: 0 }
+    });
+
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+
