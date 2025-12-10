@@ -1,6 +1,9 @@
 import Order from "../Model/OrderSchema.js";
 import Product from "../Model/ProductSchema.js";
 
+import axios from "axios"
+const AUTH_BASE = process.env.AUTH_SERVICE_BASE_URL;
+
 const createOrder = async (req, res) => {
     try {
         const { clinicId, vendorId, superadminId, items } = req.body;
@@ -275,53 +278,40 @@ const getOrderStats = async (req, res) => {
 
 const getRecentOrders = async (req, res) => {
     try {
-        // ⭐ Fetch vendor & product details via populate
         const orders = await Order.find()
             .sort({ createdAt: -1 })
             .limit(10)
-            .populate("vendorId", "name companyName")
             .populate("items.itemId", "name price image");
 
         const results = [];
 
         for (const order of orders) {
-            /* -----------------------------
-               1️⃣ Fetch Clinic Name (external)
-            ------------------------------ */
             let clinicName = "Unknown Clinic";
+            console.log("order", order)
+
             try {
                 const clinicRes = await axios.get(
                     `${AUTH_BASE}/clinic/view-clinic/${order.clinicId}`
                 );
-                clinicName = clinicRes.data?.data?.name || "Unknown Clinic";
+                clinicName = clinicRes.data?.data.name || "Unknown Clinic";
+                console.log(clinicRes)
             } catch (err) {
-                console.log("❌ Clinic API failed:", order.clinicId);
+                console.log("❌ Clinic API failed:", err);
             }
 
-            /* -----------------------------
-               2️⃣ Vendor name from populate
-            ------------------------------ */
-            const vendorName =
-                order.vendorId?.companyName ||
-                order.vendorId?.name ||
-                "Unknown Vendor";
-
-            /* -----------------------------
-               3️⃣ Product names from populate
-            ------------------------------ */
             const itemsFormatted = order.items.map((item) => ({
                 name: item.itemId?.name || "Unknown Product",
                 quantity: item.quantity,
             }));
 
             results.push({
-                orderId: order.orderId,     // ✅ Use your custom order ID
+                orderId: order.orderId,
                 date: order.createdAt,
                 clinic: clinicName,
-                vendor: vendorName,
                 items: itemsFormatted,
                 totalAmount: order.totalAmount,
                 orderStatus: order.orderStatus,
+                priority: order.priority || "Standard",  // ⭐ NEW FIELD ADDED
             });
         }
 
