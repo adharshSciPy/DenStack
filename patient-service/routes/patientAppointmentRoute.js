@@ -12,10 +12,13 @@ import {
   clearDoctorFromAppointments, 
   appointmentReschedule, 
   cancelAppointment,
-  getAppointmentsByDate  // ✅ NEW
+  getAppointmentsByDate,  // ✅ NEW
+  getUnpaidBillsByClinic,
+  addReceptionBilling
 } from "../controller/patientAppointmentController.js";
 import { authClinicDoctor } from "../middleware/authClinicDoctor.js";
 import { authDoctor } from "../middleware/authDoctor.js";
+import { addPaymentToBill } from "../../billing-service/controller/billingController.js";
 
 const patientAppointmentRouter = Router();
 
@@ -31,7 +34,8 @@ patientAppointmentRouter.route("/clinic-appointments/:id").get(getAppointmentsBy
 patientAppointmentRouter.route("/clear-doctor-from-appointments").patch(clearDoctorFromAppointments);
 patientAppointmentRouter.route("/reschedule/:id").patch(appointmentReschedule);
 patientAppointmentRouter.route("/cancel/:id").patch(cancelAppointment);
-// ✅ NEW ROUTE - For scheduler to fetch appointments by date
 patientAppointmentRouter.route("/by-date").get(getAppointmentsByDate);
+patientAppointmentRouter.route("/clinic/unpaid_bills/:id").get(getUnpaidBillsByClinic);
+patientAppointmentRouter.route("/update_bills").patch(addReceptionBilling);
 
 export default patientAppointmentRouter;

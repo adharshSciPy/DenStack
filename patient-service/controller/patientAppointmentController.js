@@ -798,8 +798,6 @@ const getAppointmentsByClinic = async (req, res) => {
     });
   }
 };
-
-
 const clearDoctorFromAppointments = async (req, res) => {
   try {
     const { clinicId, doctorId } = req.body;
@@ -1151,4 +1149,184 @@ const getAppointmentsByDate = async (req, res) => {
     });
   }
 };
-export { createAppointment ,getTodaysAppointments,getAppointmentById, getPatientHistory, addLabOrderToPatientHistory,getAppointmentsByClinic,clearDoctorFromAppointments,appointmentReschedule, cancelAppointment,getPatientTreatmentPlans,getAppointmentsByDate};
+const addReceptionBilling = async (req, res) => {
+  try {
+    const { clinicId, patientUniqueId } = req.query;
+    const {
+      procedureCharges = [],
+      consumableCharges = [],
+      userId,
+      userRole,
+    } = req.body;
+
+    if (!clinicId || !patientUniqueId) {
+      return res.status(400).json({
+        success: false,
+        message: "clinicId and patientUniqueId are required",
+      });
+    }
+
+    // Validate role + userId exists
+    if (!userId || !userRole) {
+      return res.status(400).json({
+        success: false,
+        message: "userId and userRole are required in body",
+      });
+    }
+
+    // 1️⃣ Find patient
+    const patient = await Patient.findOne({ clinicId, patientUniqueId });
+    if (!patient) {
+      return res.status(404).json({
+        success: false,
+        message: "Patient not found in this clinic",
+      });
+    }
+
+    // 2️⃣ Get latest unpaid visit
+    const history = await PatientHistory.findOne({
+      clinicId,
+      patientId: patient._id,
+      $or: [
+        { isPaid: false },
+        { fullPaid: false },
+        { paymentCompleted: false },
+      ],
+    })
+      .sort({ createdAt: -1 })
+      .lean(false);
+
+    if (!history) {
+      return res.status(404).json({
+        success: false,
+        message: "No unpaid visit found for this patient",
+      });
+    }
+
+    // 3️⃣ Merge new billing data
+    history.receptionBilling = {
+      ...history.receptionBilling,
+      procedureCharges: [
+        ...(history.receptionBilling?.procedureCharges || []),
+        ...procedureCharges,
+      ],
+      consumableCharges: [
+        ...(history.receptionBilling?.consumableCharges || []),
+        ...consumableCharges,
+      ],
+      updatedBy: { userId, role: userRole },
+      updatedAt: new Date(),
+    };
+
+    // 4️⃣ Recalculate total
+    if (typeof history.calculateTotalAmount === "function") {
+      history.calculateTotalAmount();
+    }
+
+    await history.save();
+
+    return res.json({
+      success: true,
+      message: "Billing updated to latest unpaid visit",
+      totalAmount: history.totalAmount,
+      history,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+};
+//this should be used for getting the unpaid bills from the clinic 
+// Helper — find patientIds via patientUniqueId search
+async function getPatientIdsByUniqueId(search, clinicId) {
+  const regex = new RegExp(search, "i");
+
+  const patients = await mongoose.model("Patient").find({
+    patientUniqueId: regex,
+    clinicId
+  }).select("_id");
+
+  return patients.map(p => p._id);
+}
+const getUnpaidBillsByClinic = async (req, res) => {
+  try {
+    const { id:clinicId } = req.params;
+    const {
+      lastId,                   
+      limit = 10,               
+      search = "",              
+      startDate,
+      endDate
+    } = req.query;
+
+    if (!clinicId || !mongoose.Types.ObjectId.isValid(clinicId)) {
+      return res.status(400).json({ success: false, message: "Invalid clinicId" });
+    }
+    const query = {
+      clinicId,
+      isPaid: false,
+    };
+    if (search) {
+      query["patientId"] = await getPatientIdsByUniqueId(search, clinicId);
+      if (query["patientId"].length === 0) {
+        return res.status(200).json({
+          success: true,
+          data: [],
+          hasMore: false
+        });
+      }
+    }
+
+    // 📅 Date filter
+    let start = startDate ? new Date(startDate) : new Date();
+    let end = endDate ? new Date(endDate) : new Date();
+
+    // If no dates passed → fetch today's unpaid bills
+    if (!startDate && !endDate) {
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
+    }
+
+    query.visitDate = { $gte: start, $lte: end };
+
+    // 🧭 Cursor Pagination
+    if (lastId) {
+      query._id = { $gt: lastId };
+    }
+
+    // -------------------------
+    // 📌 Fetch data
+    // -------------------------
+    const bills = await PatientHistory.find(query)
+      .populate("patientId", "name patientUniqueId phone")
+      .sort({ _id: 1 })          // ensure cursor pagination
+      .limit(Number(limit) + 1)  // fetch one extra to check hasMore
+      .lean();
+
+    const hasMore = bills.length > limit;
+
+    if (hasMore) bills.pop(); // remove the extra record
+
+    res.status(200).json({
+      success: true,
+      data: bills,
+      nextCursor: hasMore ? bills[bills.length - 1]._id : null,
+      hasMore
+    });
+
+  } catch (error) {
+    console.error("Error fetching unpaid bills:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch unpaid bills",
+      error: error.message
+    });
+  }
+};
+
+
+
+
+export { createAppointment ,getTodaysAppointments,getAppointmentById, getPatientHistory, addLabOrderToPatientHistory,getAppointmentsByClinic,clearDoctorFromAppointments,appointmentReschedule, cancelAppointment,getPatientTreatmentPlans,getAppointmentsByDate,addReceptionBilling,getUnpaidBillsByClinic};

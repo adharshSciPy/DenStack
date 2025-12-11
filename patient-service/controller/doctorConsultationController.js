@@ -101,7 +101,7 @@ const consultPatient = async (req, res) => {
 
     // Merge manually provided URLs + uploaded files
     const allFiles = [...files, ...uploadedFiles];
-    // 🧾 Create new patient visit record
+    // Create new patient visit record
     const newVisit = new PatientHistory({
       patientId: appointment.patientId,
       clinicId: appointment.clinicId,

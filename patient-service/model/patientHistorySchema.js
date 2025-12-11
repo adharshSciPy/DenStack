@@ -81,11 +81,11 @@ const patientHistorySchema = new mongoose.Schema(
       },
     ],
     totalAmount: { type: Number, default: 0 },
-    isPaid: { type: Boolean, default: false }, // ✅ Payment status flag
+    isPaid: { type: Boolean, default: false }, //Payment status flag
     billId: { 
       type: mongoose.Schema.Types.ObjectId, 
       ref: "Billing" 
-    }, // ✅ Reference to billing record
+    }, //Reference to billing record
     
     status: { type: String, enum: ["pending","completed"], default: "completed" },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "Doctor", required: true },
@@ -97,7 +97,27 @@ const patientHistorySchema = new mongoose.Schema(
       referralDate: { type: Date },
       status: { type: String, enum: ["pending", "accepted", "completed"], default: "pending" },
     },
-    dentalChart: { type: [dentalChartSchema], required: false }
+    dentalChart: { type: [dentalChartSchema], required: false },
+
+    receptionBilling: {
+  procedureCharges: [
+    {
+      name: { type: String, required: true },
+      fee: { type: Number, required: true },
+      notes: String
+    }
+  ],
+  consumableCharges: [
+    {
+      item: { type: String, required: true },
+      fee: { type: Number, required: true },
+      notes: String
+    }
+  ],
+  addedBy: { type: Schema.Types.ObjectId, ref: "User" },
+  updatedAt: { type: Date }
+},
+
 
 
   },
@@ -107,9 +127,34 @@ const patientHistorySchema = new mongoose.Schema(
 );
 
 patientHistorySchema.methods.calculateTotalAmount = function () {
-  const proceduresTotal =
+  const doctorProceduresTotal =
     this.procedures?.reduce((sum, p) => sum + (p.fee || 0), 0) || 0;
-  this.totalAmount = (this.consultationFee || 0) + proceduresTotal;
+
+  const receptionProcedureTotal =
+    this.receptionBilling?.procedureCharges?.reduce(
+      (sum, p) => sum + (p.fee || 0),
+      0
+    ) || 0;
+
+  const consumableTotal =
+    this.receptionBilling?.consumableCharges?.reduce(
+      (sum, c) => sum + (c.fee || 0),
+      0
+    ) || 0;
+
+  const labTotal =
+    this.labHistory?.reduce(
+      (sum, labOrderId) => sum + (this.__labCharges?.[labOrderId] || 0),
+      0
+    ) || 0;
+
+  this.totalAmount =
+    (this.consultationFee || 0) +
+    doctorProceduresTotal +
+    receptionProcedureTotal +
+    consumableTotal +
+    labTotal;
+
   return this.totalAmount;
 };
 
