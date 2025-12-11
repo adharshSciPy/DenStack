@@ -28,7 +28,7 @@ const doctorSchema = new Schema(
       maxlength: [64, "Password cannot exceed 64 characters"],
     },
     phoneNumber: {
-      type:Number,
+      type: Number,
       required: [true, "Phone number is required"],
       unique: true,
       match: [/^[6-9]\d{9}$/, "Phone number must be 10 digits"],
@@ -38,7 +38,7 @@ const doctorSchema = new Schema(
       trim: true,
       maxlength: [100, "Specialization cannot exceed 100 characters"],
     },
-     licenseNumber: {
+    licenseNumber: {
       type: String,
       required: [true, "License number is required"],
       unique: true,
@@ -48,15 +48,22 @@ const doctorSchema = new Schema(
       type: Boolean,
       default: true,
     },
-    uniqueId:{
-type:String,
-required:true,
-unique:true
+    uniqueId: {
+      type: String,
+      required: true,
+      unique: true
     },
     role: {
       type: String,
       default: DOCTOR_ROLE,
-    }},
+    },
+    // ACTIVE STATUS
+    status: {
+      type: String,
+      enum: ["Active", "Inactive", "Pending"],
+      default: "Pending",
+    },
+  },
   { timestamps: true }
 );
 

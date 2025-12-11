@@ -235,7 +235,7 @@ const fetchDoctorById = async (req, res) => {
 
 const fetchDoctorByUniqueId = async (req, res) => {
   try {
-    const {id: uniqueId } = req.params;
+    const { id: uniqueId } = req.params;
 
     const doctor = await Doctor.findOne({ uniqueId });
     if (!doctor) {
@@ -258,4 +258,36 @@ const fetchDoctorByUniqueId = async (req, res) => {
   }
 };
 
-export { registerDoctor, loginDoctor ,allDoctors,fetchDoctorById,fetchDoctorByUniqueId};
+const doctorStats = async (req, res) => {
+  try {
+    const totalDoctors = await Doctor.countDocuments();
+
+    const activeDoctors = await Doctor.countDocuments({ status: "Active" });
+
+    const inactiveDoctors = await Doctor.countDocuments({ status: "Inactive" });
+
+    const pendingDoctors = await Doctor.countDocuments({ status: "Pending" });
+
+    const independentDoctors = await Doctor.countDocuments({ isIndependent: true });
+
+    const clinicDoctors = await Doctor.countDocuments({ isClinicOnboard: true });
+
+    res.status(200).json({
+      success: true,
+      stats: {
+        totalDoctors,
+        activeDoctors,
+        inactiveDoctors,
+        pendingDoctors,
+        independentDoctors,
+        clinicDoctors
+      }
+    });
+
+  } catch (error) {
+    console.error("Doctor stats error:", error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+export { registerDoctor, loginDoctor, allDoctors, fetchDoctorById, fetchDoctorByUniqueId, doctorStats };
