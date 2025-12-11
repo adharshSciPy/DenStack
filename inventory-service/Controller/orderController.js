@@ -1,66 +1,44 @@
 import Order from "../Model/OrderSchema.js";
 import Product from "../Model/ProductSchema.js";
 import Notification from "../Model/NotificationSchema.js";
+import Vendor from "../Model/VendorSchema.js"
+
+import axios from "axios"
+const AUTH_BASE = process.env.AUTH_SERVICE_BASE_URL;
 
 const createOrder = async (req, res) => {
   try {
-    const { clinicId, items } = req.body;
+    const { clinicId, vendorId, items, paymentStatus, priorityLevel, orderStatus } = req.body;
+
+    if (!clinicId)
+      return res.status(400).json({ message: "clinicId is required" });
+
+    if (!vendorId)
+      return res.status(400).json({ message: "vendorId is required" });
 
     if (!items || items.length === 0)
       return res.status(400).json({ message: "No items provided" });
 
     let totalAmount = 0;
     const orderItems = [];
-    let vendorId = null; // ⭐ FINAL vendor assigned here
 
-        for (const item of items) {
-            let product = null;
+    for (const item of items) {
+      const product = await Product.findById(item.productId);
 
-            // SUPERADMIN ORDER
-            if (superadminId) {
-                product = await Product.findOne({
-                    _id: item.productId,
-                    addedByType: "superadmin",
-                    addedById: superadminId,
-                });
-            }
-
-            // CLINIC ORDER
-            if (!product && clinicId) {
-                product = await Product.findOne({
-                    _id: item.productId,
-                    addedByType: "clinic",
-                    addedById: clinicId,
-                });
-            }
-
-            // VENDOR ORDER
-            if (!product && vendorId) {
-                product = await Product.findOne({
-                    _id: item.productId,
-                    addedByType: "vendor",
-                    addedById: vendorId,
-                });
-            }
-
-            // PRODUCT DOES NOT BELONG TO THIS USER
-            if (!product) {
-                return res.status(404).json({
-                    message: `Product does not belong to this owner or not found: ${item.productId}`,
-                });
-            }
-
-            if (!product)
-                return res.status(404).json({ message: `Product not found: ${item.productId}` });
+      if (!product)
+        return res.status(404).json({
+          message: `Product not found: ${item.productId}`,
+        });
 
       if (product.stock < item.quantity)
-        return res.status(400).json({ message: `Not enough stock for ${product.name}` });
+        return res.status(400).json({
+          message: `Not enough stock for ${product.name}`,
+        });
 
-      if (product.expiryDate < new Date())
-        return res.status(400).json({ message: `Product expired: ${product.name}` });
-
-      // ⭐ Extract vendorId once
-      if (!vendorId) vendorId = product.addedById;
+      if (product.expiryDate && product.expiryDate < new Date())
+        return res.status(400).json({
+          message: `Product expired: ${product.name}`,
+        });
 
       const unitCost = product.price;
       const totalCost = unitCost * item.quantity;
@@ -68,46 +46,43 @@ const createOrder = async (req, res) => {
       totalAmount += totalCost;
 
       orderItems.push({
-        productId: product._id,
+        itemId: product._id,
         quantity: item.quantity,
-        vendorId: product.addedById,
         unitCost,
-        totalCost
+        totalCost,
       });
 
-            // Low stock flag
-            product.isLowStock = product.stock - item.quantity < 10;
+      product.stock -= item.quantity;
+      product.isLowStock = product.stock < 10;
+      await product.save();
+    }
 
-            // Reduce stock
-            product.stock -= item.quantity;
-            await product.save();
-        }
-
-        const newOrder = new Order({
-            clinicId,
-            superadminId,
-            vendorId,
-            items: orderItems,
-            totalAmount,
-            paymentStatus: "PENDING",
-            orderStatus: "PROCESSING",
-        });
-
-    // ⭐ Create notification correctly
-    await Notification.create({
+    // ⭐ USE VALUES SENT FROM POSTMAN
+    const newOrder = new Order({
+      clinicId,
       vendorId,
-      orderId: newOrder._id,
-      message: `New order received from Clinic ${clinicId}`,
+      items: orderItems,
+      totalAmount,
+      paymentStatus: paymentStatus || "PENDING",
+      priorityLevel: priorityLevel || "STANDARD",
+      orderStatus: orderStatus || "PROCESSING"
+    });
+
+    await newOrder.save();
+
+    await Vendor.findByIdAndUpdate(vendorId, {
+      $inc: { totalRevenue: totalAmount },
     });
 
     return res.status(201).json({
       message: "Order created successfully",
+      orderId: newOrder.orderId,
       order: newOrder
     });
 
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({ message: "Server error", error: error.message });
+    console.error("Create Order Error:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
   }
 };
 
@@ -282,68 +257,53 @@ const getOrderStats = async (req, res) => {
 };
 
 const getRecentOrders = async (req, res) => {
-    try {
-        // ⭐ Fetch vendor & product details via populate
-        const orders = await Order.find()
-            .sort({ createdAt: -1 })
-            .limit(10)
-            .populate("vendorId", "name companyName")
-            .populate("items.itemId", "name price image");
+  try {
+    const orders = await Order.find()
+      .sort({ createdAt: -1 })
+      .limit(10)
+      .populate("items.itemId", "name price image");
 
-        const results = [];
+    const results = [];
 
-        for (const order of orders) {
-            /* -----------------------------
-               1️⃣ Fetch Clinic Name (external)
-            ------------------------------ */
-            let clinicName = "Unknown Clinic";
-            try {
-                const clinicRes = await axios.get(
-                    `${AUTH_BASE}/clinic/view-clinic/${order.clinicId}`
-                );
-                clinicName = clinicRes.data?.data?.name || "Unknown Clinic";
-            } catch (err) {
-                console.log("❌ Clinic API failed:", order.clinicId);
-            }
+    for (const order of orders) {
+      let clinicName = "Unknown Clinic";
 
-            /* -----------------------------
-               2️⃣ Vendor name from populate
-            ------------------------------ */
-            const vendorName =
-                order.vendorId?.companyName ||
-                order.vendorId?.name ||
-                "Unknown Vendor";
+      try {
+        const clinicRes = await axios.get(
+          `${AUTH_BASE}/clinic/view-clinic/${order.clinicId}`
+        );
+        clinicName = clinicRes.data?.data?.name || "Unknown Clinic";
+      } catch (err) {
+        console.log("❌ Clinic API failed:", order.clinicId);
+      }
 
-            /* -----------------------------
-               3️⃣ Product names from populate
-            ------------------------------ */
-            const itemsFormatted = order.items.map((item) => ({
-                name: item.itemId?.name || "Unknown Product",
-                quantity: item.quantity,
-            }));
+      const itemsFormatted = order.items.map((item) => ({
+        name: item.itemId?.name || "Unknown Product",
+        quantity: item.quantity,
+      }));
 
-            results.push({
-                orderId: order.orderId,     // ✅ Use your custom order ID
-                date: order.createdAt,
-                clinic: clinicName,
-                vendor: vendorName,
-                items: itemsFormatted,
-                totalAmount: order.totalAmount,
-                orderStatus: order.orderStatus,
-            });
-        }
-
-        return res.status(200).json({
-            message: "Recent orders fetched successfully",
-            data: results,
-        });
-    } catch (error) {
-        console.error("❌ Recent Orders Error:", error.message);
-        return res.status(500).json({
-            message: "Server Error",
-            error: error.message,
-        });
+      results.push({
+        orderId: order.orderId,
+        date: order.createdAt,
+        clinic: clinicName,
+        items: itemsFormatted,
+        totalAmount: order.totalAmount,
+        orderStatus: order.orderStatus,
+        priority: order.priorityLevel || "STANDARD"  // ⭐ FIXED FIELD
+      });
     }
+
+    return res.status(200).json({
+      message: "Recent orders fetched successfully",
+      data: results,
+    });
+  } catch (error) {
+    console.error("❌ Recent Orders Error:", error.message);
+    return res.status(500).json({
+      message: "Server Error",
+      error: error.message,
+    });
+  }
 };
 
 export {
