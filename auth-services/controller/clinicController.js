@@ -169,6 +169,12 @@ const loginClinic = async (req, res) => {
       return res.status(400).json({ message: "Invalid email or password" });
     }
 
+    if (!clinic.isActive) {
+      return res.status(403).json({
+        message: "Your clinic access has been disabled by SuperAdmin."
+      });
+    }
+
     // ====== GENERATE TOKENS ======
     const accessToken = clinic.generateAccessToken();
     const refreshToken = clinic.generateRefreshToken();
@@ -1081,7 +1087,7 @@ const toggleClinicAccess = async (req, res) => {
 
     const clinic = await Clinic.findById(clinicId);
     if (!clinic) return res.status(404).json({ message: "Clinic not found" });
-    
+
 
     clinic.isActive = !clinic.isActive;
     await clinic.save();
