@@ -1,4 +1,5 @@
 import SuperAdmin from "../models/superadminSchema.js";
+import Clinic from "../models/clinicSchema.js"
 import {
   emailValidator,
   passwordValidator,
@@ -264,5 +265,46 @@ const getSalesTrends = async (req, res) => {
   }
 };
 
+const getMonthlySummary = async (req, res) => {
+  try {
+    // Monthly summary
+    const result = await Clinic.aggregate([
+      {
+        $match: {
+          subscription: { $type: "object" },
+          "subscription.startDate": { $exists: true },
+          "subscription.isActive": true
+        }
+      },
+      { $addFields: { month: { $month: "$subscription.startDate" } } },
+      {
+        $group: {
+          _id: "$month",
+          totalRevenue: { $sum: "$subscription.price" },
+          totalSubscriptions: { $sum: 1 }
+        }
+      },
+      { $sort: { _id: -1 } }
+    ]);
 
-export { registerSuperAdmin, loginSuperAdmin, getSalesMetrics, getSalesTrends }
+    const months = [
+      "", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+    ];
+
+    const data = result.map(m => ({
+      month: months[m._id],
+      totalRevenue: m.totalRevenue,
+      totalSubscriptions: m.totalSubscriptions
+    }));
+
+    return res.status(200).json({ success: true, data });
+
+  } catch (e) {
+    return res.status(500).json({ success: false, message: e.message });
+  }
+};
+
+
+
+export { registerSuperAdmin, loginSuperAdmin, getSalesMetrics, getSalesTrends, getMonthlySummary }
