@@ -1,37 +1,6 @@
 import mongoose, { Schema } from "mongoose";
 
 const orderSchema = new Schema({
-<<<<<<< HEAD
-  clinicId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "Clinic",
-    required: true,
-  },
-  items: [
-    {
-      productId: { type: mongoose.Schema.Types.ObjectId, required: true },
-      quantity: Number,
-      unitCost: Number,
-      totalCost: Number,
-      vendorId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "Vendor",
-        required: true,
-      },
-    },
-  ],
-  totalAmount: { type: Number },
-  paymentStatus: {
-    type: String,
-    enum: ["PENDING", "PAID", "PENDING_REFUND"],
-    default: "PENDING",
-  },
-  orderStatus: {
-    type: String,
-    enum: ["PROCESSING", "SHIPPED", "DELIVERED", "CANCELLED"],
-    default: "PROCESSING",
-  },
-=======
     orderId: {
         type: String,
         unique: true
@@ -90,7 +59,6 @@ this.orderId = newOrderId;
   }
 
 next();
->>>>>>> 61dacfa2c2540a91aa81cfa7744c17811c21a705
 });
 
 const Order = new mongoose.model("Order", orderSchema);

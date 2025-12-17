@@ -59,6 +59,7 @@ const registerReception = async (req, res) => {
       phoneNumber,
       password,
       shift,
+      clinicId
     });
 
     await newReception.save();
@@ -107,7 +108,6 @@ const loginReception = async (req, res) => {
   const { email, password } = req.body;
 
   try {
-    
     if (!email || !emailValidator(email)) {
       return res.status(400).json({ message: "Invalid email" });
     }
@@ -116,22 +116,25 @@ const loginReception = async (req, res) => {
       return res.status(400).json({ message: "Password is required" });
     }
 
-  
     const reception = await Reception.findOne({ email });
     if (!reception) {
       return res.status(400).json({ message: "Invalid email or password" });
     }
 
-   
     const isMatch = await reception.isPasswordCorrect(password);
     if (!isMatch) {
       return res.status(400).json({ message: "Invalid email or password" });
     }
 
-   
+    // ⭐ GET TOKEN
     const accessToken = reception.generateAccessToken();
     const refreshToken = reception.generateRefreshToken();
 
+    // ⭐ FETCH CLINIC DETAILS
+    const clinicData = await Clinic.findById(reception.clinicId)
+      .select("name address phoneNumber theme subscription");
+
+    // ⭐ SEND EVERYTHING IN ONE RESPONSE
     res.status(200).json({
       message: "Login successful",
       reception: {
@@ -142,15 +145,19 @@ const loginReception = async (req, res) => {
         employeeId: reception.employeeId,
         shift: reception.shift,
         role: reception.role,
+        clinicId: reception.clinicId,
+        clinicData,  
       },
       accessToken,
       refreshToken,
     });
+
   } catch (error) {
     console.error("❌ Error in loginReception:", error);
     res.status(500).json({ message: "Server error" });
   }
 };
+
 
 // ====== Get All Receptions ======
 const allReceptions = async (req, res) => {
