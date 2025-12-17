@@ -9,9 +9,9 @@ import bcrypt from "bcryptjs";
 
 const vendorRegister = async (req, res) => {
     try {
-        const { name, companyName, email, phoneNumber, address, password } = req.body;
+        const { name, companyName, email, phoneNumber, address } = req.body;
 
-        if (!name || !email || !password || !phoneNumber) {
+        if (!name || !email || !phoneNumber) {
             return res
                 .status(400)
                 .json({ message: "Name, Email, Phone & Password required" });
@@ -27,7 +27,7 @@ const vendorRegister = async (req, res) => {
             email,
             phoneNumber,
             address,
-            password,
+            // password,
         });
 
         return res.status(201).json({
