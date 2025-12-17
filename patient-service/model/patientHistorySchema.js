@@ -166,5 +166,6 @@ patientHistorySchema.pre("save", function (next) {
 
 patientHistorySchema.index({ patientId: 1, visitDate: -1 });
 patientHistorySchema.index({ patientId: 1, isPaid: 1 }); // ✅ Index for unpaid bills query
+patientHistorySchema.index({ patientId: 1, clinicId: 1, visitDate: -1 });
 
 export default mongoose.model("PatientHistory", patientHistorySchema);

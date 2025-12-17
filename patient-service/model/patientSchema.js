@@ -4,6 +4,69 @@ import dotenv from "dotenv";
 dotenv.config();
 const AUTH_SERVICE_BASE_URL = process.env.AUTH_SERVICE_BASE_URL;
 const PATIENT_ROLE = process.env.PATIENT_ROLE;
+const dentalChartEntrySchema = new mongoose.Schema({
+  toothNumber: { 
+    type: Number, 
+    required: true, 
+    min: 1, 
+    max: 32 
+  },
+  quadrant: {
+    type: String,
+    enum: ['upper-right', 'upper-left', 'lower-left', 'lower-right'],
+    required: true
+  },
+  surface: {
+    type: String,
+    enum: ['occlusal', 'mesial', 'distal', 'buccal', 'lingual', 'full'],
+    default: 'full'
+  },
+  procedureType: {
+    type: String,
+    enum: [
+      'filling', 
+      'root-canal', 
+      'crown', 
+      'extraction', 
+      'cleaning', 
+      'implant',
+      'bridge',
+      'veneer',
+      'other'
+    ],
+    required: true
+  },
+  status: {
+    type: String,
+    enum: ['healthy', 'treated', 'in-progress', 'requires-attention', 'missing'],
+    default: 'treated'
+  },
+  notes: { 
+    type: String, 
+    maxlength: 500 
+  },
+  performedBy: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: "Doctor",
+    required: true 
+  },
+  performedAt: { 
+    type: Date, 
+    default: Date.now 
+  },
+  visitId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "PatientHistory",
+    required: true
+  },
+  treatmentPlanId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "TreatmentPlan"
+  },
+  materials: [String], // e.g., ['composite', 'amalgam']
+  cost: { type: Number, min: 0 }
+}, { timestamps: true });
+
 
 const patientSchema = new mongoose.Schema({
   clinicId: {
@@ -43,7 +106,10 @@ const patientSchema = new mongoose.Schema({
     allergies: [String],
     familyHistory: [String]
   },
-
+ dentalChart: {
+    type: [dentalChartEntrySchema],
+    default: []
+  },
   patientUniqueId: { type: String, unique: true },
    patientRandomId: { type: String, unique: true }, 
   parentPatient: { type: mongoose.Schema.Types.ObjectId, ref: "Patient" },
@@ -71,6 +137,97 @@ const patientSchema = new mongoose.Schema({
 
   createdAt: { type: Date, default: Date.now }
 });
+patientSchema.methods.isSurfaceTreated = function(toothNumber, surface) {
+  const tooth = this.dentalChart.find(t => t.toothNumber === toothNumber);
+  if (!tooth) return false;
+  
+  // Check if surface or 'entire' tooth has been treated
+  return tooth.treatedSurfaces.some(ts => 
+    ts.surface === surface || 
+    ts.surface === 'entire' || 
+    (surface === 'entire' && ts.surface !== 'entire')
+  );
+};
+
+// ✅ Method to add procedure to dental chart with conflict detection
+patientSchema.methods.addDentalProcedure = function(toothNumber, procedureData) {
+  const { procedureName, surface, performedBy, visitId, treatmentPlanId, notes, status = 'completed' } = procedureData;
+  
+  // Validate surface for conflict
+  if (this.isSurfaceTreated(toothNumber, surface)) {
+    throw new Error(`Surface '${surface}' of tooth ${toothNumber} has already been treated. Please review dental chart before proceeding.`);
+  }
+  
+  // Find or create tooth entry
+  let tooth = this.dentalChart.find(t => t.toothNumber === toothNumber);
+  
+  if (!tooth) {
+    tooth = {
+      toothNumber,
+      toothType: 'permanent',
+      currentStatus: 'healthy',
+      procedures: [],
+      treatedSurfaces: [],
+      lastModifiedAt: new Date(),
+      lastModifiedBy: performedBy
+    };
+    this.dentalChart.push(tooth);
+  }
+  
+  // Add procedure
+  const newProcedure = {
+    procedureName,
+    surface,
+    performedBy,
+    performedAt: new Date(),
+    visitId,
+    treatmentPlanId,
+    notes,
+    status
+  };
+  
+  tooth.procedures.push(newProcedure);
+  
+  // Update treated surfaces
+  const existingSurface = tooth.treatedSurfaces.find(ts => ts.surface === surface);
+  if (existingSurface) {
+    existingSurface.lastTreatedAt = new Date();
+    existingSurface.lastProcedure = procedureName;
+  } else {
+    tooth.treatedSurfaces.push({
+      surface,
+      lastTreatedAt: new Date(),
+      lastProcedure: procedureName
+    });
+  }
+  
+  tooth.lastModifiedAt = new Date();
+  tooth.lastModifiedBy = performedBy;
+  
+  return newProcedure;
+};
+
+// ✅ Method to get complete dental history for a tooth
+patientSchema.methods.getToothHistory = function(toothNumber) {
+  const tooth = this.dentalChart.find(t => t.toothNumber === toothNumber);
+  if (!tooth) {
+    return {
+      toothNumber,
+      hasHistory: false,
+      message: 'No procedures recorded for this tooth'
+    };
+  }
+  
+  return {
+    toothNumber,
+    hasHistory: true,
+    currentStatus: tooth.currentStatus,
+    totalProcedures: tooth.procedures.length,
+    treatedSurfaces: tooth.treatedSurfaces,
+    procedures: tooth.procedures.sort((a, b) => b.performedAt - a.performedAt),
+    generalNotes: tooth.generalNotes
+  };
+};
 
 // Generate OP number before saving
 patientSchema.pre("save", async function (next) {
@@ -142,7 +299,6 @@ patientSchema.pre("save", async function (next) {
 // ✅ Useful indexes
 patientSchema.index({ clinicId: 1, phone: 1 }, { unique: false });
 patientSchema.index({ clinicId: 1, email: 1 }, { unique: false });
-
 patientSchema.index({ clinicId: 1, patientUniqueId: 1 }, { unique: true });
 
 
