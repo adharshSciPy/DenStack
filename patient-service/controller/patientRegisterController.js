@@ -7,6 +7,9 @@ import crypto from "crypto";
 import twilio from "twilio";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+import PatientHistory from "../model/patientHistorySchema.js";
+import Appointment from "../model/appointmentSchema.js";
+import TreatmentPlan from "../model/treatmentPlanSchema.js";
 
 dotenv.config();
 const AUTH_SERVICE_BASE_URL = process.env.AUTH_SERVICE_BASE_URL;
@@ -616,6 +619,204 @@ const addLabOrderToPatient = async (req, res) => {
     });
   }
 };
+const getPatientFullCRM = async (req, res) => {
+  const { uniqueId, clinicId } = req.query;
+
+  if (!uniqueId || !clinicId) {
+    return res.status(400).json({
+      success: false,
+      message: "patientUniqueId and clinicId are required",
+    });
+  }
+
+  try {
+    // 1️⃣ Patient
+    const patient = await Patient.findOne(
+      { patientUniqueId: uniqueId, clinicId },
+      { password: 0, otpToken: 0, otpTokenExpiry: 0 }
+    ).lean();
+
+    if (!patient) {
+      return res.status(404).json({
+        success: false,
+        message: "Patient not found",
+      });
+    }
+
+    const patientId = patient._id;
+
+    // 2️⃣ Fetch CRM data (NO populate)
+    const [
+      visitHistory,
+      appointments,
+      treatmentPlans,
+      billingSummary,
+    ] = await Promise.all([
+      PatientHistory.find(
+        { patientId, clinicId },
+        {
+          symptoms: 1,
+          diagnosis: 1,
+          prescriptions: 1,
+          dentalChart: 1,
+          totalAmount: 1,
+          isPaid: 1,
+          visitDate: 1,
+          doctorId: 1,
+          appointmentId: 1,
+          receptionBilling: 1,
+          createdBy: 1,
+          updatedBy: 1,
+        }
+      )
+        .sort({ visitDate: -1 })
+        .lean(),
+
+      Appointment.find(
+        { patientId, clinicId },
+        {
+          appointmentDate: 1,
+          appointmentTime: 1,
+          status: 1,
+          department: 1,
+          doctorId: 1,
+        }
+      )
+        .sort({ appointmentDate: -1 })
+        .lean(),
+
+      TreatmentPlan.find(
+        { patientId, clinicId },
+        {
+          planName: 1,
+          status: 1,
+          stages: 1,
+          dentalChart: 1,
+          createdAt: 1,
+          createdByDoctorId: 1,
+        }
+      )
+        .sort({ createdAt: -1 })
+        .lean(),
+
+      PatientHistory.aggregate([
+        {
+          $match: {
+            patientId: new mongoose.Types.ObjectId(patientId),
+            clinicId: new mongoose.Types.ObjectId(clinicId),
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            totalSpent: { $sum: "$totalAmount" },
+            totalVisits: { $sum: 1 },
+            unpaidAmount: {
+              $sum: {
+                $cond: [{ $eq: ["$isPaid", false] }, "$totalAmount", 0],
+              },
+            },
+          },
+        },
+      ]),
+    ]);
+
+    // 3️⃣ Collect UNIQUE doctorIds
+    const doctorIds = new Set();
+
+    visitHistory.forEach(v => {
+      if (v.doctorId) doctorIds.add(v.doctorId.toString());
+      if (v.createdBy) doctorIds.add(v.createdBy.toString());
+      if (v.updatedBy) doctorIds.add(v.updatedBy.toString());
+    });
+
+    appointments.forEach(a => {
+      if (a.doctorId) doctorIds.add(a.doctorId.toString());
+    });
+
+    treatmentPlans.forEach(p => {
+      if (p.createdByDoctorId)
+        doctorIds.add(p.createdByDoctorId.toString());
+    });
+
+    // 4️⃣ Call Doctor Service (PARALLEL)
+   const doctorResponses = await Promise.all(
+  [...doctorIds].map(async (id) => {
+    try {
+      const { data } = await axios.get(
+        `${AUTH_SERVICE_BASE_URL}/doctor/details/${id}`,
+        { timeout: 3000 }
+      );
+
+      // ✅ ONLY what you need
+      const doctor = data?.data
+        ? { _id: id, name: data.data.name }
+        : null;
+
+      return [id, doctor];
+    } catch (err) {
+      console.error("Doctor fetch failed:", id);
+      return [id, null];
+    }
+  })
+);
 
 
-export { registerPatient, getPatientWithUniqueId, getAllPatients, patientCheck, getPatientsByClinic, getPatientById, sendSMSLink, setPassword, login,getPatientByRandomId ,addLabOrderToPatient}
+    // 5️⃣ Build doctor map
+    const doctorMap = {};
+    doctorResponses.forEach(([id, doctor]) => {
+      doctorMap[id] = doctor;
+    });
+
+    const getDoctor = (id) =>
+      id ? doctorMap[id.toString()] || null : null;
+
+    // 6️⃣ Attach doctor details
+    visitHistory.forEach(v => {
+      v.doctor = getDoctor(v.doctorId);
+      v.createdByDoctor = getDoctor(v.createdBy);
+      v.updatedByDoctor = getDoctor(v.updatedBy);
+    });
+
+    appointments.forEach(a => {
+      a.doctor = getDoctor(a.doctorId);
+    });
+
+    treatmentPlans.forEach(p => {
+      p.createdByDoctor = getDoctor(p.createdByDoctorId);
+    });
+
+    // 7️⃣ Summary
+    const summary = {
+      totalVisits: billingSummary[0]?.totalVisits || 0,
+      totalSpent: billingSummary[0]?.totalSpent || 0,
+      unpaidAmount: billingSummary[0]?.unpaidAmount || 0,
+      activeTreatmentPlans: treatmentPlans.filter(
+        (p) => p.status === "ongoing"
+      ).length,
+    };
+
+    // 8️⃣ Response
+    res.status(200).json({
+      success: true,
+      data: {
+        patientProfile: patient,
+        medicalHistory: patient.medicalHistory,
+        dentalChart: patient.dentalChart,
+        visitHistory,
+        appointments,
+        treatmentPlans,
+        summary,
+      },
+    });
+
+  } catch (error) {
+    console.error("CRM Fetch Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while fetching patient CRM",
+    });
+  }
+};
+
+export { registerPatient, getPatientWithUniqueId, getAllPatients, patientCheck, getPatientsByClinic, getPatientById, sendSMSLink, setPassword, login,getPatientByRandomId ,addLabOrderToPatient,getPatientFullCRM}
