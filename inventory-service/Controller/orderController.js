@@ -89,171 +89,171 @@ const createOrder = async (req, res) => {
 
 
 const getAllOrders = async (req, res) => {
-    try {
-        const page = parseInt(req.query.page) || 1;
-        const limit = parseInt(req.query.limit) || 10;
-        const skip = (page - 1) * limit;
-        const totalOrders = await Order.countDocuments();
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+    const totalOrders = await Order.countDocuments();
 
-        const orders = await Order.find()
-            .skip(skip)
-            .limit(limit)
-            .populate("items._id", "name price")
-            .sort({ createdAt: -1 });
+    const orders = await Order.find()
+      .skip(skip)
+      .limit(limit)
+      .populate("items._id", "name price")
+      .sort({ createdAt: -1 });
 
-        res.status(200).json({
-            message: "Order fetched Successfully",
-            currentpage: page,
-            totalPages: Math.ceil(totalOrders / limit),
-            totalOrders,
-            limit,
-            data: orders
-        });
-    } catch (error) {
-        console.error("Get Orders Error:", error);
-        res.status(500).json({ success: false, message: "Server Error" });
-    }
+    res.status(200).json({
+      message: "Order fetched Successfully",
+      currentpage: page,
+      totalPages: Math.ceil(totalOrders / limit),
+      totalOrders,
+      limit,
+      data: orders
+    });
+  } catch (error) {
+    console.error("Get Orders Error:", error);
+    res.status(500).json({ success: false, message: "Server Error" });
+  }
 };
 
 // ✅ GET ORDERS FOR A SPECIFIC USER (Clinic or Customer)
 const getUserOrders = async (req, res) => {
-    try {
-        const { userId } = req.params;
-        const page = parseInt(req.query.page) || 1;
-        const limit = parseInt(req.query.limit) || 10;
-        const skip = (page - 1) * limit;
-        const totalOrders = await Order.countDocuments({ userId: userId })
+  try {
+    const { userId } = req.params;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+    const totalOrders = await Order.countDocuments({ userId: userId })
 
-        const orders = await Order.find({ userId })
-            .skip(skip)
-            .sort({ createdAt: -1 });
+    const orders = await Order.find({ userId })
+      .skip(skip)
+      .sort({ createdAt: -1 });
 
-        if (!orders.length) {
-            return res.status(404).json({ success: false, message: "No orders found" });
-        }
-
-        res.status(200).json({
-            message: "User orders fetched",
-            currentpage: page,
-            totalPage: Math.ceil(totalOrders / limit),
-            totalOrders,
-            limit,
-            data: orders
-        });
-    } catch (error) {
-        console.error("Get User Orders Error:", error);
-        res.status(500).json({ success: false, message: "Server Error" });
+    if (!orders.length) {
+      return res.status(404).json({ success: false, message: "No orders found" });
     }
+
+    res.status(200).json({
+      message: "User orders fetched",
+      currentpage: page,
+      totalPage: Math.ceil(totalOrders / limit),
+      totalOrders,
+      limit,
+      data: orders
+    });
+  } catch (error) {
+    console.error("Get User Orders Error:", error);
+    res.status(500).json({ success: false, message: "Server Error" });
+  }
 };
 
 const cancelOrder = async (req, res) => {
-    try {
-        const { orderId } = req.params;
-        const order = await Order.findById(orderId);
-        if (!order) {
-            return res.status(400).json({ message: "Order Not Found" })
-        }
-        if (order.orderStatus === "CANCELLED") {
-            return res.status(400).json({ message: "Order is already cancelled" })
-        }
-        if (order.orderStatus === "DELIVERED") {
-            return res.status(400).json({ message: "Order is already delivered" })
-        }
-
-        for (const item of order.items) {
-            const product = await Product.findById(item.productId)
-            if (product) {
-                product.stock += item.quantity;
-
-                // Update low-stock flag
-                product.isLowStock = product.stock < 10;
-                await product.save();
-            }
-        }
-        order.orderStatus = "CANCELLED";
-        order.paymentStatus = "PENDING_REFUND"; // optional
-        await order.save();
-
-        res.status(200).json({ message: "Order cancelled successfully", data: order })
-
-    } catch (error) {
-        res.status(500).json({ message: "Internal Server Error", error: error.message })
+  try {
+    const { orderId } = req.params;
+    const order = await Order.findById(orderId);
+    if (!order) {
+      return res.status(400).json({ message: "Order Not Found" })
     }
+    if (order.orderStatus === "CANCELLED") {
+      return res.status(400).json({ message: "Order is already cancelled" })
+    }
+    if (order.orderStatus === "DELIVERED") {
+      return res.status(400).json({ message: "Order is already delivered" })
+    }
+
+    for (const item of order.items) {
+      const product = await Product.findById(item.productId)
+      if (product) {
+        product.stock += item.quantity;
+
+        // Update low-stock flag
+        product.isLowStock = product.stock < 10;
+        await product.save();
+      }
+    }
+    order.orderStatus = "CANCELLED";
+    order.paymentStatus = "PENDING_REFUND"; // optional
+    await order.save();
+
+    res.status(200).json({ message: "Order cancelled successfully", data: order })
+
+  } catch (error) {
+    res.status(500).json({ message: "Internal Server Error", error: error.message })
+  }
 }
 
 const getOrdersByClinicId = async (req, res) => {
-    try {
-        const { clinicId } = req.params;
-        const limit = parseInt(req.query.limit) || 10;
-        const cursor = req.query.cursor || null; // the last orderId received
+  try {
+    const { clinicId } = req.params;
+    const limit = parseInt(req.query.limit) || 10;
+    const cursor = req.query.cursor || null; // the last orderId received
 
-        if (!clinicId) {
-            return res.status(400).json({ message: "Clinic ID is required" });
-        }
-
-        // Query object
-        let query = { userId: clinicId };
-
-        // If cursor exists → only fetch orders created BEFORE cursor
-        if (cursor) {
-            query._id = { $lt: cursor };
-        }
-
-        // Fetch orders
-        const orders = await Order.find(query)
-            .sort({ _id: -1 })        // newest first
-            .limit(limit + 1)         // fetch one extra to check "hasNext"
-            .populate("items.itemId", "name price image")
-
-
-        let nextCursor = null;
-
-        if (orders.length > limit) {
-            // Remove extra item
-            const nextOrder = orders.pop();
-            nextCursor = nextOrder._id;  // use this for next page
-        }
-
-        res.status(200).json({
-            message: "Orders fetched successfully",
-            data: orders,
-            nextCursor,         // null means no more pages
-            hasMore: !!nextCursor
-        });
-
-    } catch (error) {
-        console.error("Cursor Pagination Error:", error);
-        res.status(500).json({
-            success: false,
-            message: "Server Error",
-            error: error.message
-        });
+    if (!clinicId) {
+      return res.status(400).json({ message: "Clinic ID is required" });
     }
+
+    // Query object
+    let query = { userId: clinicId };
+
+    // If cursor exists → only fetch orders created BEFORE cursor
+    if (cursor) {
+      query._id = { $lt: cursor };
+    }
+
+    // Fetch orders
+    const orders = await Order.find(query)
+      .sort({ _id: -1 })        // newest first
+      .limit(limit + 1)         // fetch one extra to check "hasNext"
+      .populate("items.itemId", "name price image")
+
+
+    let nextCursor = null;
+
+    if (orders.length > limit) {
+      // Remove extra item
+      const nextOrder = orders.pop();
+      nextCursor = nextOrder._id;  // use this for next page
+    }
+
+    res.status(200).json({
+      message: "Orders fetched successfully",
+      data: orders,
+      nextCursor,         // null means no more pages
+      hasMore: !!nextCursor
+    });
+
+  } catch (error) {
+    console.error("Cursor Pagination Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server Error",
+      error: error.message
+    });
+  }
 };
 
 const getOrderStats = async (req, res) => {
-    try {
-        const totalOrders = await Order.countDocuments();
+  try {
+    const totalOrders = await Order.countDocuments();
 
-        const processing = await Order.countDocuments({ orderStatus: "PROCESSING" });
-        const shipped = await Order.countDocuments({ orderStatus: "SHIPPED" });
-        const delivered = await Order.countDocuments({ orderStatus: "DELIVERED" });
-        const cancelled = await Order.countDocuments({ orderStatus: "CANCELLED" });
+    const processing = await Order.countDocuments({ orderStatus: "PROCESSING" });
+    const shipped = await Order.countDocuments({ orderStatus: "SHIPPED" });
+    const delivered = await Order.countDocuments({ orderStatus: "DELIVERED" });
+    const cancelled = await Order.countDocuments({ orderStatus: "CANCELLED" });
 
-        return res.status(200).json({
-            message: "Order stats fetched successfully",
-            stats: {
-                totalOrders,
-                processing,
-                shipped,
-                delivered,
-                cancelled
-            }
-        });
-    } catch (error) {
-        console.error("Order Stats Error:", error);
-        return res.status(500).json({ message: "Server Error", error: error.message });
-    }
+    return res.status(200).json({
+      message: "Order stats fetched successfully",
+      stats: {
+        totalOrders,
+        processing,
+        shipped,
+        delivered,
+        cancelled
+      }
+    });
+  } catch (error) {
+    console.error("Order Stats Error:", error);
+    return res.status(500).json({ message: "Server Error", error: error.message });
+  }
 };
 
 const getRecentOrders = async (req, res) => {
@@ -306,6 +306,27 @@ const getRecentOrders = async (req, res) => {
   }
 };
 
+const getAllOrdersAnalytics = async (req, res) => {
+  try {
+    const orders = await Order.find()
+      .populate("items.itemId", "name price image")
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      totalOrders: orders.length,
+      data: orders
+    });
+
+  } catch (error) {
+    console.error("Analytics Orders Error:", error);
+    return res.status(500).json({
+      message: "Server Error",
+      error: error.message
+    });
+  }
+};
+
 export {
-    createOrder, getAllOrders, getUserOrders, cancelOrder, getOrdersByClinicId, getOrderStats, getRecentOrders
+  createOrder, getAllOrders, getUserOrders, cancelOrder, getOrdersByClinicId, getOrderStats, getRecentOrders, getAllOrdersAnalytics
 }
