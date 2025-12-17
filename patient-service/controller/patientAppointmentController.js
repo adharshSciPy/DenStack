@@ -277,9 +277,6 @@ return res.status(201).json({
     });
   }
 };
-
-
- 
 const getTodaysAppointments = async (req, res) => {
   try {
     const doctorId = req.doctorId;
@@ -301,7 +298,7 @@ const getTodaysAppointments = async (req, res) => {
     const matchStage = {
       doctorId: new mongoose.Types.ObjectId(doctorId),
       appointmentDate: todayStr,
-      status: "scheduled",
+    status: { $in: ["scheduled", "needs_reschedule"] }
     };
 
     if (cursor && mongoose.Types.ObjectId.isValid(cursor)) {
@@ -443,7 +440,6 @@ const getTodaysAppointments = async (req, res) => {
     });
   }
 };
-
 const getAppointmentById = async (req, res) => {
   try {
     const { id: appointmentId } = req.params;
@@ -578,7 +574,6 @@ const getPatientHistory = async (req, res) => {
     });
   }
 };
-
 const addLabOrderToPatientHistory = async (req, res) => {
   try {
     const { id: historyId } = req.params;
@@ -628,10 +623,12 @@ const getAppointmentsByClinic = async (req, res) => {
 
     const query = { clinicId };
 
-    // Default to today if no startDate provided
+    // Date format helper
     const today = new Date();
     const formatDate = (date) =>
-      `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+      `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
+        date.getDate()
+      ).padStart(2, "0")}`;
 
     startDate = startDate || formatDate(today);
     endDate = endDate || startDate;
@@ -643,36 +640,41 @@ const getAppointmentsByClinic = async (req, res) => {
       query._id = { $gt: new mongoose.Types.ObjectId(lastId) };
     }
 
-    // Search by patient name or ID
+    // Search patients
     if (search?.trim()) {
       const matchingIds = await Patient.find(
         {
           clinicId,
           $or: [
             { name: { $regex: search, $options: "i" } },
-            { patientUniqueId: { $regex: search, $options: "i" } }
-          ]
+            { patientUniqueId: { $regex: search, $options: "i" } },
+          ],
         },
         { _id: 1 }
       )
         .lean()
-        .limit(50)
-        .then((res) => res.map((p) => p._id));
+        .limit(50);
 
-      query.patientId = matchingIds.length ? { $in: matchingIds } : { $in: [] };
+      query.patientId = matchingIds.length
+        ? { $in: matchingIds.map((p) => p._id) }
+        : { $in: [] };
     }
 
-    // Fetch appointments
+    // =====================================
+    // MAIN APPOINTMENT FETCH
+    // =====================================
     const appointments = await Appointment.find(query)
-      .sort({ _id: 1 })
+      .sort({ doctorId: 1, appointmentTime: 1 })
       .limit(Number(limit))
       .populate("patientId", "name phone email age gender patientUniqueId")
-      .select("patientId appointmentDate appointmentTime opNumber status createdAt")
+      .select(
+        "patientId appointmentDate appointmentTime opNumber status createdAt doctorId"
+      )
       .lean();
 
     const totalAppointments = await Appointment.countDocuments({
       clinicId,
-      appointmentDate: query.appointmentDate
+      appointmentDate: query.appointmentDate,
     });
 
     const nextCursor =
@@ -680,13 +682,40 @@ const getAppointmentsByClinic = async (req, res) => {
         ? appointments[appointments.length - 1]._id
         : null;
 
-    // Daily stats aggregation
+    // ==========================================
+    // ⭐ FIXED DOCTOR-WISE GROUPING
+    // ==========================================
+    const activeDoctors = await axios
+      .get(`${CLINIC_SERVICE_BASE_URL}/active-doctors?clinicId=${clinicId}`)
+      .then((r) => r.data?.doctors || []);
+
+    const doctorWise = activeDoctors.map((doc) => {
+      const docId = doc.doctorId?.toString(); // correct ID to match appointments
+
+      const groupedAppointments = appointments.filter(
+        (a) => a.doctorId?.toString() === docId
+      );
+
+      return {
+        doctor: doc.doctor,
+        meta: {
+          roleInClinic: doc.roleInClinic,
+          status: doc.status,
+          standardConsultationFee: doc.standardConsultationFee,
+        },
+        appointments: groupedAppointments,
+      };
+    });
+
+    // =====================
+    // DAILY STATS
+    // =====================
     const counts = await Appointment.aggregate([
       {
         $match: {
           clinicId: new mongoose.Types.ObjectId(clinicId),
-          appointmentDate: query.appointmentDate
-        }
+          appointmentDate: query.appointmentDate,
+        },
       },
       {
         $group: {
@@ -694,9 +723,9 @@ const getAppointmentsByClinic = async (req, res) => {
           totalAppointments: { $sum: 1 },
           completedCount: { $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] } },
           cancelledCount: { $sum: { $cond: [{ $eq: ["$status", "cancelled"] }, 1, 0] } },
-          scheduledCount: { $sum: { $cond: [{ $eq: ["$status", "scheduled"] }, 1, 0] } }
-        }
-      }
+          scheduledCount: { $sum: { $cond: [{ $eq: ["$status", "scheduled"] }, 1, 0] } },
+        },
+      },
     ]);
 
     const stats =
@@ -704,10 +733,12 @@ const getAppointmentsByClinic = async (req, res) => {
         totalAppointments: 0,
         completedCount: 0,
         cancelledCount: 0,
-        scheduledCount: 0
+        scheduledCount: 0,
       };
 
-    // Fetch tomorrow's pending reschedules
+    // ===========================
+    // Tomorrow reschedule count
+    // ===========================
     const nextDay = new Date(startDate);
     nextDay.setDate(nextDay.getDate() + 1);
     const nextDayStr = formatDate(nextDay);
@@ -715,56 +746,58 @@ const getAppointmentsByClinic = async (req, res) => {
     const tomorrowRescheduleCount = await Appointment.countDocuments({
       clinicId,
       appointmentDate: nextDayStr,
-      status: { $in: ["rescheduled", "needs_reschedule"] }
+      status: { $in: ["rescheduled", "needs_reschedule"] },
     });
 
-    // 🔥 Missing OP logic (flat array)
+    // ===========================
+    // Missing OP numbers
+    // ===========================
     const appointmentsInRange = await Appointment.find({
       clinicId,
       appointmentDate: { $gte: startDate, $lte: endDate },
-      opNumber: { $exists: true }
+      opNumber: { $exists: true },
     })
       .sort({ appointmentDate: 1, opNumber: 1 })
       .select("appointmentDate opNumber status")
       .lean();
 
-    const opNumbers = appointmentsInRange.map(a => a.opNumber).sort((a, b) => a - b);
+    const opNumbers = appointmentsInRange
+      .map((a) => a.opNumber)
+      .sort((a, b) => a - b);
 
     const missingOps = [];
     let lastOp = 0;
 
     for (const op of opNumbers) {
       if (op > lastOp + 1) {
-        for (let i = lastOp + 1; i < op; i++) {
-          missingOps.push(i);
-        }
+        for (let i = lastOp + 1; i < op; i++) missingOps.push(i);
       }
       lastOp = op;
     }
 
-    // Final Response
+    // ===========================
+    // FINAL RESPONSE
+    // ===========================
     return res.status(200).json({
       success: true,
       message: "Appointments fetched successfully",
       data: appointments,
+      doctorWise,
       totalAppointments,
       nextCursor,
       stats,
       tomorrowRescheduleCount,
-      missingOps
+      missingOps,
     });
-
   } catch (error) {
     console.error("getAppointmentsByClinic error:", error);
     return res.status(500).json({
       success: false,
       message: "Server error while fetching appointments",
-      error: error.message
+      error: error.message,
     });
   }
 };
-
-
 const clearDoctorFromAppointments = async (req, res) => {
   try {
     const { clinicId, doctorId } = req.body;
@@ -984,8 +1017,6 @@ if (!isSameDate) {
     });
   }
 };
-
-
 const cancelAppointment = async (req, res) => {
   try {
     const { id: appointmentId } = req.params;
@@ -1118,4 +1149,184 @@ const getAppointmentsByDate = async (req, res) => {
     });
   }
 };
-export { createAppointment ,getTodaysAppointments,getAppointmentById, getPatientHistory, addLabOrderToPatientHistory,getAppointmentsByClinic,clearDoctorFromAppointments,appointmentReschedule, cancelAppointment,getPatientTreatmentPlans,getAppointmentsByDate};
+const addReceptionBilling = async (req, res) => {
+  try {
+    const { clinicId, patientUniqueId } = req.query;
+    const {
+      procedureCharges = [],
+      consumableCharges = [],
+      userId,
+      userRole,
+    } = req.body;
+
+    if (!clinicId || !patientUniqueId) {
+      return res.status(400).json({
+        success: false,
+        message: "clinicId and patientUniqueId are required",
+      });
+    }
+
+    // Validate role + userId exists
+    if (!userId || !userRole) {
+      return res.status(400).json({
+        success: false,
+        message: "userId and userRole are required in body",
+      });
+    }
+
+    // 1️⃣ Find patient
+    const patient = await Patient.findOne({ clinicId, patientUniqueId });
+    if (!patient) {
+      return res.status(404).json({
+        success: false,
+        message: "Patient not found in this clinic",
+      });
+    }
+
+    // 2️⃣ Get latest unpaid visit
+    const history = await PatientHistory.findOne({
+      clinicId,
+      patientId: patient._id,
+      $or: [
+        { isPaid: false },
+        { fullPaid: false },
+        { paymentCompleted: false },
+      ],
+    })
+      .sort({ createdAt: -1 })
+      .lean(false);
+
+    if (!history) {
+      return res.status(404).json({
+        success: false,
+        message: "No unpaid visit found for this patient",
+      });
+    }
+
+    // 3️⃣ Merge new billing data
+    history.receptionBilling = {
+      ...history.receptionBilling,
+      procedureCharges: [
+        ...(history.receptionBilling?.procedureCharges || []),
+        ...procedureCharges,
+      ],
+      consumableCharges: [
+        ...(history.receptionBilling?.consumableCharges || []),
+        ...consumableCharges,
+      ],
+      updatedBy: { userId, role: userRole },
+      updatedAt: new Date(),
+    };
+
+    // 4️⃣ Recalculate total
+    if (typeof history.calculateTotalAmount === "function") {
+      history.calculateTotalAmount();
+    }
+
+    await history.save();
+
+    return res.json({
+      success: true,
+      message: "Billing updated to latest unpaid visit",
+      totalAmount: history.totalAmount,
+      history,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+};
+//this should be used for getting the unpaid bills from the clinic 
+// Helper — find patientIds via patientUniqueId search
+async function getPatientIdsByUniqueId(search, clinicId) {
+  const regex = new RegExp(search, "i");
+
+  const patients = await mongoose.model("Patient").find({
+    patientUniqueId: regex,
+    clinicId
+  }).select("_id");
+
+  return patients.map(p => p._id);
+}
+const getUnpaidBillsByClinic = async (req, res) => {
+  try {
+    const { id:clinicId } = req.params;
+    const {
+      lastId,                   
+      limit = 10,               
+      search = "",              
+      startDate,
+      endDate
+    } = req.query;
+
+    if (!clinicId || !mongoose.Types.ObjectId.isValid(clinicId)) {
+      return res.status(400).json({ success: false, message: "Invalid clinicId" });
+    }
+    const query = {
+      clinicId,
+      isPaid: false,
+    };
+    if (search) {
+      query["patientId"] = await getPatientIdsByUniqueId(search, clinicId);
+      if (query["patientId"].length === 0) {
+        return res.status(200).json({
+          success: true,
+          data: [],
+          hasMore: false
+        });
+      }
+    }
+
+    // 📅 Date filter
+    let start = startDate ? new Date(startDate) : new Date();
+    let end = endDate ? new Date(endDate) : new Date();
+
+    // If no dates passed → fetch today's unpaid bills
+    if (!startDate && !endDate) {
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
+    }
+
+    query.visitDate = { $gte: start, $lte: end };
+
+    // 🧭 Cursor Pagination
+    if (lastId) {
+      query._id = { $gt: lastId };
+    }
+
+    // -------------------------
+    // 📌 Fetch data
+    // -------------------------
+    const bills = await PatientHistory.find(query)
+      .populate("patientId", "name patientUniqueId phone")
+      .sort({ _id: 1 })          // ensure cursor pagination
+      .limit(Number(limit) + 1)  // fetch one extra to check hasMore
+      .lean();
+
+    const hasMore = bills.length > limit;
+
+    if (hasMore) bills.pop(); // remove the extra record
+
+    res.status(200).json({
+      success: true,
+      data: bills,
+      nextCursor: hasMore ? bills[bills.length - 1]._id : null,
+      hasMore
+    });
+
+  } catch (error) {
+    console.error("Error fetching unpaid bills:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch unpaid bills",
+      error: error.message
+    });
+  }
+};
+
+
+
+
+export { createAppointment ,getTodaysAppointments,getAppointmentById, getPatientHistory, addLabOrderToPatientHistory,getAppointmentsByClinic,clearDoctorFromAppointments,appointmentReschedule, cancelAppointment,getPatientTreatmentPlans,getAppointmentsByDate,addReceptionBilling,getUnpaidBillsByClinic};

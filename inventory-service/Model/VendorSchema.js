@@ -42,11 +42,11 @@ const vendorSchema = new Schema(
         address: {
             type: String
         },
-        password: {
-            type: String,
-            required: [true, "Password is required"],
-            minlength: 6,
-        },
+        // password: {
+        //     type: String,
+        //     required: [true, "Password is required"],
+        //     minlength: 6,
+        // },
         productsCount: {
             type: Number
         },

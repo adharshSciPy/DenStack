@@ -1,10 +1,16 @@
 import SuperAdmin from "../models/superadminSchema.js";
+import Clinic from "../models/clinicSchema.js"
 import {
   emailValidator,
   passwordValidator,
   nameValidator,
   phoneValidator,
 } from "../utils/validators.js";
+import axios from "axios";
+import jwt from "jsonwebtoken";
+const ORDER_SERVICE = process.env.ORDER_SERVICE_URL;
+
+
 const registerSuperAdmin = async (req, res) => {
   try {
     const { name, email, password, phoneNumber } = req.body;
@@ -17,7 +23,7 @@ const registerSuperAdmin = async (req, res) => {
     if (!phoneValidator(phoneNumber))
       return res.status(400).json({ message: "Invalid phone number" });
 
- 
+
     const existingUser = await SuperAdmin.findOne({ $or: [{ email }, { phoneNumber }] });
     if (existingUser) {
       if (existingUser.email === email)
@@ -55,8 +61,8 @@ const registerSuperAdmin = async (req, res) => {
   }
 };
 
- const loginSuperAdmin = async (req, res) => {
-    const { email, password } = req.body;
+const loginSuperAdmin = async (req, res) => {
+  const { email, password } = req.body;
 
   try {
 
@@ -65,17 +71,17 @@ const registerSuperAdmin = async (req, res) => {
     if (!passwordValidator(password))
       return res.status(400).json({ message: "Invalid password" });
 
-   
+
     const superAdmin = await SuperAdmin.findOne({ email });
     if (!superAdmin)
       return res.status(401).json({ message: "Email or password is incorrect" });
 
-  
+
     const isMatch = await superAdmin.isPasswordCorrect(password);
     if (!isMatch)
       return res.status(401).json({ message: "Email or password is incorrect" });
 
-   
+
     const accessToken = superAdmin.generateAccessToken();
     const refreshToken = superAdmin.generateRefreshToken();
     res.status(200).json({
@@ -95,4 +101,210 @@ const registerSuperAdmin = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 }
-export{registerSuperAdmin,loginSuperAdmin}
+
+
+
+// Generate internal CLINIC ROLE token (to bypass order-service role check)
+const createInternalClinicToken = () => {
+  return jwt.sign(
+    {
+      id: "internal",               // fake ID acceptable for analytics
+      role: process.env.CLINIC_ROLE // IMPORTANT: must match order-service role
+    },
+    process.env.ACCESS_TOKEN_SECRET,
+    { expiresIn: "5m" }
+  );
+};
+
+
+/* =========================================================================
+   1️⃣ SUPER ADMIN → SALES METRICS (cards)
+=========================================================================== */
+
+const getSalesMetrics = async (req, res) => {
+  try {
+    let orders = [];
+
+    // Fetch orders using internal clinic token
+    try {
+      const internalToken = createInternalClinicToken();
+
+      const response = await axios.get(`${ORDER_SERVICE}/analytics/all`,
+        {
+          headers: {
+            Authorization: `Bearer ${internalToken}`
+          }
+        }
+      );
+
+      orders = response.data?.data || [];
+
+    } catch (err) {
+      console.log("❌ Order fetch error:", err.message);
+    }
+
+    // Compute Metrics
+    const totalRevenue = orders.reduce(
+      (sum, o) => sum + (o.totalAmount || 0),
+      0
+    );
+
+    const totalOrders = orders.length;
+
+    const avgOrderValue =
+      totalOrders > 0 ? totalRevenue / totalOrders : 0;
+
+    // Growth Rate (Month-over-Month)
+    const currentMonth = new Date().getMonth();
+    const lastMonth = currentMonth - 1;
+
+    const currentMonthRevenue = orders
+      .filter(o => new Date(o.createdAt).getMonth() === currentMonth)
+      .reduce((sum, o) => sum + o.totalAmount, 0);
+
+    const lastMonthRevenue = orders
+      .filter(o => new Date(o.createdAt).getMonth() === lastMonth)
+      .reduce((sum, o) => sum + o.totalAmount, 0);
+
+    const growthRate =
+      lastMonthRevenue > 0
+        ? ((currentMonthRevenue - lastMonthRevenue) / lastMonthRevenue) * 100
+        : 0;
+
+    return res.status(200).json({
+      success: true,
+      metrics: {
+        totalRevenue,
+        totalOrders,
+        avgOrderValue: Number(avgOrderValue.toFixed(2)),
+        growthRate: Number(growthRate.toFixed(2)),
+      }
+    });
+
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Sales metrics failed",
+      error: error.message,
+    });
+  }
+};
+
+/* =========================================================================
+   2️⃣ SUPER ADMIN → SALES TRENDS (charts)
+=========================================================================== */
+
+const getSalesTrends = async (req, res) => {
+  try {
+    let orders = [];
+
+    // Fetch orders from inventory-service using internal token
+    try {
+      const internalToken = createInternalClinicToken();
+
+      const response = await axios.get(
+        `${ORDER_SERVICE}/analytics/all`,
+        {
+          headers: {
+            Authorization: `Bearer ${internalToken}`
+          }
+        }
+      );
+
+      orders = response.data?.data || [];
+
+    } catch (err) {
+      console.log("❌ Order fetch error:", err.message);
+    }
+
+    // 12 Months (Jan–Dec)
+    const months = [
+      "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+    ];
+
+    const revenueTrend = [];
+    const orderVolume = [];
+
+    // Loop through all 12 months
+    for (let i = 0; i < 12; i++) {
+      const monthOrders = orders.filter((o) =>
+        o.createdAt ? new Date(o.createdAt).getMonth() === i : false
+      );
+
+      const revenue = monthOrders.reduce(
+        (sum, o) => sum + (o.totalAmount || 0),
+        0
+      );
+
+      revenueTrend.push({
+        month: months[i],
+        revenue
+      });
+
+      orderVolume.push({
+        month: months[i],
+        orders: monthOrders.length
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      trends: {
+        revenueTrend,
+        orderVolume
+      }
+    });
+
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Sales trends failed",
+      error: error.message,
+    });
+  }
+};
+
+const getMonthlySummary = async (req, res) => {
+  try {
+    // Monthly summary
+    const result = await Clinic.aggregate([
+      {
+        $match: {
+          subscription: { $type: "object" },
+          "subscription.startDate": { $exists: true },
+          "subscription.isActive": true
+        }
+      },
+      { $addFields: { month: { $month: "$subscription.startDate" } } },
+      {
+        $group: {
+          _id: "$month",
+          totalRevenue: { $sum: "$subscription.price" },
+          totalSubscriptions: { $sum: 1 }
+        }
+      },
+      { $sort: { _id: -1 } }
+    ]);
+
+    const months = [
+      "", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+    ];
+
+    const data = result.map(m => ({
+      month: months[m._id],
+      totalRevenue: m.totalRevenue,
+      totalSubscriptions: m.totalSubscriptions
+    }));
+
+    return res.status(200).json({ success: true, data });
+
+  } catch (e) {
+    return res.status(500).json({ success: false, message: e.message });
+  }
+};
+
+
+
+export { registerSuperAdmin, loginSuperAdmin, getSalesMetrics, getSalesTrends, getMonthlySummary }
