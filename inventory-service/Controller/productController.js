@@ -1,5 +1,6 @@
 import Product from "../Model/ProductSchema.js";
 import Category from "../Model/CategorySchema.js";
+import Vendor from "../Model/VendorSchema.js";
 
 // Create a new product with image upload
 const createProduct = async (req, res) => {
@@ -336,6 +337,87 @@ const getProductsByIds = async (req, res) => {
   }
 };
 
+const getProductDashboardMetrics = async (req, res) => {
+  try {
+    // Total Products
+    const totalProducts = await Product.countDocuments();
+
+    // Avg Rating
+    const avgRatingData = await Product.aggregate([
+      { $group: { _id: null, avg: { $avg: "$rating" } } }
+    ]);
+    const avgRating = avgRatingData[0]?.avg || 0;
+
+    // Low stock (<10)
+    const lowStockCount = await Product.countDocuments({ stock: { $lt: 10 } });
+
+    // Inventory Value
+    const inventoryValueData = await Product.aggregate([
+      {
+        $group: {
+          _id: null,
+          total: { $sum: { $multiply: ["$price", "$stock"] } }
+        }
+      }
+    ]);
+    const totalInventoryValue = inventoryValueData[0]?.total || 0;
+
+    res.status(200).json({
+      success: true,
+      data: {
+        totalProducts,
+        avgRating: avgRating.toFixed(1),
+        lowStockCount,
+        totalInventoryValue,
+      },
+    });
+
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+const getProductInventoryList = async (req, res) => {
+  try {
+    const products = await Product.find()
+      .populate("mainCategory", "name")
+      .populate("subCategory", "name")
+      .populate("brand", "name")
+
+    const formatted = products.map((item) => ({
+      _id: item._id,
+      productId: item.productId,
+      name: item.name,
+      image: item.image?.[0] || "",
+
+      brand: item.brand?.name,
+      mainCategory: item.mainCategory?.name,
+      subCategory: item.subCategory?.name || null,
+
+      price: item.price,
+      stock: item.stock,
+      status: item.status,
+
+      // Margin only works if cost exists (optional)
+      margin: item.cost
+        ? Math.round(((item.price - item.cost) / item.price) * 100)
+        : null,
+
+      rating: item.rating || 0,
+      isLowStock: item.isLowStock,
+    }));
+
+    res.status(200).json({
+      success: true,
+      products: formatted,
+    });
+
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+
 
 export {
   createProduct,
@@ -345,5 +427,5 @@ export {
   getProductsByBrand,
   updateProduct,
   deleteProduct,
-  getProductsByIds
+  getProductsByIds, getProductDashboardMetrics, getProductInventoryList
 };
