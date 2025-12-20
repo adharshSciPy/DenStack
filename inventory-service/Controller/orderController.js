@@ -327,6 +327,47 @@ const getAllOrdersAnalytics = async (req, res) => {
   }
 };
 
+const PaymentSummary = async (req, res) => {
+  try {
+    const result = await Order.aggregate([
+      {
+        $group: {
+          _id: "$paymentStatus",
+          totalAmount: { $sum: "$totalAmount" }
+        }
+      }
+    ]);
+
+    let totalPaidAmount = 0;
+    let totalUnpaidAmount = 0;
+
+    result.forEach(item => {
+      if (item._id === "PAID") {
+        totalPaidAmount += item.totalAmount;
+      } else {
+        totalUnpaidAmount += item.totalAmount;
+      }
+    });
+
+    const finalRevenue = totalPaidAmount;
+
+    return res.status(200).json({
+      success: true,
+      totalPaidAmount,
+      totalUnpaidAmount,
+      finalRevenue
+    });
+
+  } catch (error) {
+    console.error("Order Payment Summary Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching order payment summary",
+      error: error.message
+    });
+  }
+};
+
 export {
-  createOrder, getAllOrders, getUserOrders, cancelOrder, getOrdersByClinicId, getOrderStats, getRecentOrders, getAllOrdersAnalytics
+  createOrder, getAllOrders, getUserOrders, cancelOrder, getOrdersByClinicId, getOrderStats, getRecentOrders, getAllOrdersAnalytics, PaymentSummary
 }

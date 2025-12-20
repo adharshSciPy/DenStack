@@ -1,5 +1,5 @@
 import { Router } from "express"
-import { createOrder, getAllOrders, getUserOrders, cancelOrder, getOrdersByClinicId, getOrderStats, getRecentOrders, getAllOrdersAnalytics } from "../Controller/orderController.js"
+import { createOrder, getAllOrders, getUserOrders, cancelOrder, getOrdersByClinicId, getOrderStats, getRecentOrders, getAllOrdersAnalytics, PaymentSummary } from "../Controller/orderController.js"
 import { verifyAuthToken, authorizeRoles } from "../middlewares/authmiddleware.js";
 const CLINIC_ROLE = process.env.CLINIC_ROLE
 const SUPERADMIN_ROLE = process.env.SUPERADMIN_ROLE
@@ -16,4 +16,5 @@ orderRouter.get("/orderStats", verifyAuthToken, authorizeRoles(SUPERADMIN_ROLE),
 orderRouter.get("/recentOrders", verifyAuthToken, authorizeRoles(SUPERADMIN_ROLE), getRecentOrders);
 
 orderRouter.get("/analytics/all", getAllOrdersAnalytics);
+orderRouter.get("/payment-summary", PaymentSummary);
 export default orderRouter;
