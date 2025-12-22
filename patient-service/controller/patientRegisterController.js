@@ -630,10 +630,15 @@ const getPatientFullCRM = async (req, res) => {
   }
 
   try {
-    // 1️⃣ Patient
+    /* ================== 1️⃣ PATIENT ================== */
     const patient = await Patient.findOne(
       { patientUniqueId: uniqueId, clinicId },
-      { password: 0, otpToken: 0, otpTokenExpiry: 0 }
+      {
+        password: 0,
+        otpToken: 0,
+        otpTokenExpiry: 0,
+        __v: 0,
+      }
     ).lean();
 
     if (!patient) {
@@ -645,30 +650,9 @@ const getPatientFullCRM = async (req, res) => {
 
     const patientId = patient._id;
 
-    // 2️⃣ Fetch CRM data (NO populate)
-    const [
-      visitHistory,
-      appointments,
-      treatmentPlans,
-      billingSummary,
-    ] = await Promise.all([
-      PatientHistory.find(
-        { patientId, clinicId },
-        {
-          symptoms: 1,
-          diagnosis: 1,
-          prescriptions: 1,
-          dentalChart: 1,
-          totalAmount: 1,
-          isPaid: 1,
-          visitDate: 1,
-          doctorId: 1,
-          appointmentId: 1,
-          receptionBilling: 1,
-          createdBy: 1,
-          updatedBy: 1,
-        }
-      )
+    /* ================== 2️⃣ VISITS / APPTS / PLANS ================== */
+    const [visitHistory, appointments, treatmentPlans] = await Promise.all([
+      PatientHistory.find({ patientId, clinicId })
         .sort({ visitDate: -1 })
         .lean(),
 
@@ -685,43 +669,43 @@ const getPatientFullCRM = async (req, res) => {
         .sort({ appointmentDate: -1 })
         .lean(),
 
-      TreatmentPlan.find(
-        { patientId, clinicId },
-        {
-          planName: 1,
-          status: 1,
-          stages: 1,
-          dentalChart: 1,
-          createdAt: 1,
-          createdByDoctorId: 1,
-        }
-      )
+      TreatmentPlan.find({ patientId, clinicId })
         .sort({ createdAt: -1 })
         .lean(),
+    ]);
 
-      PatientHistory.aggregate([
-        {
-          $match: {
-            patientId: new mongoose.Types.ObjectId(patientId),
-            clinicId: new mongoose.Types.ObjectId(clinicId),
-          },
+    /* ================== 3️⃣ SUMMARY ================== */
+    const summaryAgg = await PatientHistory.aggregate([
+      {
+        $match: {
+          patientId,
+          clinicId: new mongoose.Types.ObjectId(clinicId),
         },
-        {
-          $group: {
-            _id: null,
-            totalSpent: { $sum: "$totalAmount" },
-            totalVisits: { $sum: 1 },
-            unpaidAmount: {
-              $sum: {
-                $cond: [{ $eq: ["$isPaid", false] }, "$totalAmount", 0],
-              },
+      },
+      {
+        $group: {
+          _id: null,
+          totalVisits: { $sum: 1 },
+          totalSpent: { $sum: "$totalAmount" },
+          unpaidAmount: {
+            $sum: {
+              $cond: [{ $eq: ["$isPaid", false] }, "$totalAmount", 0],
             },
           },
         },
-      ]),
+      },
     ]);
 
-    // 3️⃣ Collect UNIQUE doctorIds
+    const summary = Object.freeze({
+      totalVisits: summaryAgg[0]?.totalVisits || 0,
+      totalSpent: summaryAgg[0]?.totalSpent || 0,
+      unpaidAmount: summaryAgg[0]?.unpaidAmount || 0,
+      activeTreatmentPlans: treatmentPlans.filter(
+        t => t.status === "ongoing"
+      ).length,
+    });
+
+    /* ================== 4️⃣ DOCTOR ENRICH ================== */
     const doctorIds = new Set();
 
     visitHistory.forEach(v => {
@@ -734,44 +718,32 @@ const getPatientFullCRM = async (req, res) => {
       if (a.doctorId) doctorIds.add(a.doctorId.toString());
     });
 
-    treatmentPlans.forEach(p => {
-      if (p.createdByDoctorId)
-        doctorIds.add(p.createdByDoctorId.toString());
+    treatmentPlans.forEach(t => {
+      if (t.createdByDoctorId)
+        doctorIds.add(t.createdByDoctorId.toString());
     });
 
-    // 4️⃣ Call Doctor Service (PARALLEL)
-   const doctorResponses = await Promise.all(
-  [...doctorIds].map(async (id) => {
-    try {
-      const { data } = await axios.get(
-        `${AUTH_SERVICE_BASE_URL}/doctor/details/${id}`,
-        { timeout: 3000 }
-      );
+    const doctorResponses = await Promise.all(
+      [...doctorIds].map(async id => {
+        try {
+          const { data } = await axios.get(
+            `${AUTH_SERVICE_BASE_URL}/doctor/details/${id}`,
+            { timeout: 3000 }
+          );
+          return [id, data?.data ? { _id: id, name: data.data.name } : null];
+        } catch {
+          return [id, null];
+        }
+      })
+    );
 
-      // ✅ ONLY what you need
-      const doctor = data?.data
-        ? { _id: id, name: data.data.name }
-        : null;
-
-      return [id, doctor];
-    } catch (err) {
-      console.error("Doctor fetch failed:", id);
-      return [id, null];
-    }
-  })
-);
-
-
-    // 5️⃣ Build doctor map
     const doctorMap = {};
     doctorResponses.forEach(([id, doctor]) => {
       doctorMap[id] = doctor;
     });
 
-    const getDoctor = (id) =>
-      id ? doctorMap[id.toString()] || null : null;
+    const getDoctor = id => (id ? doctorMap[id.toString()] || null : null);
 
-    // 6️⃣ Attach doctor details
     visitHistory.forEach(v => {
       v.doctor = getDoctor(v.doctorId);
       v.createdByDoctor = getDoctor(v.createdBy);
@@ -782,41 +754,102 @@ const getPatientFullCRM = async (req, res) => {
       a.doctor = getDoctor(a.doctorId);
     });
 
-    treatmentPlans.forEach(p => {
-      p.createdByDoctor = getDoctor(p.createdByDoctorId);
+    treatmentPlans.forEach(t => {
+      t.createdByDoctor = getDoctor(t.createdByDoctorId);
     });
 
-    // 7️⃣ Summary
-    const summary = {
-      totalVisits: billingSummary[0]?.totalVisits || 0,
-      totalSpent: billingSummary[0]?.totalSpent || 0,
-      unpaidAmount: billingSummary[0]?.unpaidAmount || 0,
-      activeTreatmentPlans: treatmentPlans.filter(
-        (p) => p.status === "ongoing"
-      ).length,
-    };
+    /* ================== 5️⃣ MERGED DENTAL CHART ================== */
+    const dentalChart = visitHistory
+      .flatMap(v => v.dentalChart || [])
+      .sort(
+        (a, b) =>
+          new Date(b.updatedAt || b.createdAt) -
+          new Date(a.updatedAt || a.createdAt)
+      );
 
-    // 8️⃣ Response
-    res.status(200).json({
+    /* ================== 6️⃣ FINAL RESPONSE ================== */
+    return res.status(200).json({
       success: true,
       data: {
-        patientProfile: patient,
-        medicalHistory: patient.medicalHistory,
-        dentalChart: patient.dentalChart,
+        patientProfile: {
+          _id: patient._id,
+          name: patient.name,
+          phone: patient.phone,
+          email: patient.email,
+          gender: patient.gender,
+          age: patient.age,
+          bloodGroup: patient.bloodGroup,
+          dateOfBirth: patient.dateOfBirth,
+          height: patient.height,
+          weight: patient.weight,
+          address: patient.address,
+          emergencyContact: patient.emergencyContact,
+          patientUniqueId: patient.patientUniqueId,
+          patientRandomId: patient.patientRandomId,
+          createdAt: patient.createdAt,
+        },
+
+        medicalHistory: {
+          conditions: patient.medicalHistory?.conditions || [],
+          allergies: patient.medicalHistory?.allergies || [],
+          surgeries: patient.medicalHistory?.surgeries || [],
+          familyHistory: patient.medicalHistory?.familyHistory || [],
+        },
+
+        dentalChart,
         visitHistory,
         appointments,
         treatmentPlans,
         summary,
       },
     });
-
   } catch (error) {
     console.error("CRM Fetch Error:", error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Server error while fetching patient CRM",
     });
   }
 };
 
-export { registerPatient, getPatientWithUniqueId, getAllPatients, patientCheck, getPatientsByClinic, getPatientById, sendSMSLink, setPassword, login,getPatientByRandomId ,addLabOrderToPatient,getPatientFullCRM}
+
+const updatePatientDetails = async (req, res) => {
+  try {
+    const { id:patientId } = req.params;
+
+    const updates = req.body;
+
+    const patient = await Patient.findByIdAndUpdate(
+      patientId,
+      {
+        $set: updates
+      },
+      {
+        new: true,
+        runValidators: true
+      }
+    );
+
+    if (!patient) {
+      return res.status(404).json({
+        success: false,
+        message: "Patient not found"
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Patient details updated successfully",
+      data: patient
+    });
+
+  } catch (error) {
+    console.error("❌ Update patient error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+export { registerPatient, getPatientWithUniqueId, getAllPatients, patientCheck, getPatientsByClinic, getPatientById, sendSMSLink, setPassword, login,getPatientByRandomId ,addLabOrderToPatient,getPatientFullCRM,updatePatientDetails}
