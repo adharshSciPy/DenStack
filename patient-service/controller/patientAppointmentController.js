@@ -159,7 +159,7 @@ const createAppointment = async (req, res) => {
       const availabilities = doctorData?.availability || [];
 
       if (availabilities.length) {
-        const days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+        const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
         const appointmentDay = days[appointmentDateTime.getDay()];
         const appointmentMinutes = hour * 60 + minute;
 
@@ -216,57 +216,57 @@ const createAppointment = async (req, res) => {
 
 
     // ===================== 8️⃣ Create Appointment =====================
-  const appointment = new Appointment({
-  clinicId,
-  patientId,
-  doctorId,
-  department,
-  appointmentDate,
-  appointmentTime,
-  createdBy: userId,
-  status: doctorAvailable ? "scheduled" : "needs_reschedule",
-  opNumber: nextOpNumber,
-  doctorAvailable,
-  availabilityMatchedSlot
-});
+    const appointment = new Appointment({
+      clinicId,
+      patientId,
+      doctorId,
+      department,
+      appointmentDate,
+      appointmentTime,
+      createdBy: userId,
+      status: doctorAvailable ? "scheduled" : "needs_reschedule",
+      opNumber: nextOpNumber,
+      doctorAvailable,
+      availabilityMatchedSlot
+    });
 
-await appointment.save();
+    await appointment.save();
 
-// ===================== 9️⃣ Send Confirmation Notification =====================
-// Fetch clinic name for notification
-let clinicName = "Our Clinic";
-try {
-  const clinicRes = await axios.get(`${AUTH_SERVICE_BASE_URL}/clinic/view-clinic/${clinicId}`);
-  clinicName = clinicRes.data?.data?.name || clinicRes.data?.name || "Our Clinic";
-} catch (err) {
-  console.warn("Could not fetch clinic name:", err.message);
-}
+    // ===================== 9️⃣ Send Confirmation Notification =====================
+    // Fetch clinic name for notification
+    let clinicName = "Our Clinic";
+    try {
+      const clinicRes = await axios.get(`${AUTH_SERVICE_BASE_URL}/clinic/view-clinic/${clinicId}`);
+      clinicName = clinicRes.data?.data?.name || clinicRes.data?.name || "Our Clinic";
+    } catch (err) {
+      console.warn("Could not fetch clinic name:", err.message);
+    }
 
-// Send notification (non-blocking)
-try {
-  await axios.post(`${NOTIFICATION_SERVICE_URL}/api/notifications/send-confirmation`, {
-    appointmentId: appointment._id,
-    clinicId,
-    patientId,
-    doctorId,
-    appointmentDate,
-    appointmentTime,
-    opNumber: nextOpNumber,
-    clinicName
-  });
-  console.log("✅ Confirmation notification sent");
-} catch (notifError) {
-  console.error("⚠️ Notification failed but appointment created:", notifError.message);
-}
+    // Send notification (non-blocking)
+    try {
+      await axios.post(`${NOTIFICATION_SERVICE_URL}/api/notifications/send-confirmation`, {
+        appointmentId: appointment._id,
+        clinicId,
+        patientId,
+        doctorId,
+        appointmentDate,
+        appointmentTime,
+        opNumber: nextOpNumber,
+        clinicName
+      });
+      console.log("✅ Confirmation notification sent");
+    } catch (notifError) {
+      console.error("⚠️ Notification failed but appointment created:", notifError.message);
+    }
 
-// ===================== 🔟 Return Response =====================
-return res.status(201).json({
-  success: true,
-  message: doctorAvailable
-    ? "Appointment created successfully"
-    : "Doctor unavailable — appointment marked for reschedule",
-  data: appointment
-});
+    // ===================== 🔟 Return Response =====================
+    return res.status(201).json({
+      success: true,
+      message: doctorAvailable
+        ? "Appointment created successfully"
+        : "Doctor unavailable — appointment marked for reschedule",
+      data: appointment
+    });
 
   } catch (error) {
     console.error("Error in createAppointment:", error);
@@ -298,7 +298,7 @@ const getTodaysAppointments = async (req, res) => {
     const matchStage = {
       doctorId: new mongoose.Types.ObjectId(doctorId),
       appointmentDate: todayStr,
-    status: { $in: ["scheduled", "needs_reschedule"] }
+      status: { $in: ["scheduled", "needs_reschedule"] }
     };
 
     if (cursor && mongoose.Types.ObjectId.isValid(cursor)) {
@@ -473,7 +473,7 @@ const getAppointmentById = async (req, res) => {
 const getPatientHistory = async (req, res) => {
   try {
     const { id: patientId } = req.params;
-  const { clinicId } = req.query;
+    const { clinicId } = req.query;
 
     // ✅ 1. Validate IDs
     if (!mongoose.Types.ObjectId.isValid(patientId)) {
@@ -967,21 +967,21 @@ const appointmentReschedule = async (req, res) => {
     }
     console.log("🔹 Determining OP number...");
 
-const isSameDate = appointment.appointmentDate === newDate;
-let updatedOpNumber = appointment.opNumber; // default if same date
-let rescheduledFromOp = appointment.rescheduledFromOp || null;
+    const isSameDate = appointment.appointmentDate === newDate;
+    let updatedOpNumber = appointment.opNumber; // default if same date
+    let rescheduledFromOp = appointment.rescheduledFromOp || null;
 
-if (!isSameDate) {
-  console.log("📆 Date changed → clearing OP number for future day");
+    if (!isSameDate) {
+      console.log("📆 Date changed → clearing OP number for future day");
 
-  // Store original OP to show badge
-  rescheduledFromOp = appointment.opNumber;
+      // Store original OP to show badge
+      rescheduledFromOp = appointment.opNumber;
 
-  // Clear OP number, future day will assign manually
-  updatedOpNumber = null;
-} else {
-  console.log("📌 Same day → keeping existing OP number:", updatedOpNumber);
-}
+      // Clear OP number, future day will assign manually
+      updatedOpNumber = null;
+    } else {
+      console.log("📌 Same day → keeping existing OP number:", updatedOpNumber);
+    }
 
 
     // -------------------- UPDATE APPOINTMENT --------------------
@@ -991,8 +991,8 @@ if (!isSameDate) {
     appointment.updatedBy = userId;
     appointment.status = doctorAvailable ? "scheduled" : "needs_reschedule";
     appointment.doctorAvailable = doctorAvailable;
-     appointment.opNumber = updatedOpNumber;
-     appointment.rescheduledFromOp = rescheduledFromOp;
+    appointment.opNumber = updatedOpNumber;
+    appointment.rescheduledFromOp = rescheduledFromOp;
 
     await appointment.save();
 
@@ -1020,7 +1020,7 @@ if (!isSameDate) {
 const cancelAppointment = async (req, res) => {
   try {
     const { id: appointmentId } = req.params;
-    const { cancelledBy } = req.body; 
+    const { cancelledBy } = req.body;
 
     // ✅ Validate appointmentId
     if (!appointmentId || !mongoose.Types.ObjectId.isValid(appointmentId)) {
@@ -1063,7 +1063,7 @@ const cancelAppointment = async (req, res) => {
 };
 const getPatientTreatmentPlans = async (req, res) => {
   try {
-    const { id:patientId } = req.params;
+    const { id: patientId } = req.params;
 
     if (!patientId) {
       return res.status(400).json({
@@ -1105,41 +1105,41 @@ const getPatientTreatmentPlans = async (req, res) => {
 const getAppointmentsByDate = async (req, res) => {
   try {
     const { date, status } = req.query;
-    
+
     if (!date) {
       return res.status(400).json({
         success: false,
         message: 'Date parameter is required (format: YYYY-MM-DD)'
       });
     }
-    
+
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid date format. Use YYYY-MM-DD'
       });
     }
-    
+
     const query = { appointmentDate: date };
-    
+
     if (status) {
       query.status = status;
     }
-    
+
     // ✅ FIXED: Only populate patientId
     const appointments = await Appointment.find(query)
       .populate('patientId', 'name email phone whatsappNumber')
       .sort({ appointmentTime: 1 })
       .lean();
-    
+
     console.log(`📋 Found ${appointments.length} appointments for ${date}`);
-    
+
     res.status(200).json({
       success: true,
       count: appointments.length,
       data: appointments
     });
-    
+
   } catch (error) {
     console.error('❌ Error fetching appointments by date:', error);
     res.status(500).json({
@@ -1252,11 +1252,11 @@ async function getPatientIdsByUniqueId(search, clinicId) {
 }
 const getUnpaidBillsByClinic = async (req, res) => {
   try {
-    const { id:clinicId } = req.params;
+    const { id: clinicId } = req.params;
     const {
-      lastId,                   
-      limit = 10,               
-      search = "",              
+      lastId,
+      limit = 10,
+      search = "",
       startDate,
       endDate
     } = req.query;
@@ -1326,7 +1326,19 @@ const getUnpaidBillsByClinic = async (req, res) => {
   }
 };
 
+const getAllAppointments = async (req, res) => {
+  try {
+    const data = await Appointment.find().lean();
+    return res.status(200).json({ success: true, data });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
 
 
 
-export { createAppointment ,getTodaysAppointments,getAppointmentById, getPatientHistory, addLabOrderToPatientHistory,getAppointmentsByClinic,clearDoctorFromAppointments,appointmentReschedule, cancelAppointment,getPatientTreatmentPlans,getAppointmentsByDate,addReceptionBilling,getUnpaidBillsByClinic};
+
+export {
+  createAppointment, getTodaysAppointments, getAppointmentById, getPatientHistory, addLabOrderToPatientHistory, getAppointmentsByClinic, clearDoctorFromAppointments, appointmentReschedule, cancelAppointment, getPatientTreatmentPlans, getAppointmentsByDate, addReceptionBilling, getUnpaidBillsByClinic
+  , getAllAppointments
+};
