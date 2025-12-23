@@ -1,5 +1,13 @@
 import SuperAdmin from "../models/superadminSchema.js";
 import Clinic from "../models/clinicSchema.js"
+import Doctor from "../models/doctorSchema.js";
+import Nurse from "../models/nurseSchema.js";
+import Pharmacist from "../models/pharmacistSchema.js";
+import Reception from "../models/receptionSchema.js";
+import Assistant from "../models/assistantSchema.js";
+import Technician from "../models/technicianSchema.js";
+import Accountant from "../models/accountantSchema.js";
+import PRO from "../models/PROSchema.js";
 import {
   emailValidator,
   passwordValidator,
@@ -11,6 +19,7 @@ import jwt from "jsonwebtoken";
 const ORDER_SERVICE = process.env.ORDER_SERVICE_URL;
 const PATIENT_SERVICE = process.env.PATIENT_SERVICE_BASE_URL;
 const LAB_ORDER_SERVICE = process.env.LAB_ORDER_SERVICE_BASE_URL;
+const INVENTORY_SERVICE_BASE_URL = process.env.INVENTORY_SERVICE_BASE_URL || "http://localhost:8004";
 
 
 const registerSuperAdmin = async (req, res) => {
@@ -385,6 +394,86 @@ const getDashboardStats = async (req, res) => {
   }
 };
 
+const getDashboardSummary = async (req, res) => {
+  try {
+    /* ================================================================
+       1️⃣ USER COUNTS
+    ================================================================= */
+    const totalClinics = await Clinic.countDocuments();
+    const totalDoctors = await Doctor.countDocuments();
+    const totalAccountants = await Accountant.countDocuments();
+    const totalAssistants = await Assistant.countDocuments();
+    const totalNurses = await Nurse.countDocuments();
+    const totalPharmacists = await Pharmacist.countDocuments();
+    const totalReceptions = await Reception.countDocuments();
+    const totalTechnicians = await Technician.countDocuments();
+    const totalPRO = await PRO.countDocuments();
+
+    const totalUsers =
+      totalClinics +
+      totalDoctors +
+      totalAccountants +
+      totalAssistants +
+      totalNurses +
+      totalPharmacists +
+      totalReceptions +
+      totalTechnicians +
+      totalPRO;
+
+    /* ================================================================
+       2️⃣ SUBSCRIPTION REVENUE
+    ================================================================= */
+    const revenueAgg = await Clinic.aggregate([
+
+      {
+        $group: {
+          _id: null,
+          totalRevenue: { $sum: "$subscription.price" },
+          totalSubscriptions: { $sum: 1 }
+        }
+      }
+    ]);
+
+    const subscriptionRevenue = revenueAgg[0]?.totalRevenue || 0;
+
+    /* ================================================================
+       3️⃣ E-COMMERCE REVENUE (FROM INVENTORY SERVICE)
+    ================================================================= */
+    let ecommerceRevenue = 0;
+
+    try {
+      const ecommerceRes = await axios.get(
+        `${INVENTORY_SERVICE_BASE_URL}/api/v1/order/payment-summary`
+      );
+
+      if (ecommerceRes.data?.success) {
+        ecommerceRevenue = ecommerceRes.data.finalRevenue || 0;
+        unpaidAmount = ecommerceRes.data.totalUnpaidAmount || 0;
+      }
+    } catch (err) {
+      console.error("⚠️ Inventory service not reachable");
+    }
+
+    /* ================================================================
+       4️⃣ FINAL RESPONSE
+    ================================================================= */
+    return res.status(200).json({
+      success: true,
+      totalClinics,
+      totalUsers,
+      subscriptionRevenue,
+      ecommerceRevenue,
+    });
+
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching dashboard summary",
+      error: error.message
+    });
+  }
+};
 
 
-export { registerSuperAdmin, loginSuperAdmin, getSalesMetrics, getSalesTrends, getMonthlySummary, getDashboardStats }
+
+export { registerSuperAdmin, loginSuperAdmin, getSalesMetrics, getSalesTrends, getMonthlySummary, getDashboardStats, getDashboardSummary }

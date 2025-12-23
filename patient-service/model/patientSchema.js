@@ -99,7 +99,42 @@ const patientSchema = new mongoose.Schema({
   },
   age: { type: Number, min: 0, max: 150 },
   gender: { type: String, enum: ["Male", "Female", "Other"], default: "Other" },
+  dateOfBirth: {
+    type: Date
+  },
 
+  bloodGroup: {
+    type: String,
+    enum: ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]
+  },
+
+  height: {
+    type: Number,
+    min: 30,
+    max: 300
+  },
+
+  weight: {
+    type: Number, 
+    min: 1,
+    max: 500
+  },
+
+  address: {
+    line1: { type: String },
+    line2: { type: String },
+    city: { type: String },
+    state: { type: String },
+    pincode: { type: String }
+  },
+    emergencyContact: {
+    name: { type: String },
+    relation: { type: String },
+    phone: {
+      type: Number,
+      match: [/^\d{10}$/, "Emergency contact must be 10 digits"]
+    }
+  },
   medicalHistory: {
     conditions: [String],
     surgeries: [String],

@@ -1335,10 +1335,108 @@ const getAllAppointments = async (req, res) => {
   }
 };
 
+const getMonthlyAppointmentsClinicWise = async (req, res) => {
+  try {
+    const {id:clinicId} =req.params
+    let { month, year } = req.query;
+
+    if (!clinicId) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing clinicId in token",
+      });
+    }
+
+    const now = new Date();
+    month = month ? Number(month) : now.getMonth() + 1;
+    year = year ? Number(year) : now.getFullYear();
+
+    const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
+    const endDateObj = new Date(year, month, 0);
+    const endDate = `${year}-${String(month).padStart(2, "0")}-${String(
+      endDateObj.getDate()
+    ).padStart(2, "0")}`;
+
+    const pipeline = [
+      {
+        $match: {
+          clinicId: new mongoose.Types.ObjectId(clinicId),
+          appointmentDate: { $gte: startDate, $lte: endDate },
+          status: { $in: ["scheduled", "needs_reschedule"] },
+        },
+      },
+
+      // 👤 Patient lookup
+      {
+        $lookup: {
+          from: "patients",
+          localField: "patientId",
+          foreignField: "_id",
+          as: "patient",
+        },
+      },
+      { $unwind: { path: "$patient", preserveNullAndEmptyArrays: true } },
+
+      { $sort: { appointmentDate: 1, _id: -1 } },
+
+      // 📅 Group by DATE
+      {
+        $group: {
+          _id: "$appointmentDate",
+          appointments: {
+            $push: {
+              _id: "$_id",
+              appointmentDate: "$appointmentDate",
+              appointmentTime: "$appointmentTime",
+              status: "$status",
+              opNumber: "$opNumber",
+              doctorId: "$doctorId",
+              patient: {
+                _id: "$patient._id",
+                name: "$patient.name",
+                phone: "$patient.phone",
+                age: "$patient.age",
+                gender: "$patient.gender",
+                patientUniqueId: "$patient.patientUniqueId",
+              },
+            },
+          },
+        },
+      },
+
+      { $sort: { _id: 1 } },
+    ];
+
+    const data = await Appointment.aggregate(pipeline);
+
+    return res.status(200).json({
+      success: true,
+      message: "Clinic-wise monthly appointments fetched successfully",
+      clinicId,
+      month,
+      year,
+      count: data.length,
+      data: data.map((day) => ({
+        date: day._id,
+        appointments: day.appointments,
+      })),
+    });
+  } catch (err) {
+    console.error("getMonthlyAppointmentsClinicWise error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Server error while fetching monthly appointments",
+      error: err.message,
+    });
+  }
+};
+
+
+
 
 
 
 export {
   createAppointment, getTodaysAppointments, getAppointmentById, getPatientHistory, addLabOrderToPatientHistory, getAppointmentsByClinic, clearDoctorFromAppointments, appointmentReschedule, cancelAppointment, getPatientTreatmentPlans, getAppointmentsByDate, addReceptionBilling, getUnpaidBillsByClinic
-  , getAllAppointments
+  , getAllAppointments,getMonthlyAppointmentsClinicWise
 };
