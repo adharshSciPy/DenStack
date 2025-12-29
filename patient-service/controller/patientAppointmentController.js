@@ -1359,12 +1359,15 @@ const getMonthlyAppointmentsClinicWise = async (req, res) => {
 
     const pipeline = [
       {
-        $match: {
-          clinicId: new mongoose.Types.ObjectId(clinicId),
-          appointmentDate: { $gte: startDate, $lte: endDate },
-          status: { $in: ["scheduled", "needs_reschedule"] },
-        },
-      },
+  $match: {
+    clinicId: new mongoose.Types.ObjectId(clinicId),
+    appointmentDate: { $gte: startDate, $lte: endDate },
+    status: { 
+      $in: ["scheduled", "needs_reschedule", "completed","pending"] 
+    }
+  }
+},
+
 
       // 👤 Patient lookup
       {
