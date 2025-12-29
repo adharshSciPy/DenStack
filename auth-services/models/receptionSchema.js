@@ -104,6 +104,10 @@ const receptionSchema = new Schema(
       type: String,
       default: RECEPTION_ROLE,
     },
+    clinicId:{
+      type:mongoose.Schema.Types.ObjectId,
+      required:true
+    }
   },
   { timestamps: true }
 );

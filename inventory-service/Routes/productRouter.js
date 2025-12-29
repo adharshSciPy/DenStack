@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { createProduct, productDetails, getProduct, productsByCategory, getProductsByBrand, updateProduct, deleteProduct, getProductsByIds } from "../Controller/productController.js";
+import { createProduct, productDetails, getProduct, productsByCategory, getProductsByBrand, updateProduct, deleteProduct, getProductsByIds, getProductDashboardMetrics, getProductInventoryList } from "../Controller/productController.js";
 import { verifyAuthToken, authorizeRoles } from "../middlewares/authmiddleware.js";
 import upload from "../middlewares/upload.js";
 
@@ -27,5 +27,7 @@ productRoute.put(
 );
 productRoute.delete("/deleteProduct/:id", verifyAuthToken, authorizeRoles(SUPER_ADMIN), deleteProduct);
 productRoute.get("/productsByCategory/:id", verifyAuthToken, authorizeRoles(SUPER_ADMIN, CLINIC_ROLE), productsByCategory);
+productRoute.get("/productStats", getProductDashboardMetrics)
+productRoute.get("/productinventoryList", getProductInventoryList)
 
 export default productRoute;

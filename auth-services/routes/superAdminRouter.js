@@ -1,6 +1,14 @@
 import { Router } from "express";
-import { loginSuperAdmin, registerSuperAdmin } from "../controller/superAdminController.js";
-const superAdminAuthRoutes=Router();
+import { loginSuperAdmin, registerSuperAdmin, getSalesMetrics, getSalesTrends, getMonthlySummary, getDashboardStats, getDashboardSummary } from "../controller/superAdminController.js";
+import { verifyAuthToken, authorizeRoles } from "../../inventory-service/middlewares/authmiddleware.js";
+const SUPERADMIN = process.env.SUPERADMIN_ROLE
+const superAdminAuthRoutes = Router();
 superAdminAuthRoutes.route("/register").post(registerSuperAdmin);
 superAdminAuthRoutes.route("/login").post(loginSuperAdmin);
+
+superAdminAuthRoutes.get("/metrics", verifyAuthToken, authorizeRoles(SUPERADMIN), getSalesMetrics);
+superAdminAuthRoutes.get("/trends", verifyAuthToken, authorizeRoles(SUPERADMIN), getSalesTrends);
+superAdminAuthRoutes.get("/getMonthlySummary", getMonthlySummary)
+superAdminAuthRoutes.get("/appointmentStats", getDashboardStats)
+superAdminAuthRoutes.get("/dashStats", getDashboardSummary)
 export default superAdminAuthRoutes

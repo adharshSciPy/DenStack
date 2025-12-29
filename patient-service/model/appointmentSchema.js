@@ -49,5 +49,6 @@ appointmentSchema.index(
   { clinicId: 1, doctorId: 1, appointmentDate: 1, appointmentTime: 1, status: 1, opNumber: 1 },
   { unique: true, partialFilterExpression: { doctorId: { $exists: true } } }
 );
+appointmentSchema.index({ patientId: 1, clinicId: 1, appointmentDate: -1 });
 
 export default mongoose.model("Appointment", appointmentSchema);

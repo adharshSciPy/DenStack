@@ -26,10 +26,10 @@ export const getPatientCompleteBills = async (req, res) => {
     let consultationBills = [];
     try {
       const patientHistoryResp = await axios.post(
-        `${PATIENT_SERVICE_BASE_URL}/patient-service/appointment/patient-history/${patientId}`,
-        { clinicId },
+        `${PATIENT_SERVICE_BASE_URL}/patient-service/appointment/patient-history/${patientId}?clinicId=${clinicId}`,
         { timeout: 10000 }
       );
+     
       
       const visits = patientHistoryResp.data?.data || [];
       
@@ -295,7 +295,7 @@ export const getAllPatientsBillsByClinic = async (req, res) => {
     // 1️⃣ Fetch all patients from this clinic
     const patientsResp = await axios.get(
       `${PATIENT_SERVICE_BASE_URL}/patients/clinic/${clinicId}`,
-      { timeout: 15000 }
+      // { timeout: 15000 }
     );
 
     const patients = patientsResp.data?.data || [];
