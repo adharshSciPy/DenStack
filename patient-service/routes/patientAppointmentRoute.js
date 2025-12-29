@@ -15,7 +15,8 @@ import {
   getAppointmentsByDate,  // ✅ NEW
   getUnpaidBillsByClinic,
   addReceptionBilling, getAllAppointments,
-  getMonthlyAppointmentsClinicWise
+  getMonthlyAppointmentsClinicWise,
+  getPatientHistoryById
 } from "../controller/patientAppointmentController.js";
 import { authClinicDoctor } from "../middleware/authClinicDoctor.js";
 import { authDoctor } from "../middleware/authDoctor.js";
@@ -40,5 +41,5 @@ patientAppointmentRouter.route("/clinic/unpaid_bills/:id").get(getUnpaidBillsByC
 patientAppointmentRouter.route("/update_bills").patch(addReceptionBilling);
 patientAppointmentRouter.get("/allappointments", getAllAppointments);
 patientAppointmentRouter.route("/monthly_appointmnets/:id").get(getMonthlyAppointmentsClinicWise)
-
+patientAppointmentRouter.route("/visit-history/:id").get(getPatientHistoryById)
 export default patientAppointmentRouter;
