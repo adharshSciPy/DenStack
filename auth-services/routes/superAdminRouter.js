@@ -3,5 +3,4 @@ import { loginSuperAdmin, registerSuperAdmin } from "../controller/superAdminCon
 const superAdminAuthRoutes=Router();
 superAdminAuthRoutes.route("/register").post(registerSuperAdmin);
 superAdminAuthRoutes.route("/login").post(loginSuperAdmin);
-
 export default superAdminAuthRoutes

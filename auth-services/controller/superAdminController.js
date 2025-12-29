@@ -95,4 +95,4 @@ const registerSuperAdmin = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 }
-export{registerSuperAdmin,loginSuperAdmin}
+export{registerSuperAdmin,loginSuperAdmin,}

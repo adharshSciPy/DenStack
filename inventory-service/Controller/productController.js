@@ -1,14 +1,22 @@
 import Product from "../Model/ProductSchema.js";
 import Category from "../Model/CategorySchema.js";
+import mongoose from 'mongoose'; 
+import Brand from "../Model/BrandSchema.js"
 
 // Create a new product with image upload
 const createProduct = async (req, res) => {
   try {
+    // Validate user exists FIRST
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({
+        message: "Unauthorized. Please log in to create products.",
+      });
+    }
+
     req.body.addedByType =
       req.user.role === "800" ? "superadmin" :
         req.user.role === "812" ? "vendor" :
           null;
-
 
     const {
       name,
@@ -19,7 +27,6 @@ const createProduct = async (req, res) => {
       stock,
       brand,
       expiryDate,
-      addedById,
       addedByType
     } = req.body;
 
@@ -30,31 +37,112 @@ const createProduct = async (req, res) => {
       });
     }
 
-    // Main Category validation
-    const mainCat = await Category.findById(mainCategory);
-    if (!mainCat)
-      return res.status(404).json({ message: "Main category not found" });
-
-    if (mainCat.parentCategory !== null)
+    // Main Category validation - handle both ObjectId and name
+    let mainCategoryId;
+    let mainCat;
+    
+    // Check if it's a valid 24-character hex string (MongoDB ObjectId format)
+    const isValidObjectId = /^[0-9a-fA-F]{24}$/.test(mainCategory);
+    
+    if (isValidObjectId) {
+      // Try as ObjectId first
+      mainCat = await Category.findById(mainCategory);
+    }
+    
+    if (!mainCat) {
+      // Try as name (for frontend mock data or user convenience)
+      mainCat = await Category.findOne({ 
+        name: { $regex: new RegExp(`^${mainCategory.trim()}$`, 'i') },
+        parentCategory: null
+      });
+    }
+    
+    if (!mainCat) {
+      return res.status(404).json({ 
+        message: `Main category "${mainCategory}" not found. Please ensure the category exists.` 
+      });
+    }
+    
+    if (mainCat.parentCategory !== null) {
       return res.status(400).json({
         message: "Main category must not have a parentCategory",
       });
+    }
+    
+    mainCategoryId = mainCat._id;
 
-    // Subcategory validation
+    // Subcategory validation - handle both ObjectId and name
+    let subCategoryId = null;
     if (subCategory) {
-      const subCat = await Category.findById(subCategory);
-      if (!subCat)
-        return res.status(404).json({ message: "Sub category not found" });
-
-      if (!subCat.parentCategory)
+      let subCat;
+      
+      // Check if it's a valid 24-character hex string (MongoDB ObjectId format)
+      const isValidSubObjectId = /^[0-9a-fA-F]{24}$/.test(subCategory);
+      
+      if (isValidSubObjectId) {
+        // Try as ObjectId first
+        subCat = await Category.findById(subCategory);
+      }
+      
+      if (!subCat) {
+        // Try as name under the main category
+        subCat = await Category.findOne({ 
+          name: { $regex: new RegExp(`^${subCategory.trim()}$`, 'i') },
+          parentCategory: mainCategoryId
+        });
+      }
+      
+      if (!subCat) {
+        return res.status(404).json({ 
+          message: `Sub category "${subCategory}" not found` 
+        });
+      }
+      
+      if (!subCat.parentCategory) {
         return res.status(400).json({
           message: "Provided sub category has no parent",
         });
-
-      if (String(subCat.parentCategory) !== String(mainCategory))
+      }
+      
+      if (String(subCat.parentCategory) !== String(mainCategoryId)) {
         return res.status(400).json({
           message: "Sub category does not belong to the selected main category",
         });
+      }
+      
+      subCategoryId = subCat._id;
+    }
+
+    // Brand validation - handle both ObjectId and name, auto-create if needed
+    let brandId;
+    
+    // Check if it's a valid 24-character hex string (MongoDB ObjectId format)
+    const isValidBrandObjectId = /^[0-9a-fA-F]{24}$/.test(brand);
+    
+    if (isValidBrandObjectId) {
+      const brandDoc = await Brand.findById(brand);
+      if (!brandDoc) {
+        return res.status(404).json({ message: "Brand not found" });
+      }
+      brandId = brand;
+    } else {
+      // Look up by name or create
+      let brandDoc = await Brand.findOne({ 
+        name: { $regex: new RegExp(`^${brand.trim()}$`, 'i') }
+      });
+      
+      if (!brandDoc) {
+        // Auto-create the brand with default values
+        brandDoc = new Brand({
+          name: brand.trim(),
+          category: mainCategoryId,
+          image: "/uploads/default-brand.jpg"
+        });
+        await brandDoc.save();
+        console.log(`Brand "${brand}" created automatically`);
+      }
+      
+      brandId = brandDoc._id;
     }
 
     // Image upload handling
@@ -73,18 +161,25 @@ const createProduct = async (req, res) => {
     const newProduct = new Product({
       name,
       description,
-      mainCategory,
-      subCategory: subCategory || null,
+      mainCategory: mainCategoryId,
+      subCategory: subCategoryId,
       price,
       stock: stock || 0,
-      brand,
+      brand: brandId,
       image: imagePath,
-      expiryDate,
-      addedById,
+      expiryDate: expiryDate ? new Date(expiryDate) : undefined,
+      addedById: req.user.id, // Use req.user.id instead of req.user._id
       addedByType
     });
 
     await newProduct.save();
+
+    // Populate references for the response
+    await newProduct.populate([
+      { path: 'mainCategory', select: 'name' },
+      { path: 'subCategory', select: 'name' },
+      { path: 'brand', select: 'name image' }
+    ]);
 
     res.status(201).json({
       message: "Product created successfully",
@@ -93,6 +188,14 @@ const createProduct = async (req, res) => {
 
   } catch (error) {
     console.error("Create Product Error:", error);
+    
+    // Handle validation errors from pre-save hooks
+    if (error.message.includes("Invalid Sub Category") || 
+        error.message.includes("Sub Category has no parent") ||
+        error.message.includes("does not belong to selected Main Category")) {
+      return res.status(400).json({ message: error.message });
+    }
+    
     res.status(500).json({ message: "Server Error", error: error.message });
   }
 };
