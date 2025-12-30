@@ -1359,12 +1359,15 @@ const getMonthlyAppointmentsClinicWise = async (req, res) => {
 
     const pipeline = [
       {
-        $match: {
-          clinicId: new mongoose.Types.ObjectId(clinicId),
-          appointmentDate: { $gte: startDate, $lte: endDate },
-          status: { $in: ["scheduled", "needs_reschedule"] },
-        },
-      },
+  $match: {
+    clinicId: new mongoose.Types.ObjectId(clinicId),
+    appointmentDate: { $gte: startDate, $lte: endDate },
+    status: { 
+      $in: ["scheduled", "needs_reschedule", "completed","pending"] 
+    }
+  }
+},
+
 
       // 👤 Patient lookup
       {
@@ -1430,13 +1433,49 @@ const getMonthlyAppointmentsClinicWise = async (req, res) => {
     });
   }
 };
+const getPatientHistoryById = async (req, res) => {
+  try {
+    const { id:visitHistoryId } = req.params;
 
+    if (!mongoose.Types.ObjectId.isValid(visitHistoryId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid visitHistoryId",
+      });
+    }
 
+    const history = await PatientHistory.findById(visitHistoryId)
+      // .populate("patientId", "name age gender phone")
+      // .populate("doctorId", "name specialization")
+      // .populate("clinicId", "name")
+      // .populate("appointmentId")
+      // .populate("treatmentPlanId")
+      // .populate("billId")
+      // .populate("referral.referredByDoctorId", "name")
+      // .populate("referral.referredToDoctorId", "name")
+      .lean();
 
+    if (!history) {
+      return res.status(404).json({
+        success: false,
+        message: "Patient history not found",
+      });
+    }
 
-
+    return res.status(200).json({
+      success: true,
+      data: history,
+    });
+  } catch (error) {
+    console.error("Get Patient History Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
 
 export {
   createAppointment, getTodaysAppointments, getAppointmentById, getPatientHistory, addLabOrderToPatientHistory, getAppointmentsByClinic, clearDoctorFromAppointments, appointmentReschedule, cancelAppointment, getPatientTreatmentPlans, getAppointmentsByDate, addReceptionBilling, getUnpaidBillsByClinic
-  , getAllAppointments,getMonthlyAppointmentsClinicWise
+  , getAllAppointments,getMonthlyAppointmentsClinicWise,getPatientHistoryById
 };

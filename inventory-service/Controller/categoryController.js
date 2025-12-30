@@ -1,4 +1,5 @@
 import Category from "../Model/CategorySchema.js";
+import Product from "../Model/ProductSchema.js";
 
 const createCategory = async (req, res) => {
     try {
@@ -50,6 +51,49 @@ const deleteCategory = async (req, res) => {
     }
 }
 
+const categoryProducts = async (req, res) => {
+  try {
+    const data = await Product.aggregate([
+      {
+        $group: {
+          _id: "$mainCategory",
+          productCount: { $sum: 1 }
+        }
+      },
+      {
+        $lookup: {
+          from: "categories", // ⚠️ must be exact MongoDB collection name
+          localField: "_id",
+          foreignField: "_id",
+          as: "category"
+        }
+      },
+      {
+        $unwind: {
+          path: "$category",
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          categoryId: "$_id",
+          categoryName: { $ifNull: ["$category.categoryName", "Unknown"] },
+          productCount: 1
+        }
+      },
+      {
+        $sort: { productCount: -1 }
+      }
+    ])
+
+    res.status(200).json(data)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+}
+
+
 export {
-    createCategory, getmainCategory, getSubCategory, getAllCategory, deleteCategory
+    createCategory, getmainCategory, getSubCategory, getAllCategory, deleteCategory, categoryProducts
 }
