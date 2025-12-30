@@ -474,6 +474,106 @@ const getDashboardSummary = async (req, res) => {
   }
 };
 
+const getUsageAnalytics = async (req, res) => {
+  try {
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+    let appointments = [];
+    let labOrders = [];
+
+    /* ---------------- Appointments ---------------- */
+    try {
+      const response = await axios.get(
+        `${PATIENT_SERVICE}/appointment/allappointments`,
+        {
+          headers: {
+            Authorization: req.headers.authorization
+          }
+        }
+      );
+
+      appointments = response.data?.data || [];
+    } catch (err) {
+      console.log("❌ Appointment fetch error:", err.message);
+    }
+
+    /* ---------------- Lab Orders ---------------- */
+    try {
+      const response = await axios.get(
+        `${LAB_ORDER_SERVICE}/getall-dental-orders`,
+        {
+          headers: {
+            Authorization: req.headers.authorization
+          }
+        }
+      );
+
+      labOrders = response.data?.orders || [];
+    } catch (err) {
+      console.log("❌ Lab orders fetch error:", err.message);
+    }
+
+    /* ---------------- Trends ---------------- */
+    const appointmentTrend = Array(12).fill(0);
+    const communicationTrend = Array(12).fill(0);
+    const ecommerceTrend = Array(12).fill(0);
+
+    appointments.forEach((a) => {
+      if (a.createdAt) {
+        appointmentTrend[new Date(a.createdAt).getMonth()]++;
+      }
+    });
+
+    labOrders.forEach((o) => {
+      if (o.createdAt) {
+        ecommerceTrend[new Date(o.createdAt).getMonth()]++;
+      }
+    });
+
+    const now = new Date().getMonth();
+
+    const cmApp = appointmentTrend[now];
+    const cmCom = communicationTrend[now];
+    const cmEco = ecommerceTrend[now];
+    const total = cmApp + cmCom + cmEco || 1;
+
+    return res.status(200).json({
+      success: true,
+      usage: {
+        months,
+        trends: {
+          appointments: appointmentTrend,
+          communications: communicationTrend,
+          ecommerce: ecommerceTrend
+        },
+        currentMonth: {
+          name: months[now],
+          data: {
+            appointments: {
+              count: cmApp,
+              percentage: Math.round((cmApp / total) * 100)
+            },
+            communications: {
+              count: cmCom,
+              percentage: Math.round((cmCom / total) * 100)
+            },
+            ecommerce: {
+              count: cmEco,
+              percentage: Math.round((cmEco / total) * 100)
+            }
+          }
+        }
+      }
+    });
+
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Usage analytics failed",
+      error: error.message
+    });
+  }
+};
 
 
-export { registerSuperAdmin, loginSuperAdmin, getSalesMetrics, getSalesTrends, getMonthlySummary, getDashboardStats, getDashboardSummary }
+export { registerSuperAdmin, loginSuperAdmin, getSalesMetrics, getSalesTrends, getMonthlySummary, getDashboardStats, getDashboardSummary, getUsageAnalytics }

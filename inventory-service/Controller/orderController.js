@@ -368,6 +368,105 @@ const PaymentSummary = async (req, res) => {
   }
 };
 
+const dashboardAnalytics = async (req, res) => {
+  try {
+    const now = new Date();
+
+    // 📅 Current Month
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+    // 📅 Last Month
+    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+
+    /* ===============================
+       1️⃣ ORDER VOLUME (Avg/day)
+    =============================== */
+    const totalOrdersThisMonth = await Order.countDocuments({
+      createdAt: { $gte: startOfMonth, $lte: endOfMonth }
+    });
+
+    const daysPassed = now.getDate();
+    const avgOrdersPerDay = Math.round(totalOrdersThisMonth / daysPassed);
+
+    /* ===============================
+       2️⃣ AVERAGE ORDER VALUE
+    =============================== */
+    const thisMonthOrders = await Order.find({
+      createdAt: { $gte: startOfMonth, $lte: endOfMonth }
+    });
+
+    const lastMonthOrders = await Order.find({
+      createdAt: { $gte: startOfLastMonth, $lte: endOfLastMonth }
+    });
+
+    const thisMonthRevenue = thisMonthOrders.reduce(
+      (sum, o) => sum + o.totalAmount, 0
+    );
+
+    const lastMonthRevenue = lastMonthOrders.reduce(
+      (sum, o) => sum + o.totalAmount, 0
+    );
+
+    const avgOrderValue = thisMonthOrders.length
+      ? Math.round(thisMonthRevenue / thisMonthOrders.length)
+      : 0;
+
+    const lastMonthAOV = lastMonthOrders.length
+      ? lastMonthRevenue / lastMonthOrders.length
+      : 0;
+
+    const aovGrowth =
+      lastMonthAOV === 0
+        ? 0
+        : Math.round(((avgOrderValue - lastMonthAOV) / lastMonthAOV) * 100);
+
+    /* ===============================
+       3️⃣ FULFILLMENT RATE
+    =============================== */
+    const totalDelivered = await Order.countDocuments({
+      orderStatus: "DELIVERED"
+    });
+
+    const totalOrders = await Order.countDocuments();
+
+    const fulfillmentRate = totalOrders
+      ? ((totalDelivered / totalOrders) * 100).toFixed(1)
+      : 0;
+
+    /* ===============================
+       FINAL RESPONSE (Screenshot Ready)
+    =============================== */
+    return res.status(200).json({
+      success: true,
+      dashboard: {
+        orderVolume: {
+          label: "Orders per day this month",
+          value: avgOrdersPerDay
+        },
+        averageOrderValue: {
+          label: "Mean transaction value",
+          value: avgOrderValue,
+          growthPercent: aovGrowth
+        },
+        fulfillmentRate: {
+          label: "On-time delivery percentage",
+          value: fulfillmentRate
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error("Dashboard Analytics Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server Error",
+      error: error.message
+    });
+  }
+};
+
 export {
-  createOrder, getAllOrders, getUserOrders, cancelOrder, getOrdersByClinicId, getOrderStats, getRecentOrders, getAllOrdersAnalytics, PaymentSummary
+  createOrder, getAllOrders, getUserOrders, cancelOrder, getOrdersByClinicId, getOrderStats, getRecentOrders, getAllOrdersAnalytics, PaymentSummary, dashboardAnalytics
 }
