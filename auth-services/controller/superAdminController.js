@@ -136,11 +136,12 @@ const getSalesMetrics = async (req, res) => {
   try {
     let orders = [];
 
-    // Fetch orders using internal clinic token
+    // 🔵 Fetch orders using internal clinic token
     try {
       const internalToken = createInternalClinicToken();
 
-      const response = await axios.get(`${ORDER_SERVICE}/analytics/all`,
+      const response = await axios.get(
+        `${ORDER_SERVICE}/analytics/all`,
         {
           headers: {
             Authorization: `Bearer ${internalToken}`
@@ -154,28 +155,35 @@ const getSalesMetrics = async (req, res) => {
       console.log("❌ Order fetch error:", err.message);
     }
 
-    // Compute Metrics
-    const totalRevenue = orders.reduce(
+    // ✅ FILTER: Delivered & Paid orders only
+    const deliveredOrders = orders.filter(
+      o => o.orderStatus === "DELIVERED" && o.paymentStatus === "PAID"
+    );
+
+    // 💰 Total Revenue (DELIVERED only)
+    const totalRevenue = deliveredOrders.reduce(
       (sum, o) => sum + (o.totalAmount || 0),
       0
     );
 
-    const totalOrders = orders.length;
+    // 📦 Total Orders (DELIVERED only)
+    const totalOrders = deliveredOrders.length;
 
+    // 📊 Average Order Value
     const avgOrderValue =
       totalOrders > 0 ? totalRevenue / totalOrders : 0;
 
-    // Growth Rate (Month-over-Month)
+    // 📈 Growth Rate (Month-over-Month, DELIVERED only)
     const currentMonth = new Date().getMonth();
     const lastMonth = currentMonth - 1;
 
-    const currentMonthRevenue = orders
+    const currentMonthRevenue = deliveredOrders
       .filter(o => new Date(o.createdAt).getMonth() === currentMonth)
-      .reduce((sum, o) => sum + o.totalAmount, 0);
+      .reduce((sum, o) => sum + (o.totalAmount || 0), 0);
 
-    const lastMonthRevenue = orders
+    const lastMonthRevenue = deliveredOrders
       .filter(o => new Date(o.createdAt).getMonth() === lastMonth)
-      .reduce((sum, o) => sum + o.totalAmount, 0);
+      .reduce((sum, o) => sum + (o.totalAmount || 0), 0);
 
     const growthRate =
       lastMonthRevenue > 0
@@ -200,6 +208,7 @@ const getSalesMetrics = async (req, res) => {
     });
   }
 };
+
 
 /* =========================================================================
    2️⃣ SUPER ADMIN → SALES TRENDS (charts)
