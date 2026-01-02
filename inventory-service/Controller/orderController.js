@@ -2,6 +2,7 @@ import Order from "../Model/OrderSchema.js";
 import Product from "../Model/ProductSchema.js";
 import Notification from "../Model/NotificationSchema.js";
 import Vendor from "../Model/VendorSchema.js"
+import Clinic from "../../auth-services/models/clinicSchema.js"
 
 import axios from "axios"
 const AUTH_BASE = process.env.AUTH_SERVICE_BASE_URL;
@@ -467,6 +468,143 @@ const dashboardAnalytics = async (req, res) => {
   }
 };
 
+const getTopSoldProducts = async (req, res) => {
+  try {
+    const topProducts = await Order.aggregate([
+      // ✅ Only successful orders
+      {
+        $match: {
+          orderStatus: "DELIVERED",
+          paymentStatus: "PAID",
+        },
+      },
+
+      { $unwind: "$items" },
+
+      {
+        $group: {
+          _id: "$items.itemId",
+          totalUnitsSold: { $sum: "$items.quantity" },
+          totalRevenue: { $sum: "$items.totalCost" },
+        },
+      },
+
+      { $sort: { totalUnitsSold: -1 } },
+      { $limit: 5 },
+
+      {
+        $lookup: {
+          from: "products",
+          localField: "_id",
+          foreignField: "_id",
+          as: "product",
+        },
+      },
+
+      {
+        $unwind: { path: "$product", preserveNullAndEmptyArrays: true }
+      },
+
+      {
+        $project: {
+          _id: 0,
+          productId: "$_id",
+          productName: "$product.name",
+          totalUnitsSold: 1,
+          totalRevenue: 1,
+        },
+      },
+    ]);
+
+    res.status(200).json({
+      success: true,
+      count: topProducts.length,
+      data: topProducts,
+    });
+  } catch (error) {
+    console.error("Top Products Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch top sold products",
+    });
+  }
+};
+
+const getClinicAnalytics = async (req, res) => {
+   try {
+    // 1️⃣ Aggregate orders per clinic
+    const ordersAggregation = await Order.aggregate([
+      { $match: { clinicId: { $ne: null } } },
+      {
+        $group: {
+          _id: "$clinicId",
+          orders: { $sum: 1 },
+          revenue: { $sum: "$totalAmount" },
+          avgOrder: { $avg: "$totalAmount" }
+        }
+      },
+      {
+        $project: {
+          _id: 1,
+          orders: 1,
+          revenue: 1,
+          avgOrder: { $round: ["$avgOrder", 2] }
+        }
+      }
+    ]);
+
+    // 2️⃣ Get all clinic IDs from aggregation
+    const clinicIds = ordersAggregation.map(c => c._id);
+
+    // 3️⃣ Fetch clinic names from Auth Service using clinicById
+    const authServiceUrl = process.env.AUTH_SERVICE_BASE_URL;
+
+    // Use Promise.all to fetch all clinics in parallel
+    const clinicsData = await Promise.all(
+      clinicIds.map(async (id) => {
+        try {
+          const { data } = await axios.get(`${authServiceUrl}/clinic/view-clinic/${id}`);
+          return data.success ? data.data : { _id: id, name: "UNKNOWN" };
+        } catch (err) {
+          console.error(`Error fetching clinic ${id}:`, err.message);
+          return { _id: id, name: "UNKNOWN" };
+        }
+      })
+    );
+
+    // 4️⃣ Merge orders aggregation with clinic names
+    const result = ordersAggregation.map(order => {
+      const clinic = clinicsData.find(c => c._id === order._id.toString());
+      return {
+        clinicId: order._id,
+        clinic: clinic ? clinic.name : "UNKNOWN",
+        orders: order.orders,
+        revenue: order.revenue,
+        avgOrder: order.avgOrder
+      };
+    });
+
+    // 5️⃣ Sort by revenue descending (optional)
+    result.sort((a, b) => b.revenue - a.revenue);
+
+    res.json({ success: true, data: result });
+
+  } catch (error) {
+    console.error("❌ Clinic analytics error:", error.message);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch clinic analytics",
+      error: error.message
+    });
+  }
+};
+
+
+
+
+
+
 export {
-  createOrder, getAllOrders, getUserOrders, cancelOrder, getOrdersByClinicId, getOrderStats, getRecentOrders, getAllOrdersAnalytics, PaymentSummary, dashboardAnalytics
+  createOrder, getAllOrders, getUserOrders, cancelOrder, getOrdersByClinicId, getOrderStats, getRecentOrders, getAllOrdersAnalytics, PaymentSummary, dashboardAnalytics, getTopSoldProducts, getClinicAnalytics,
+
 }
