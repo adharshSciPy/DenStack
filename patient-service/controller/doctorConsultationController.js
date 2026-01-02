@@ -144,6 +144,35 @@ const consultPatient = async (req, res) => {
 
     await newVisit.save({ session });
 
+ const recall = req.body.recall
+  ? typeof req.body.recall === "string"
+    ? JSON.parse(req.body.recall)
+    : req.body.recall
+  : null;
+
+if (recall?.appointmentDate && recall?.appointmentTime) {
+  await Appointment.create([{
+    patientId: appointment.patientId,
+    clinicId: appointment.clinicId,
+
+    // doctor is optional here — clinic may reassign
+    doctorId: appointment.doctorId,
+
+    department: recall.department || appointment.department,
+
+    appointmentDate: recall.appointmentDate,
+    appointmentTime: recall.appointmentTime,
+
+    status: "recall",          
+    createdBy: doctorId,
+    opNumber: null,
+
+    rescheduledFromOp: appointment.opNumber,
+    visitId: newVisit._id
+  }], { session });
+}
+
+
     // 🧠 Treatment Plan (optional)
     let newPlan = null;
     if (treatmentPlan?.planName) {

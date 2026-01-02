@@ -12,7 +12,7 @@ import {
   clearDoctorFromAppointments,
   appointmentReschedule,
   cancelAppointment,
-  getAppointmentsByDate,  // ✅ NEW
+  getAppointmentsByDate,
   getUnpaidBillsByClinic,
   addReceptionBilling, getAllAppointments,
   getMonthlyAppointmentsClinicWise,

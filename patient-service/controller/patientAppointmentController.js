@@ -621,9 +621,9 @@ const getAppointmentsByClinic = async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid clinicId" });
     }
 
-    const query = { clinicId };
-
-    // Date format helper
+    // =====================
+    // Date helpers
+    // =====================
     const today = new Date();
     const formatDate = (date) =>
       `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
@@ -633,16 +633,26 @@ const getAppointmentsByClinic = async (req, res) => {
     startDate = startDate || formatDate(today);
     endDate = endDate || startDate;
 
-    query.appointmentDate = { $gte: startDate, $lte: endDate };
+    // =====================
+    // BASE QUERY (NO STATUS FILTER ❗)
+    // =====================
+    const query = {
+      clinicId: new mongoose.Types.ObjectId(clinicId),
+      appointmentDate: { $gte: startDate, $lte: endDate }
+    };
 
+    // =====================
     // Cursor pagination
+    // =====================
     if (lastId && mongoose.Types.ObjectId.isValid(lastId)) {
       query._id = { $gt: new mongoose.Types.ObjectId(lastId) };
     }
 
+    // =====================
     // Search patients
+    // =====================
     if (search?.trim()) {
-      const matchingIds = await Patient.find(
+      const matchingPatients = await Patient.find(
         {
           clinicId,
           $or: [
@@ -651,30 +661,28 @@ const getAppointmentsByClinic = async (req, res) => {
           ],
         },
         { _id: 1 }
-      )
-        .lean()
-        .limit(50);
+      ).lean();
 
-      query.patientId = matchingIds.length
-        ? { $in: matchingIds.map((p) => p._id) }
+      query.patientId = matchingPatients.length
+        ? { $in: matchingPatients.map((p) => p._id) }
         : { $in: [] };
     }
 
-    // =====================================
-    // MAIN APPOINTMENT FETCH
-    // =====================================
+    // =====================
+    // FETCH APPOINTMENTS
+    // =====================
     const appointments = await Appointment.find(query)
       .sort({ doctorId: 1, appointmentTime: 1 })
       .limit(Number(limit))
       .populate("patientId", "name phone email age gender patientUniqueId")
       .select(
-        "patientId appointmentDate appointmentTime opNumber status createdAt doctorId"
+        "patientId appointmentDate appointmentTime opNumber status createdAt doctorId rescheduledFromOp approvedBy approvedAt"
       )
       .lean();
 
     const totalAppointments = await Appointment.countDocuments({
       clinicId,
-      appointmentDate: query.appointmentDate,
+      appointmentDate: query.appointmentDate
     });
 
     const nextCursor =
@@ -682,15 +690,15 @@ const getAppointmentsByClinic = async (req, res) => {
         ? appointments[appointments.length - 1]._id
         : null;
 
-    // ==========================================
-    // ⭐ FIXED DOCTOR-WISE GROUPING
-    // ==========================================
+    // =====================
+    // DOCTOR-WISE GROUPING
+    // =====================
     const activeDoctors = await axios
       .get(`${CLINIC_SERVICE_BASE_URL}/active-doctors?clinicId=${clinicId}`)
       .then((r) => r.data?.doctors || []);
 
     const doctorWise = activeDoctors.map((doc) => {
-      const docId = doc.doctorId?.toString(); // correct ID to match appointments
+      const docId = doc.doctorId?.toString();
 
       const groupedAppointments = appointments.filter(
         (a) => a.doctorId?.toString() === docId
@@ -708,22 +716,31 @@ const getAppointmentsByClinic = async (req, res) => {
     });
 
     // =====================
-    // DAILY STATS
+    // DAILY STATS (ALL STATUSES)
     // =====================
     const counts = await Appointment.aggregate([
       {
         $match: {
           clinicId: new mongoose.Types.ObjectId(clinicId),
-          appointmentDate: query.appointmentDate,
+          appointmentDate: { $gte: startDate, $lte: endDate },
         },
       },
       {
         $group: {
           _id: null,
           totalAppointments: { $sum: 1 },
-          completedCount: { $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] } },
-          cancelledCount: { $sum: { $cond: [{ $eq: ["$status", "cancelled"] }, 1, 0] } },
-          scheduledCount: { $sum: { $cond: [{ $eq: ["$status", "scheduled"] }, 1, 0] } },
+          completedCount: {
+            $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] }
+          },
+          cancelledCount: {
+            $sum: { $cond: [{ $eq: ["$status", "cancelled"] }, 1, 0] }
+          },
+          scheduledCount: {
+            $sum: { $cond: [{ $eq: ["$status", "scheduled"] }, 1, 0] }
+          },
+          recallCount: {
+            $sum: { $cond: [{ $eq: ["$status", "recall"] }, 1, 0] }
+          }
         },
       },
     ]);
@@ -734,36 +751,23 @@ const getAppointmentsByClinic = async (req, res) => {
         completedCount: 0,
         cancelledCount: 0,
         scheduledCount: 0,
+        recallCount: 0
       };
 
-    // ===========================
-    // Tomorrow reschedule count
-    // ===========================
-    const nextDay = new Date(startDate);
-    nextDay.setDate(nextDay.getDate() + 1);
-    const nextDayStr = formatDate(nextDay);
-
-    const tomorrowRescheduleCount = await Appointment.countDocuments({
-      clinicId,
-      appointmentDate: nextDayStr,
-      status: { $in: ["rescheduled", "needs_reschedule"] },
-    });
-
-    // ===========================
-    // Missing OP numbers
-    // ===========================
+    // =====================
+    // MISSING OP NUMBERS (IGNORE RECALL)
+    // =====================
     const appointmentsInRange = await Appointment.find({
       clinicId,
       appointmentDate: { $gte: startDate, $lte: endDate },
       opNumber: { $exists: true },
+      status: { $ne: "recall" }
     })
       .sort({ appointmentDate: 1, opNumber: 1 })
-      .select("appointmentDate opNumber status")
+      .select("appointmentDate opNumber")
       .lean();
 
-    const opNumbers = appointmentsInRange
-      .map((a) => a.opNumber)
-      .sort((a, b) => a - b);
+    const opNumbers = appointmentsInRange.map(a => a.opNumber).sort((a, b) => a - b);
 
     const missingOps = [];
     let lastOp = 0;
@@ -775,20 +779,20 @@ const getAppointmentsByClinic = async (req, res) => {
       lastOp = op;
     }
 
-    // ===========================
+    // =====================
     // FINAL RESPONSE
-    // ===========================
+    // =====================
     return res.status(200).json({
       success: true,
       message: "Appointments fetched successfully",
-      data: appointments,
+      data: appointments, // ⭐ ALL APPOINTMENTS
       doctorWise,
       totalAppointments,
       nextCursor,
       stats,
-      tomorrowRescheduleCount,
       missingOps,
     });
+
   } catch (error) {
     console.error("getAppointmentsByClinic error:", error);
     return res.status(500).json({
@@ -798,6 +802,7 @@ const getAppointmentsByClinic = async (req, res) => {
     });
   }
 };
+
 const clearDoctorFromAppointments = async (req, res) => {
   try {
     const { clinicId, doctorId } = req.body;
@@ -1369,7 +1374,7 @@ const getMonthlyAppointmentsClinicWise = async (req, res) => {
 },
 
 
-      // 👤 Patient lookup
+      //Patient lookup
       {
         $lookup: {
           from: "patients",
@@ -1382,7 +1387,7 @@ const getMonthlyAppointmentsClinicWise = async (req, res) => {
 
       { $sort: { appointmentDate: 1, _id: -1 } },
 
-      // 📅 Group by DATE
+      // Group by DATE
       {
         $group: {
           _id: "$appointmentDate",

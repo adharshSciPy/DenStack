@@ -24,7 +24,7 @@ const appointmentSchema = new mongoose.Schema({
   appointmentTime: { type: String, required: true }, 
   status: { 
     type: String, 
-    enum: ["scheduled", "cancelled", "completed","needs_reschedule"],
+    enum: ["scheduled", "cancelled", "completed","needs_reschedule","recall"],
     default: "scheduled"
   },
   createdBy: { 
@@ -41,14 +41,25 @@ const appointmentSchema = new mongoose.Schema({
 
   // Your requested fields
   opNumber: { type: Number },
-  rescheduledFromOp: { type: Number, default: null }
+  rescheduledFromOp: { type: Number, default: null },
+  approvedBy: {
+  type: mongoose.Schema.Types.ObjectId,
+},
+approvedAt: {
+  type: Date,
+}
+
 
 }, { timestamps: true });
 
 appointmentSchema.index(
-  { clinicId: 1, doctorId: 1, appointmentDate: 1, appointmentTime: 1, status: 1, opNumber: 1 },
-  { unique: true, partialFilterExpression: { doctorId: { $exists: true } } }
+  { clinicId: 1, doctorId: 1, appointmentDate: 1, appointmentTime: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { status: "scheduled" }
+  }
 );
+
 appointmentSchema.index({ patientId: 1, clinicId: 1, appointmentDate: -1 });
 
 export default mongoose.model("Appointment", appointmentSchema);
