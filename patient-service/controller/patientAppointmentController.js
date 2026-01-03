@@ -1479,8 +1479,130 @@ const getPatientHistoryById = async (req, res) => {
     });
   }
 };
+const approveRecallAppointment = async (req, res) => {
+  const session = await mongoose.startSession();
+
+  try {
+    const { id: appointmentId } = req.params;
+    const {
+      userId,
+      userRole,
+      appointmentDate: newDate,
+      appointmentTime: newTime
+    } = req.body;
+
+    if (!appointmentId || !mongoose.Types.ObjectId.isValid(appointmentId)) {
+      return res.status(400).json({ success: false, message: "Invalid appointment ID" });
+    }
+
+    if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ success: false, message: "Invalid userId" });
+    }
+
+    if (!["admin", "receptionist"].includes(userRole)) {
+      return res.status(403).json({ success: false, message: "Unauthorized role" });
+    }
+
+    session.startTransaction();
+
+    // 🔍 Fetch recall appointment
+    const appointment = await Appointment.findById(appointmentId).session(session);
+    if (!appointment) {
+      return res.status(404).json({ success: false, message: "Appointment not found" });
+    }
+
+    if (appointment.status !== "recall") {
+      return res.status(400).json({
+        success: false,
+        message: "Only recall appointments can be approved"
+      });
+    }
+
+    // 🗓 Use updated date/time if provided
+    const finalDate = newDate || appointment.appointmentDate;
+    const finalTime = newTime || appointment.appointmentTime;
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(finalDate)) {
+      return res.status(400).json({ success: false, message: "Invalid appointmentDate format" });
+    }
+
+    if (!/^\d{2}:\d{2}$/.test(finalTime)) {
+      return res.status(400).json({ success: false, message: "Invalid appointmentTime format" });
+    }
+
+    // ⏱ Prevent past booking
+    const [y, m, d] = finalDate.split("-").map(Number);
+    const [h, min] = finalTime.split(":").map(Number);
+    const appointmentDateTime = new Date(y, m - 1, d, h, min);
+
+    if (appointmentDateTime <= new Date()) {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot approve a recall in the past"
+      });
+    }
+
+    // 🛑 Prevent double booking (using final date/time)
+    const conflict = await Appointment.findOne({
+      _id: { $ne: appointmentId },
+      clinicId: appointment.clinicId,
+      doctorId: appointment.doctorId,
+      appointmentDate: finalDate,
+      appointmentTime: finalTime,
+      status: { $in: ["scheduled", "confirmed"] }
+    }).session(session);
+
+    if (conflict) {
+      return res.status(409).json({
+        success: false,
+        message: "Doctor already has an appointment at this time"
+      });
+    }
+
+    // 🔢 Generate OP number (based on FINAL DATE)
+    const lastAppointment = await Appointment.findOne({
+      clinicId: appointment.clinicId,
+      appointmentDate: finalDate,
+      opNumber: { $ne: null }
+    })
+      .sort({ opNumber: -1 })
+      .session(session);
+
+    const nextOpNumber = lastAppointment ? Number(lastAppointment.opNumber) + 1 : 1;
+
+    // ✅ Approve recall
+    appointment.appointmentDate = finalDate;
+    appointment.appointmentTime = finalTime;
+    appointment.status = "scheduled";
+    appointment.opNumber = nextOpNumber;
+    appointment.approvedBy = userId;
+    appointment.approvedAt = new Date();
+
+    await appointment.save({ session });
+
+    await session.commitTransaction();
+
+    return res.status(200).json({
+      success: true,
+      message: "Recall appointment approved successfully",
+      data: appointment
+    });
+
+  } catch (error) {
+    await session.abortTransaction();
+    console.error("❌ approveRecallAppointment error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Server error while approving recall appointment",
+      error: error.message
+    });
+  } finally {
+    session.endSession();
+  }
+};
 
 export {
   createAppointment, getTodaysAppointments, getAppointmentById, getPatientHistory, addLabOrderToPatientHistory, getAppointmentsByClinic, clearDoctorFromAppointments, appointmentReschedule, cancelAppointment, getPatientTreatmentPlans, getAppointmentsByDate, addReceptionBilling, getUnpaidBillsByClinic
   , getAllAppointments,getMonthlyAppointmentsClinicWise,getPatientHistoryById
-};
+,approveRecallAppointment};
