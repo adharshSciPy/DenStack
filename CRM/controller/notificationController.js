@@ -7,6 +7,7 @@ import NotificationLog from "../model/notificationModel.js";
 import MessageTemplate from "../model/messageTemplateModel.js";
 import notificationService from "../services/notificationService.js"; 
 import InAppNotificationService from "../services/InAppNotificationService.js";
+import { processBirthdayWishes, sendTestBirthdayWishToPatient } from '../utils/birthdayScheduler.js';
 
 dotenv.config();
 
@@ -15,8 +16,120 @@ const CLINIC_SERVICE_BASE_URL = process.env.CLINIC_SERVICE_BASE_URL;
 const AUTH_SERVICE_BASE_URL = process.env.AUTH_SERVICE_BASE_URL;
 
 // ================================
-// Helper function to get patient details (FIXED)
+// BIRTHDAY FUNCTIONS
 // ================================
+export const triggerBirthdayWishes = async (req, res) => {
+  try {
+    console.log('🎂 [API] Manual birthday trigger requested');
+    
+    const result = await processBirthdayWishes();
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Birthday wishes processing completed',
+      data: result
+    });
+  } catch (error) {
+    console.error('❌ Error in triggerBirthdayWishes:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error sending birthday wishes',
+      error: error.message
+    });
+  }
+};
+
+export const sendTestBirthdayWish = async (req, res) => {
+  try {
+    const { patientId } = req.body;
+    
+    if (!patientId) {
+      return res.status(400).json({
+        success: false,
+        message: 'patientId is required'
+      });
+    }
+    
+    const result = await sendTestBirthdayWishToPatient(patientId);
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Test birthday wish sent',
+      data: result
+    });
+  } catch (error) {
+    console.error('❌ Error in sendTestBirthdayWish:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error sending test birthday wish',
+      error: error.message
+    });
+  }
+};
+
+
+export const getUpcomingBirthdays = async (req, res) => {
+  try {
+    const { clinicId } = req.params;
+    const { days = 7 } = req.query;
+    
+    // ✅ Fetch via API instead of database
+    const response = await axios.get(
+      `${PATIENT_SERVICE_BASE_URL}/api/v1/patient-service/patient/clinic-patients/${clinicId}`
+    );
+    
+    const patients = response.data?.data || [];
+    const today = new Date();
+    
+    // Calculate upcoming birthdays
+    const upcomingBirthdays = patients
+      .filter(p => p.dateOfBirth)
+      .map(patient => {
+        const dob = new Date(patient.dateOfBirth);
+        const thisYearBirthday = new Date(
+          today.getFullYear(),
+          dob.getMonth(),
+          dob.getDate()
+        );
+        
+        if (thisYearBirthday < today) {
+          thisYearBirthday.setFullYear(today.getFullYear() + 1);
+        }
+        
+        const daysUntil = Math.ceil(
+          (thisYearBirthday - today) / (1000 * 60 * 60 * 24)
+        );
+        
+        return {
+          _id: patient._id,
+          name: patient.name,
+          phone: patient.phone,
+          email: patient.email,
+          patientUniqueId: patient.patientUniqueId,
+          dateOfBirth: patient.dateOfBirth,
+          birthdayDate: thisYearBirthday,
+          daysUntil
+        };
+      })
+      .filter(p => p.daysUntil >= 0 && p.daysUntil <= parseInt(days))
+      .sort((a, b) => a.daysUntil - b.daysUntil);
+    
+    return res.status(200).json({
+      success: true,
+      data: upcomingBirthdays,
+      count: upcomingBirthdays.length
+    });
+  } catch (error) {
+    console.error('❌ Error in getUpcomingBirthdays:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error fetching upcoming birthdays',
+      error: error.message
+    });
+  }
+};
+
+
 const getPatientDetails = async (clinicId, patientId) => {
   try {
     console.log(`🔍 [DEBUG] Fetching patient ${patientId} from clinic ${clinicId}`);

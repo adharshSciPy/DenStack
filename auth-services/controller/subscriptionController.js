@@ -1,13 +1,11 @@
-import SubscriptionModel from "../models/subscriptionSchema.js";
-
+import Clinic from "../models/clinicSchema.js";
 export const getAdminDashboard = async (req, res) => {
   try {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    // Fetch all subscriptions (non-deleted)
-    const subscriptions = await SubscriptionModel.find({
-      isDeleted: false,
+    // ✅ Query Clinic model instead of SubscriptionModel
+    const clinics = await Clinic.find({
       "subscription.startDate": { $exists: true },
     });
 
@@ -21,8 +19,8 @@ export const getAdminDashboard = async (req, res) => {
     const churnByMonth = {};
     const planPerformance = {};
 
-    subscriptions.forEach((subscription) => {
-      const sub = subscription.subscription;
+    clinics.forEach((clinic) => {
+      const sub = clinic.subscription;
 
       if (!sub || !sub.startDate || !sub.price) return;
 
@@ -117,8 +115,8 @@ export const getAdminDashboard = async (req, res) => {
     // ===== UPCOMING RENEWALS (NEXT 30 DAYS) =====
     const upcomingRenewals = [];
 
-    subscriptions.forEach((subscription) => {
-      const sub = subscription.subscription;
+    clinics.forEach((clinic) => {
+      const sub = clinic.subscription;
       if (!sub || !sub.endDate) return;
 
       const endDate = new Date(sub.endDate);
@@ -126,8 +124,8 @@ export const getAdminDashboard = async (req, res) => {
 
       if (daysLeft >= 0 && daysLeft <= 30) {
         upcomingRenewals.push({
-          clinicId: subscription.clinicId,
-          clinicName: subscription.clinicName,
+          clinicId: clinic._id.toString(),
+          clinicName: clinic.name,
           plan: sub.package,
           price: sub.price,
           endDate,
@@ -157,18 +155,18 @@ export const getAdminDashboard = async (req, res) => {
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
+
 export const getMonthlySummary = async (req, res) => {
   try {
-    const subscriptions = await SubscriptionModel.find({
-      isDeleted: false,
+    const clinics = await Clinic.find({
       "subscription.startDate": { $exists: true },
     });
 
     // Group by month
     const monthlyData = {};
 
-    subscriptions.forEach((subscription) => {
-      const sub = subscription.subscription;
+    clinics.forEach((clinic) => {
+      const sub = clinic.subscription;
       if (!sub || !sub.startDate || !sub.price) return;
 
       const startDate = new Date(sub.startDate);
@@ -219,21 +217,24 @@ export const getMonthlySummary = async (req, res) => {
   }
 };
 
-// NEW: Get Clinic Count
 export const getClinicCount = async (req, res) => {
   try {
-    const totalClinics = await SubscriptionModel.countDocuments({
-      isDeleted: false,
+    const now = new Date();
+
+    const totalClinics = await Clinic.countDocuments({
+      "subscription.startDate": { $exists: true }
     });
 
-    const activeClinics = await SubscriptionModel.countDocuments({
-      isDeleted: false,
+    const activeClinics = await Clinic.countDocuments({
       "subscription.isActive": true,
+      "subscription.endDate": { $gte: now }
     });
 
-    const expiredClinics = await SubscriptionModel.countDocuments({
-      isDeleted: false,
-      "subscription.isActive": false,
+    const expiredClinics = await Clinic.countDocuments({
+      $or: [
+        { "subscription.isActive": false },
+        { "subscription.endDate": { $lt: now } }
+      ]
     });
 
     res.json({
@@ -246,58 +247,6 @@ export const getClinicCount = async (req, res) => {
     });
   } catch (error) {
     console.error("Get Clinic Count Error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server error",
-      error: error.message,
-    });
-  }
-};
-export const createTestSubscription = async (req, res) => {
-  try {
-    const {
-      clinicId,
-      clinicName,
-      clinicEmail,
-      clinicType = "clinic",
-      packageName = "growth",
-      price = 5000,
-      startDate,
-      endDate,
-      isActive = true,
-    } = req.body;
-
-    // Basic validation
-    if (!clinicId || !clinicName || !clinicEmail || !startDate || !endDate) {
-      return res.status(400).json({
-        success: false,
-        message: "Missing required fields",
-      });
-    }
-
-    const subscription = await SubscriptionModel.create({
-      clinicId,
-      clinicName,
-      clinicEmail,
-      clinicType,
-      subscription: {
-        package: packageName,
-        type: "annual",
-        price,
-        startDate: new Date(startDate),
-        endDate: new Date(endDate),
-        isActive,
-      },
-      isDeleted: false,
-    });
-
-    res.status(201).json({
-      success: true,
-      message: "Test subscription created successfully",
-      data: subscription,
-    });
-  } catch (error) {
-    console.error("Create Test Subscription Error:", error);
     res.status(500).json({
       success: false,
       message: "Server error",

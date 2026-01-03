@@ -6,6 +6,7 @@ import connectDB from "./connectdb/connectdb.js";
 import notificationRoutes from "./router/notificatonRoute.js";
 import { initializeSocket } from "./utils/socket.js";
 import "./utils/scheduler.js";
+import './utils/birthdayScheduler.js';
 
 dotenv.config();
 connectDB();

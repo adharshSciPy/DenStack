@@ -9,6 +9,9 @@ import {
   getNotificationLogs,
   getTemplates,
   createTemplate,
+  triggerBirthdayWishes,
+  sendTestBirthdayWish,
+  getUpcomingBirthdays,
 } from "../controller/notificationController.js";
 import 
   InAppNotificationService
@@ -75,5 +78,11 @@ notificationRoutes.route('/in-app/:userId/read-all').patch(async (req, res) => {
     return res.status(500).json({ success: false, error: error.message });
   }
 });
+
+// Birthday routes
+notificationRoutes.route('/birthday/trigger').post(triggerBirthdayWishes);
+notificationRoutes.route('/birthday/test').post(sendTestBirthdayWish);
+notificationRoutes.route('/birthday/upcoming/:clinicId').get(getUpcomingBirthdays);
+
 
 export default notificationRoutes;
