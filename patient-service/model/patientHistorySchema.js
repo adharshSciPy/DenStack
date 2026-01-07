@@ -1,20 +1,41 @@
 import mongoose,{Schema} from "mongoose";
-const dentalChartSchema = new Schema({
-    toothNumber: { type: Number, required: true, min: 1, max: 32 },
-    status: {
-      type: String,
-      enum: ['healthy', 'filled', 'crowned', 'root-canal', 'missing', 'decayed'],
-      default: 'healthy'
-    },
-  notes: String,
-  procedures: [
-    {
-      name: String,
-      performedBy: { type: Schema.Types.ObjectId, ref: "Doctor" },
-      performedAt: Date,
-    }
-  ]
+import { TOOTH_CONDITIONS ,TOOTH_SURFACES} from "../middleware/toothSurfaceAndConditions.js";
+const surfaceConditionSchema = new Schema({
+  surface: { type: String, enum: TOOTH_SURFACES, required: true },
+  conditions: [{ type: String, enum: TOOTH_CONDITIONS }]
 });
+const procedureExecutionSchema = new Schema({
+  name: { type: String, required: true },
+  surface: { type: String, enum: TOOTH_SURFACES, required: true },
+
+  status: {
+    type: String,
+    enum: ["planned", "in-progress", "completed"],
+    default: "planned"
+  },
+
+  cost: Number,
+  notes: String,
+
+  performedBy: { type: Schema.Types.ObjectId, ref: "Doctor" },
+  performedAt: { type: Date, default: Date.now },
+
+  // 🔗 link to treatment plan (optional but recommended)
+  treatmentPlanProcedureId: Schema.Types.ObjectId
+});
+
+const visitToothSchema = new mongoose.Schema({
+  toothNumber: { type: Number,  required: true },
+  // surface: { type: String, enum: TOOTH_SURFACES, required: true },
+
+  conditions: [{ type: String, enum: TOOTH_CONDITIONS }],
+
+ 
+  surfaceConditions: [surfaceConditionSchema],
+
+  procedures: [procedureExecutionSchema]
+});
+
 
 
 const patientHistorySchema = new mongoose.Schema(
@@ -97,7 +118,7 @@ const patientHistorySchema = new mongoose.Schema(
       referralDate: { type: Date },
       status: { type: String, enum: ["pending", "accepted", "completed"], default: "pending" },
     },
-    dentalChart: { type: [dentalChartSchema], required: false },
+   dentalWork: [visitToothSchema],
 
     receptionBilling: {
   procedureCharges: [
