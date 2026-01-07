@@ -1,46 +1,65 @@
 import mongoose, { Schema } from "mongoose";
+import { TOOTH_CONDITIONS,TOOTH_SURFACES } from "../middleware/toothSurfaceAndConditions.js";
+const plannedProcedureSchema = new Schema({
+  name: { type: String, required: true }, 
 
-const procedureSchema = new Schema({
-  name: { type: String, required: true },
-  toothNumber: { type: Number, min: 1, max: 32 },
-  surface: {
-    type: String,
-    enum: ['mesial', 'distal', 'occlusal', 'buccal', 'lingual', 'palatal', 'incisal', 'full-crown', 'root', 'entire']
-  },
-  doctorId: { type: Schema.Types.ObjectId, ref: "Doctor", required: true },
-  referredToDoctorId: { type: Schema.Types.ObjectId, ref: "Doctor" },
-  referralNotes: { type: String },
-  completed: { type: Boolean, default: false },
-  completedAt: { type: Date },
-  completedInVisitId: { type: Schema.Types.ObjectId, ref: "PatientHistory" },
-  notes: { type: String },
-});
+  surface: { type: String, enum: TOOTH_SURFACES, required: true },
 
-const stageSchema = new Schema({
-  stageName: { type: String, required: true },
-  description: { type: String },
-  procedures: [procedureSchema],
-  status: { type: String, enum: ["pending", "completed"], default: "pending" },
-  scheduledDate: { type: Date },
-});
-const dentalChartPlanSchema = new Schema({
-  toothNumber: { type: Number, required: true, min: 1, max: 32 },
-  plannedStatus: {
+  status: {
     type: String,
-    enum: ['fill', 'crown', 'root-canal', 'extract', 'implant', 'bridge', 'clean'],
-    required: true
+    enum:['planned', 'in-progress', 'completed'],
+    default: 'planned'
   },
-  surface: {
-    type: String,
-    enum: ['mesial', 'distal', 'occlusal', 'buccal', 'lingual', 'palatal', 'incisal', 'full-crown', 'root', 'entire']
-  },
-  notes: String,
+
   estimatedCost: { type: Number, default: 0 },
-  priority: { type: String, enum: ['urgent', 'high', 'medium', 'low'], default: 'medium' },
-  isCompleted: { type: Boolean, default: false },
-  completedAt: { type: Date },
-  completedInVisitId: { type: Schema.Types.ObjectId, ref: "PatientHistory" }
+  notes: String,
+
+  // execution tracking
+  completedAt: Date,
+  completedInVisitId: {
+    type: Schema.Types.ObjectId,
+    ref: "PatientHistory"
+  },
+
+  referredToDoctorId: { type: Schema.Types.ObjectId, ref: "Doctor" }
 });
+
+const toothPlanSchema = new Schema({
+  toothNumber: { type: Number, min: 1, max: 32, required: true },
+
+  procedures: [plannedProcedureSchema],
+
+  priority: {
+    type: String,
+    enum: ['urgent', 'high', 'medium', 'low'],
+    default: 'medium'
+  },
+
+  isCompleted: { type: Boolean, default: false },
+  completedAt: Date
+});
+const treatmentStageSchema = new Schema({
+  stageName: { type: String, required: true },
+  description: String,
+  procedureRefs: [
+    {
+      toothNumber: Number,
+      procedureName: String
+    }
+  ],
+
+  status: {
+    type: String,
+    enum: ['pending', 'completed'],
+    default: 'pending'
+  },
+
+  scheduledDate: Date,
+  completedAt: Date
+});
+
+
+
 const treatmentPlanSchema = new Schema(
   {
     patientId: { type: Schema.Types.ObjectId, ref: "Patient", required: true },
@@ -48,11 +67,11 @@ const treatmentPlanSchema = new Schema(
     createdByDoctorId: { type: Schema.Types.ObjectId, required: true },
     planName: { type: String, required: true },
     description: { type: String },
-    stages: [stageSchema],
+     stages: [treatmentStageSchema],
     status: { type: String, enum: ["ongoing", "completed"], default: "ongoing" },
     startedAt: { type: Date, default: Date.now },
     completedAt: { type: Date },
-   dentalChart: [dentalChartPlanSchema],
+     teeth: [toothPlanSchema],
  conflictChecked: { type: Boolean, default: false }
   },
   { timestamps: true }
@@ -113,9 +132,16 @@ treatmentPlanSchema.methods.checkConflicts = async function() {
 };
 
 // Calculate total estimated cost
-treatmentPlanSchema.pre("save", function(next) {
-  this.totalEstimatedCost = this.dentalChart.reduce((sum, item) => sum + (item.estimatedCost || 0), 0);
+
+treatmentPlanSchema.pre("save", function (next) {
+  this.totalEstimatedCost = this.teeth.reduce((sum, tooth) => {
+    return sum + tooth.procedures.reduce(
+      (pSum, p) => pSum + (p.estimatedCost || 0),
+      0
+    );
+  }, 0);
   next();
 });
+
 treatmentPlanSchema.index({ patientId: 1, clinicId: 1 });
 export default mongoose.model("TreatmentPlan", treatmentPlanSchema);
