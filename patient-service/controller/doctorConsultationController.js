@@ -111,78 +111,95 @@ const consultPatient = async (req, res) => {
       { session }
     );
 
-    // ---------- treatment plan ----------
-    let treatmentPlan = null;
+  
 
-    if (req.body.treatmentPlanId) {
-      treatmentPlan = await TreatmentPlan.findById(req.body.treatmentPlanId).session(session);
+// ---------- treatment plan ----------
+let treatmentPlan = null;
+
+if (req.body.treatmentPlanId) {
+  treatmentPlan = await TreatmentPlan.findById(req.body.treatmentPlanId).session(session);
+}
+
+if (!treatmentPlan && treatmentPlanInput?.planName) {
+  // ✅ FIX: Create stages from input, not empty array
+  const inputStages = treatmentPlanInput.stages || [];
+  const stages = inputStages.map(stage => ({
+    stageName: stage.stageName || `Stage ${Math.random().toString(36).substr(2, 9)}`,
+    description: stage.description || '',
+    procedureRefs: stage.procedureRefs || [],
+    status: 'pending',
+    scheduledDate: stage.scheduledDate ? new Date(stage.scheduledDate) : new Date(),
+    completedAt: null
+  }));
+
+  [treatmentPlan] = await TreatmentPlan.create(
+    [{
+      patientId: appointment.patientId,
+      clinicId: appointment.clinicId,
+      createdByDoctorId: doctorId,
+      planName: treatmentPlanInput.planName,
+      description: treatmentPlanInput.description,
+      teeth: [], // Will be populated below with plannedProcedures
+      stages: stages, // ✅ Include actual stages from input
+      status: "ongoing"
+    }],
+    { session }
+  );
+
+  patient.treatmentPlans.push(treatmentPlan._id);
+}
+
+// ---------- planned procedures ----------
+if (treatmentPlan && plannedProcedures.length > 0) {
+  for (const p of plannedProcedures) {
+    let tooth = treatmentPlan.teeth.find(t => t.toothNumber === p.toothNumber);
+
+    if (!tooth) {
+      tooth = { 
+        toothNumber: p.toothNumber, 
+        procedures: [],
+        priority: 'medium',
+        isCompleted: false
+      };
+      treatmentPlan.teeth.push(tooth);
     }
 
-    if (!treatmentPlan && treatmentPlanInput?.planName) {
-      [treatmentPlan] = await TreatmentPlan.create(
-        [{
-          patientId: appointment.patientId,
-          clinicId: appointment.clinicId,
-          createdByDoctorId: doctorId,
-          planName: treatmentPlanInput.planName,
-          description: treatmentPlanInput.description,
-          teeth: [],
-          stages: []
-        }],
-        { session }
-      );
+    const newProcedure = {
+      _id: new mongoose.Types.ObjectId(),
+      name: p.name,
+      surface: p.surface,
+      estimatedCost: p.estimatedCost || 0,
+      notes: p.notes,
+      status: "planned"
+    };
 
-      patient.treatmentPlans.push(treatmentPlan._id);
+    tooth.procedures.push(newProcedure);
+
+    // ✅ Also add to stages if there are stages
+    if (treatmentPlan.stages && treatmentPlan.stages.length > 0) {
+      // Add to first stage by default
+      treatmentPlan.stages[0].procedureRefs.push({
+        toothNumber: p.toothNumber,
+        procedureName: p.name
+      });
     }
+  }
+  
+  // ✅ Save the updated treatment plan
+  await treatmentPlan.save({ session });
+}
 
-    // ---------- planned procedures (UNCHANGED LOGIC) ----------
-    if (treatmentPlan && plannedProcedures.length) {
-      for (const p of plannedProcedures) {
-        let tooth = treatmentPlan.teeth.find(t => t.toothNumber === p.toothNumber);
-
-        if (!tooth) {
-          tooth = { toothNumber: p.toothNumber, procedures: [] };
-          treatmentPlan.teeth.push(tooth);
-        }
-
-        tooth.procedures.push({
-          _id: new mongoose.Types.ObjectId(),
-          name: p.name,
-          surface: p.surface,
-          estimatedCost: p.estimatedCost || 0,
-          notes: p.notes,
-          status: "planned"
-        });
-      }
-    }
-
-    // ---------- 🔴 FIXED: completed procedures (ID SAFE) ----------
-    if (treatmentPlan && dentalWork.length) {
-      for (const t of dentalWork) {
-        const planTooth = treatmentPlan.teeth.find(pt => pt.toothNumber === t.toothNumber);
-        if (!planTooth) continue;
-
-        for (const proc of t.procedures.filter(p => p.status === "completed")) {
-          const planProc = planTooth.procedures.find(
-            pp => pp.name === proc.name && pp.surface === proc.surface && pp.status !== "completed"
-          );
-
-          if (!planProc) continue;
-
-          planProc.status = "completed";
-          planProc.completedAt = new Date();
-          planProc.completedInVisitId = visitDoc._id;
-
-          proc.treatmentPlanProcedureId = planProc._id;
-        }
-      }
-    }
-
-    if (treatmentPlan) {
-      await treatmentPlan.save({ session });
-      visitDoc.treatmentPlanId = treatmentPlan._id;
-      await visitDoc.save({ session });
-    }
+// ---------- link visit to treatment plan ----------
+if (treatmentPlan) {
+  visitDoc.treatmentPlanId = treatmentPlan._id;
+  await visitDoc.save({ session });
+  
+  // Also update patient's treatment plans if not already done
+  if (!patient.treatmentPlans.includes(treatmentPlan._id)) {
+    patient.treatmentPlans.push(treatmentPlan._id);
+    await patient.save({ session });
+  }
+}
 
     // ---------- recall (UNCHANGED) ----------
     if (recall?.appointmentDate && recall?.appointmentTime) {
