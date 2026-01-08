@@ -25,7 +25,7 @@ const plannedProcedureSchema = new Schema({
 });
 
 const toothPlanSchema = new Schema({
-  toothNumber: { type: Number, min: 1, max: 32, required: true },
+  toothNumber: { type: Number,required: true },
 
   procedures: [plannedProcedureSchema],
 
