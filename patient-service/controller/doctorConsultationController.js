@@ -33,7 +33,7 @@ const consultPatient = async (req, res) => {
     const prescriptionsRaw = parseJSON(req.body.prescriptions, []);
     const files = parseJSON(req.body.files, []);
     const plannedProcedures = parseJSON(req.body.plannedProcedures, []);
-    const performedTeeth = parseJSON(req.body.performedTeeth, []); // 🔴 FIX
+    const performedTeeth = parseJSON(req.body.performedTeeth, []);
     const treatmentPlanInput = parseJSON(req.body.treatmentPlan, null);
     const recall = parseJSON(req.body.recall, null);
     const notes = req.body.notes || "";
@@ -74,7 +74,7 @@ const consultPatient = async (req, res) => {
 
     const allFiles = [...files, ...uploadedFiles];
 
-    // ---------- 🔴 FIXED: CREATE VISIT (MATCHES SCHEMA) ----------
+    // ---------- CREATE VISIT ----------
     const dentalWork = performedTeeth.map(t => ({
       toothNumber: t.toothNumber,
       conditions: t.conditions || [],
@@ -111,97 +111,98 @@ const consultPatient = async (req, res) => {
       { session }
     );
 
-  
+    // ---------- TREATMENT PLAN CREATION (FIXED) ----------
+    let treatmentPlan = null;
 
-// ---------- treatment plan ----------
-let treatmentPlan = null;
+    if (treatmentPlanInput?.planName) {
+      console.log("Creating treatment plan:", treatmentPlanInput);
+      
+      // Transform teeth data for schema
+      const teethData = plannedProcedures.reduce((acc, proc) => {
+        const existingTooth = acc.find(t => t.toothNumber === proc.toothNumber);
+        
+        const procedureData = {
+          _id: new mongoose.Types.ObjectId(),
+          name: proc.name,
+          surface: proc.surface || "occlusal",
+          estimatedCost: proc.estimatedCost || 0,
+          notes: proc.notes || "",
+          status: "planned"
+        };
 
-if (req.body.treatmentPlanId) {
-  treatmentPlan = await TreatmentPlan.findById(req.body.treatmentPlanId).session(session);
-}
+        if (existingTooth) {
+          existingTooth.procedures.push(procedureData);
+        } else {
+          acc.push({
+            toothNumber: proc.toothNumber,
+            procedures: [procedureData],
+            priority: 'medium',
+            isCompleted: false
+          });
+        }
+        return acc;
+      }, []);
 
-if (!treatmentPlan && treatmentPlanInput?.planName) {
-  // ✅ FIX: Create stages from input, not empty array
-  const inputStages = treatmentPlanInput.stages || [];
-  const stages = inputStages.map(stage => ({
-    stageName: stage.stageName || `Stage ${Math.random().toString(36).substr(2, 9)}`,
-    description: stage.description || '',
-    procedureRefs: stage.procedureRefs || [],
-    status: 'pending',
-    scheduledDate: stage.scheduledDate ? new Date(stage.scheduledDate) : new Date(),
-    completedAt: null
-  }));
+      // Transform stages for schema
+      const stagesData = (treatmentPlanInput.stages || []).map(stage => ({
+        stageName: stage.stageName || `Stage ${Date.now()}`,
+        description: stage.description || '',
+        procedureRefs: stage.procedureRefs || [],
+        status: 'pending',
+        scheduledDate: stage.scheduledDate ? new Date(stage.scheduledDate) : new Date()
+      }));
 
-  [treatmentPlan] = await TreatmentPlan.create(
-    [{
-      patientId: appointment.patientId,
-      clinicId: appointment.clinicId,
-      createdByDoctorId: doctorId,
-      planName: treatmentPlanInput.planName,
-      description: treatmentPlanInput.description,
-      teeth: [], // Will be populated below with plannedProcedures
-      stages: stages, // ✅ Include actual stages from input
-      status: "ongoing"
-    }],
-    { session }
-  );
+      // If no stages provided, create a default stage
+      if (stagesData.length === 0 && teethData.length > 0) {
+        stagesData.push({
+          stageName: "Initial Treatment",
+          description: "Primary procedures",
+          procedureRefs: teethData.flatMap(tooth => 
+            tooth.procedures.map(proc => ({
+              toothNumber: tooth.toothNumber,
+              procedureName: proc.name
+            }))
+          ),
+          status: 'pending',
+          scheduledDate: new Date()
+        });
+      }
 
-  patient.treatmentPlans.push(treatmentPlan._id);
-}
+      // Create treatment plan
+      [treatmentPlan] = await TreatmentPlan.create(
+        [{
+          patientId: appointment.patientId,
+          clinicId: appointment.clinicId,
+          createdByDoctorId: doctorId,
+          planName: treatmentPlanInput.planName.trim(),
+          description: treatmentPlanInput.description?.trim() || '',
+          teeth: teethData,
+          stages: stagesData,
+          status: "ongoing",
+          startedAt: new Date()
+        }],
+        { session }
+      );
 
-// ---------- planned procedures ----------
-if (treatmentPlan && plannedProcedures.length > 0) {
-  for (const p of plannedProcedures) {
-    let tooth = treatmentPlan.teeth.find(t => t.toothNumber === p.toothNumber);
+      console.log("Treatment plan created:", treatmentPlan._id);
 
-    if (!tooth) {
-      tooth = { 
-        toothNumber: p.toothNumber, 
-        procedures: [],
-        priority: 'medium',
-        isCompleted: false
-      };
-      treatmentPlan.teeth.push(tooth);
+      // Link to patient
+      if (!patient.treatmentPlans) {
+        patient.treatmentPlans = [];
+      }
+      patient.treatmentPlans.push(treatmentPlan._id);
+      await patient.save({ session });
     }
 
-    const newProcedure = {
-      _id: new mongoose.Types.ObjectId(),
-      name: p.name,
-      surface: p.surface,
-      estimatedCost: p.estimatedCost || 0,
-      notes: p.notes,
-      status: "planned"
-    };
-
-    tooth.procedures.push(newProcedure);
-
-    // ✅ Also add to stages if there are stages
-    if (treatmentPlan.stages && treatmentPlan.stages.length > 0) {
-      // Add to first stage by default
-      treatmentPlan.stages[0].procedureRefs.push({
-        toothNumber: p.toothNumber,
-        procedureName: p.name
-      });
+    // ---------- link visit to treatment plan ----------
+    if (treatmentPlan) {
+      visitDoc.treatmentPlanId = treatmentPlan._id;
+      await visitDoc.save({ session });
+      
+      console.log("Visit linked to treatment plan:", treatmentPlan._id);
     }
-  }
-  
-  // ✅ Save the updated treatment plan
-  await treatmentPlan.save({ session });
-}
 
-// ---------- link visit to treatment plan ----------
-if (treatmentPlan) {
-  visitDoc.treatmentPlanId = treatmentPlan._id;
-  await visitDoc.save({ session });
-  
-  // Also update patient's treatment plans if not already done
-  if (!patient.treatmentPlans.includes(treatmentPlan._id)) {
-    patient.treatmentPlans.push(treatmentPlan._id);
-    await patient.save({ session });
-  }
-}
-
-    // ---------- recall (UNCHANGED) ----------
+    // ---------- recall ----------
     if (recall?.appointmentDate && recall?.appointmentTime) {
       await Appointment.create([{
         patientId: appointment.patientId,
@@ -211,19 +212,22 @@ if (treatmentPlan) {
         appointmentTime: recall.appointmentTime,
         status: "recall",
         createdBy: doctorId,
-          department: appointment.department,
+        department: appointment.department,
         rescheduledFromOp: appointment.opNumber,
         visitId: visitDoc._id
       }], { session });
     }
 
-    // ---------- finalize (UNCHANGED) ----------
+    // ---------- finalize ----------
     await Appointment.findByIdAndUpdate(
       appointmentId,
       { status: "completed", visitId: visitDoc._id },
       { session }
     );
 
+    if (!patient.visitHistory) {
+      patient.visitHistory = [];
+    }
     patient.visitHistory.push(visitDoc._id);
     await patient.save({ session });
 
@@ -233,7 +237,7 @@ if (treatmentPlan) {
       success: true,
       message: "Consultation saved successfully",
       visit: visitDoc,
-      treatmentPlan
+      treatmentPlan: treatmentPlan || null
     });
 
   } catch (err) {
@@ -242,7 +246,8 @@ if (treatmentPlan) {
     return res.status(500).json({
       success: false,
       message: "Consultation failed",
-      error: err.message
+      error: err.message,
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
     });
   } finally {
     session.endSession();
