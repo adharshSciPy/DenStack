@@ -112,87 +112,78 @@ const consultPatient = async (req, res) => {
     );
 
     // ---------- TREATMENT PLAN CREATION (FIXED) ----------
-    let treatmentPlan = null;
 
-    if (treatmentPlanInput?.planName) {
-      console.log("Creating treatment plan:", treatmentPlanInput);
-      
-      // Transform teeth data for schema
-      const teethData = plannedProcedures.reduce((acc, proc) => {
-        const existingTooth = acc.find(t => t.toothNumber === proc.toothNumber);
-        
-        const procedureData = {
-          _id: new mongoose.Types.ObjectId(),
-          name: proc.name,
-          surface: proc.surface || "occlusal",
-          estimatedCost: proc.estimatedCost || 0,
-          notes: proc.notes || "",
-          status: "planned"
-        };
+let treatmentPlan = null;
 
-        if (existingTooth) {
-          existingTooth.procedures.push(procedureData);
-        } else {
-          acc.push({
-            toothNumber: proc.toothNumber,
-            procedures: [procedureData],
-            priority: 'medium',
-            isCompleted: false
-          });
-        }
-        return acc;
-      }, []);
+if (treatmentPlanInput?.planName) {
+  console.log("Creating treatment plan:", treatmentPlanInput);
+  
+  // Transform teeth data for schema - USE treatmentPlanInput.teeth instead of plannedProcedures
+  const teethData = treatmentPlanInput.teeth.map(toothPlan => ({
+    toothNumber: toothPlan.toothNumber,
+    procedures: toothPlan.procedures.map(proc => ({
+      _id: new mongoose.Types.ObjectId(),
+      name: proc.name,
+      surface: proc.surface || "occlusal",
+      estimatedCost: proc.estimatedCost || 0,
+      notes: proc.notes || "",
+      status: proc.status || "planned"
+    })),
+    priority: toothPlan.priority || 'medium',
+    isCompleted: false
+  }));
 
-      // Transform stages for schema
-      const stagesData = (treatmentPlanInput.stages || []).map(stage => ({
-        stageName: stage.stageName || `Stage ${Date.now()}`,
-        description: stage.description || '',
-        procedureRefs: stage.procedureRefs || [],
-        status: 'pending',
-        scheduledDate: stage.scheduledDate ? new Date(stage.scheduledDate) : new Date()
-      }));
+  // Transform stages for schema
+  const stagesData = (treatmentPlanInput.stages || []).map(stage => ({
+    stageName: stage.stageName || `Stage ${Date.now()}`,
+    description: stage.description || '',
+    procedureRefs: stage.procedureRefs || [],
+    status: stage.status || 'pending',
+    scheduledDate: stage.scheduledDate ? new Date(stage.scheduledDate) : new Date()
+  }));
 
-      // If no stages provided, create a default stage
-      if (stagesData.length === 0 && teethData.length > 0) {
-        stagesData.push({
-          stageName: "Initial Treatment",
-          description: "Primary procedures",
-          procedureRefs: teethData.flatMap(tooth => 
-            tooth.procedures.map(proc => ({
-              toothNumber: tooth.toothNumber,
-              procedureName: proc.name
-            }))
-          ),
-          status: 'pending',
-          scheduledDate: new Date()
-        });
-      }
+  // If no stages provided, create a default stage
+  if (stagesData.length === 0 && teethData.length > 0) {
+    stagesData.push({
+      stageName: "Initial Treatment",
+      description: "Primary procedures",
+      procedureRefs: teethData.flatMap(tooth => 
+        tooth.procedures.map(proc => ({
+          toothNumber: tooth.toothNumber,
+          procedureName: proc.name
+        }))
+      ),
+      status: 'pending',
+      scheduledDate: new Date()
+    });
+  }
 
-      // Create treatment plan
-      [treatmentPlan] = await TreatmentPlan.create(
-        [{
-          patientId: appointment.patientId,
-          clinicId: appointment.clinicId,
-          createdByDoctorId: doctorId,
-          planName: treatmentPlanInput.planName.trim(),
-          description: treatmentPlanInput.description?.trim() || '',
-          teeth: teethData,
-          stages: stagesData,
-          status: "ongoing",
-          startedAt: new Date()
-        }],
-        { session }
-      );
+  // Create treatment plan
+  [treatmentPlan] = await TreatmentPlan.create(
+    [{
+      patientId: appointment.patientId,
+      clinicId: appointment.clinicId,
+      createdByDoctorId: doctorId,
+      planName: treatmentPlanInput.planName.trim(),
+      description: treatmentPlanInput.description?.trim() || '',
+      teeth: teethData,
+      stages: stagesData,
+      status: "ongoing",
+      startedAt: new Date()
+    }],
+    { session }
+  );
 
-      console.log("Treatment plan created:", treatmentPlan._id);
+  console.log("Treatment plan created with teeth:", treatmentPlan.teeth);
+  console.log("Treatment plan created with stages:", treatmentPlan.stages);
 
-      // Link to patient
-      if (!patient.treatmentPlans) {
-        patient.treatmentPlans = [];
-      }
-      patient.treatmentPlans.push(treatmentPlan._id);
-      await patient.save({ session });
-    }
+  // Link to patient
+  if (!patient.treatmentPlans) {
+    patient.treatmentPlans = [];
+  }
+  patient.treatmentPlans.push(treatmentPlan._id);
+  await patient.save({ session });
+}
 
     // ---------- link visit to treatment plan ----------
     if (treatmentPlan) {
@@ -253,7 +244,6 @@ const consultPatient = async (req, res) => {
     session.endSession();
   }
 };
-
 const startTreatmentPlan = async (req, res) => {
   try {
     const { id: patientId } = req.params; // patient id from URL
