@@ -1,0 +1,201 @@
+[33mfb9f053[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m patient
+[33m2e05987[m patient
+[33mf6d2a8e[m patient
+[33m350672a[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m treatment plan
+[33mcb12e5f[m treatment plan
+[33m472528c[m enum
+[33m4a2f414[m add availability
+[33m60768c3[m appointmnet
+[33m1b1b754[m Merge branch 'main' of https://github.com/adharshSciPy/DenStack
+[33m4b11931[m appointmnet
+[33mc6334b6[m sales analytics
+[33mc7d2b9a[m order & product
+[33m76161f6[m Merge branch 'main' of https://github.com/adharshSciPy/DenStack
+[33m4712591[m appointmnet
+[33ma7f93bd[m Merge branch 'main' of github.com:adharshSciPy/GenStack
+[33mf059c8e[m category products
+[33m05b311e[m Merge branch 'main' of https://github.com/adharshSciPy/DenStack
+[33mfd72358[m appointmnet
+[33m28f7916[m appointment
+[33m4d0fb90[m appointment
+[33mfd8f099[m appointmnet
+[33ma5efa07[m Merge branch 'main' of https://github.com/adharshSciPy/DenStack
+[33m1b35207[m big push
+[33mcf5d636[m orders stats
+[33mfbbf98f[m receptionist
+[33ma0d6005[m receptionist
+[33m4b916f4[m products
+[33ma3990b2[m Merge branch 'main' of github.com:adharshSciPy/GenStack
+[33me129879[m analytics
+[33m76f2132[m ajmal
+[33m2f3ab67[m Merge branch 'main' of https://github.com/adharshSciPy/DenStack
+[33mb3e0337[m Ajmal's push
+[33m56b4b47[m ajmal
+[33meac7309[m vendor
+[33m0fda4f2[m dashboard
+[33mae42f9e[m sales
+[33m6af1782[m Merge branch 'main' of https://github.com/adharshSciPy/DenStack
+[33m32ab54f[m Merge branch 'main' of https://github.com/adharshSciPy/DenStack
+[33mf909fae[m doctor
+[33me51d565[m billing added
+[33m3f54804[m clinic 1
+[33m505fe87[m orders 1
+[33m633e64e[m order
+[33m76cce13[m Merge branch 'main' of https://github.com/adharshSciPy/DenStack
+[33mb950a11[m doct api corrected
+[33m71e6df1[m updated
+[33m5ae0f47[m updated
+[33m61dacfa[m Merge branch 'main' of github.com:adharshSciPy/GenStack
+[33mc2e5146[m clinic section
+[33m0850617[m doctor multer,add lab
+[33m41327be[m doctor multer,add lab
+[33m1279290[m Adhis push
+[33ma63f014[m Adhis push
+[33m4d31f89[m Adhis push
+[33m3685a54[m backend update
+[33me7b1832[m orders update 1
+[33m043923b[m orders update
+[33mfcbdfc7[m clinics
+[33mb474489[m inventory
+[33m53eab36[m inventory
+[33m2f584f2[m schema o&p
+[33m7b67f24[m category
+[33md221446[m Merge branch 'main' of github.com:adharshSciPy/GenStack
+[33me1156a9[m clinic count
+[33mf971cda[m Adhis push
+[33m2f5c2d3[m Adhis push
+[33m62ac03e[m vendor
+[33md17d499[m inventory
+[33mba00945[m inventory
+[33me88349a[m vendor
+[33ma511eff[m clinical-service
+[33m8c3eae7[m clinical-service
+[33m8b1410e[m Adhis push
+[33m5df3dff[m Merge branch 'main' of https://github.com/adharshSciPy/DenStack
+[33mbb7c420[m appointment reschdule error code
+[33mc27d764[m clinic-orders
+[33m6848ae1[m product
+[33mcebc930[m product
+[33m67d0f56[m Merge branch 'main' of github.com:adharshSciPy/GenStack
+[33m5434ab4[m vendor
+[33mfda8ee5[m appointment logic fixed
+[33mac13f9f[m Merge branch 'main' of https://github.com/adharshSciPy/DenStack
+[33m4795359[m error push
+[33m7e0c730[m vendor create &update
+[33m84d9aa8[m vendor create &update
+[33m642c36e[m appointment issue fixed
+[33m5126539[m clinic-inve
+[33m586bbf4[m lab
+[33mb20f342[m lab
+[33m2a99884[m update inventory with main category
+[33m8158dc3[m inventory
+[33m6f691ba[m inventory
+[33mb2ebc87[m Merge branch 'main' of https://github.com/adharshSciPy/DenStack
+[33ma5cf11a[m treatment plan satge completion
+[33me3b22ea[m clinic
+[33m7dfc010[m clinic
+[33ma687d0c[m treatement plan corrected
+[33m97e7ce2[m treatement plan corrected
+[33ma20ee04[m Merge branch 'main' of https://github.com/adharshSciPy/DenStack
+[33m0b06331[m consult doctor corrected
+[33m5db94d9[m lab
+[33ma17f3ac[m lab
+[33m8d32b13[m lab
+[33m61332c4[m Merge branch 'main' of github.com:adharshSciPy/GenStack
+[33m6c729a5[m cancel order pending
+[33m072fb0e[m Merge branch 'main' of https://github.com/adharshSciPy/DenStack
+[33md2833e8[m clinc availability corrected
+[33ma1a5cef[m Merge branch 'main' of github.com:adharshSciPy/GenStack
+[33md30bd19[m order update
+[33m3cb69fb[m doctor availabilty
+[33mc867163[m appointments
+[33mf6d75a6[m multiple labs
+[33me89020e[m patient
+[33m328f9fe[m Merge branch 'main' of https://github.com/adharshSciPy/DenStack
+[33me90531d[m patient
+[33m0780f10[m multiple labs
+[33m6c14e9e[m Merge branch 'main' of github.com:adharshSciPy/GenStack
+[33m3491afd[m products with brands
+[33m2bbb05c[m style
+[33m6c229d6[m lab
+[33mf4cc9f9[m Merge branch 'main' of https://github.com/adharshSciPy/DenStack
+[33m153c1af[m doctor appointment
+[33m707d548[m style
+[33m812b173[m lab
+[33m39beae3[m Merge branch 'main' of github.com:adharshSciPy/GenStack
+[33mdfb438e[m Brand
+[33m166dd6e[m Merge branch 'main' of https://github.com/adharshSciPy/DenStack
+[33m5dc4c98[m clinic flow
+[33mae635d6[m pull req
+[33mfbd38cb[m pull req
+[33mf055665[m Merge branch 'main' of github.com:adharshSciPy/GenStack
+[33m987a290[m category new
+[33m692990d[m Merge branch 'main' of https://github.com/adharshSciPy/DenStack
+[33m6892914[m create appointment
+[33m917640b[m Merge branch 'main' of github.com:adharshSciPy/GenStack
+[33m6576f09[m approve pro & assistant
+[33mded4b1b[m consult corrected
+[33mcb8597e[m appointmnets
+[33m6b0c869[m appointmnets
+[33m6e244f1[m Merge branch 'main' of https://github.com/adharshSciPy/DenStack
+[33m941600d[m assist & pro
+[33mabcc3e4[m clinic doctor login fixed
+[33m948f49b[m Assistant
+[33ma64e852[m pull req
+[33m64be12d[m pull req
+[33m0bc22fa[m Merge branch 'main' of https://github.com/adharshSciPy/DenStack
+[33m0b210c9[m consult corrected
+[33mfc65333[m PRO Schema
+[33m621af12[m lab
+[33m84871e7[m lab
+[33mf7e1eb3[m PRO
+[33m77c3b01[m Merge branch 'main' of github.com:adharshSciPy/GenStack
+[33m2b047f4[m PRO Schema
+[33m303fe98[m clinic registration
+[33mf8ca6d5[m clinic registration
+[33mc91fb41[m Merge branch 'main' of https://github.com/adharshSciPy/DenStack
+[33m0ab5c5d[m doctor integration
+[33mdb3816d[m Merge branch 'main' of github.com:adharshSciPy/GenStack
+[33m48cc222[m fix
+[33m2d910ef[m client-service
+[33me319dff[m shifts corrected
+[33m164f9c1[m Merge branch 'main' of https://github.com/adharshSciPy/DenStack
+[33m7a392ae[m orders update
+[33m6a8e97c[m shifts corrected
+[33m1bdb080[m department fetch and sidebar integration
+[33md1202e3[m Merge branch 'main' of https://github.com/adharshSciPy/DenStack
+[33m310ca37[m create appointmnet by clinic admin
+[33ma72226a[m pagination in vendor
+[33m4e83749[m Merge branch 'main' of github.com:adharshSciPy/GenStack
+[33m0235dd5[m pagination in inventory
+[33m7290f82[m patient rgister
+[33m623b51d[m create appointmnet by clinic admin
+[33m3452a04[m create appointmnet by clinic admin
+[33m7b445eb[m create appointmnet
+[33mc6f4097[m get availabilty
+[33m94ee28d[m Merge branch 'main' of https://github.com/adharshSciPy/DenStack
+[33md5933f5[m edit availability
+[33mdcbaf4e[m completed:billing
+[33m63db5bc[m completed:billing
+[33m00ea9ea[m completed:billing
+[33m893d193[m product
+[33m0088f27[m Merge branch 'main' of https://github.com/adharshSciPy/DenStack
+[33m85ff5b2[m appointment
+[33madf0126[m audit
+[33me9eefbd[m appointment
+[33md61d476[m Merge branch 'main' of https://github.com/adharshSciPy/DenStack
+[33me6bd63c[m appointment
+[33md21c002[m audit
+[33m30489eb[m get staff corrected
+[33md421a23[m doctor onboard corrected
+[33meb4a0d2[m remove doctor and doctor login corrected to a single clinic
+[33mbc968d7[m remove doctor and doctor login corrected to a single clinic
+[33m989841d[m reschedule the appointments
+[33m36c665f[m reschedule the appointments
+[33m7ac0f6d[m completed:billing
+[33ma663213[m completed:billing
+[33m680c3ab[m remove staffs from clinic
+[33m3f45de5[m remove staffs from clinic
+[33m7f4dca7[m Merge branch 'main' of https://github.com/adharshSciPy/DenStack
+[33mae6bd4d[m treatement plan add,edit,status update finish
+[33mc883097[m compl
