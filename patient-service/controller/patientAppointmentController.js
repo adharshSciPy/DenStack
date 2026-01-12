@@ -15,6 +15,7 @@ const createAppointment = async (req, res) => {
   const { id: clinicId } = req.params;
   const {
     userId,
+    userRole,
     patientId,
     doctorId,
     department,
@@ -36,6 +37,9 @@ const createAppointment = async (req, res) => {
 
     if (!userId || !mongoose.Types.ObjectId.isValid(userId))
       return res.status(400).json({ success: false, message: "Invalid userId" });
+
+    if (!userRole || !["receptionist", "admin"].includes(userRole))
+      return res.status(400).json({ success: false, message: "Invalid userRole" });
 
     if (!department)
       return res.status(400).json({ success: false, message: "Department is required" });
@@ -62,7 +66,32 @@ const createAppointment = async (req, res) => {
       return res.status(404).json({ success: false, message: "Patient not found in this clinic" });
 
     // Validate receptionist belongs to clinic
+    if (userRole === "receptionist") {
+      try {
+        const staffRes = await axios.get(
+          `${AUTH_SERVICE_BASE_URL}/clinic/all-staffs/${clinicId}`
+        );
 
+        const staff = staffRes.data?.staff;
+
+        const isReceptionistInClinic = staff?.receptionists?.some(
+          (rec) => rec._id.toString() === userId.toString()
+        );
+
+        if (!isReceptionistInClinic) {
+          return res.status(403).json({
+            success: false,
+            message: "Receptionist does not belong to this clinic"
+          });
+        }
+      } catch (err) {
+        return res.status(503).json({
+          success: false,
+          message: "Unable to verify receptionist from Auth Service",
+          error: err.message
+        });
+      }
+    }
 
 
     // ===================== 4️⃣ Referral Logic =====================
@@ -1048,8 +1077,9 @@ const getPatientTreatmentPlans = async (req, res) => {
       });
     }
 
-    // ✅ Fetch all treatment plans for this patient
-    const treatmentPlans = await treatmentPlanSchema.find({ patientId })
+    // Fetch all treatment plans for the patient
+    const treatmentPlans = await treatmentPlanSchema
+      .find({ patientId })
       .populate({
         path: "patientId",
         select: "name phone email patientUniqueId patientRandomId",
@@ -1062,12 +1092,45 @@ const getPatientTreatmentPlans = async (req, res) => {
         path: "createdByDoctorId",
         select: "name specialization phoneNumber",
       })
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean(); // important for faster transformation
+
+    // 🔹 Extract treatments from TEETH array
+    const formattedPlans = treatmentPlans.map((plan) => {
+      const treatmentsFromTeeth = plan.teeth.map((tooth) => ({
+        toothNumber: tooth.toothNumber,
+        priority: tooth.priority,
+        isCompleted: tooth.isCompleted,
+        procedures: tooth.procedures.map((procedure) => ({
+          procedureId: procedure._id,
+          name: procedure.name,
+          surface: procedure.surface,
+          status: procedure.status,
+          estimatedCost: procedure.estimatedCost,
+          notes: procedure.notes,
+        })),
+      }));
+
+      return {
+        _id: plan._id,
+        planName: plan.planName,
+        description: plan.description,
+        status: plan.status,
+        startedAt: plan.startedAt,
+        conflictChecked: plan.conflictChecked,
+        patient: plan.patientId,
+        clinic: plan.clinicId,
+        createdByDoctor: plan.createdByDoctorId,
+        treatments: treatmentsFromTeeth, // ✅ MAIN DATA
+        createdAt: plan.createdAt,
+        updatedAt: plan.updatedAt,
+      };
+    });
 
     return res.status(200).json({
       success: true,
-      count: treatmentPlans.length,
-      data: treatmentPlans,
+      count: formattedPlans.length,
+      data: formattedPlans,
     });
   } catch (error) {
     console.error("❌ Error fetching treatment plans:", error);
@@ -1078,6 +1141,7 @@ const getPatientTreatmentPlans = async (req, res) => {
     });
   }
 };
+
 const getAppointmentsByDate = async (req, res) => {
   try {
     const { date, status } = req.query;
