@@ -15,7 +15,6 @@ const createAppointment = async (req, res) => {
   const { id: clinicId } = req.params;
   const {
     userId,
-    userRole,
     patientId,
     doctorId,
     department,
@@ -37,9 +36,6 @@ const createAppointment = async (req, res) => {
 
     if (!userId || !mongoose.Types.ObjectId.isValid(userId))
       return res.status(400).json({ success: false, message: "Invalid userId" });
-
-    if (!userRole || !["receptionist", "admin"].includes(userRole))
-      return res.status(400).json({ success: false, message: "Invalid userRole" });
 
     if (!department)
       return res.status(400).json({ success: false, message: "Department is required" });
@@ -66,32 +62,7 @@ const createAppointment = async (req, res) => {
       return res.status(404).json({ success: false, message: "Patient not found in this clinic" });
 
     // Validate receptionist belongs to clinic
-    if (userRole === "receptionist") {
-      try {
-        const staffRes = await axios.get(
-          `${AUTH_SERVICE_BASE_URL}/clinic/all-staffs/${clinicId}`
-        );
 
-        const staff = staffRes.data?.staff;
-
-        const isReceptionistInClinic = staff?.receptionists?.some(
-          (rec) => rec._id.toString() === userId.toString()
-        );
-
-        if (!isReceptionistInClinic) {
-          return res.status(403).json({
-            success: false,
-            message: "Receptionist does not belong to this clinic"
-          });
-        }
-      } catch (err) {
-        return res.status(503).json({
-          success: false,
-          message: "Unable to verify receptionist from Auth Service",
-          error: err.message
-        });
-      }
-    }
 
 
     // ===================== 4️⃣ Referral Logic =====================

@@ -53,7 +53,7 @@ const shiftSchema = new Schema(
       type: Boolean,
       default: true,
     },
-     archivedAt: { type: Date, default: null },
+    archivedAt: { type: Date, default: null },
   },
   { _id: false }
 );
@@ -104,10 +104,14 @@ const receptionSchema = new Schema(
       type: String,
       default: RECEPTION_ROLE,
     },
-    clinicId:{
-      type:mongoose.Schema.Types.ObjectId,
-      required:true
-    }
+    clinicId: {
+      type: mongoose.Schema.Types.ObjectId,
+      required: true,
+    },
+    permissions: {
+      type: Object,
+      default: {},
+    },
   },
   { timestamps: true }
 );
@@ -121,7 +125,8 @@ receptionSchema.pre("save", async function (next) {
     let newId = "REC001";
 
     if (lastReception && lastReception.employeeId) {
-      const lastNumber = parseInt(lastReception.employeeId.replace("REC", "")) || 0;
+      const lastNumber =
+        parseInt(lastReception.employeeId.replace("REC", "")) || 0;
       newId = "REC" + String(lastNumber + 1).padStart(3, "0");
     }
 
@@ -144,7 +149,12 @@ receptionSchema.methods.isPasswordCorrect = async function (password) {
 
 receptionSchema.methods.generateAccessToken = function () {
   return jwt.sign(
-    { receptionId: this._id, name: this.name, email: this.email, role: this.role },
+    {
+      receptionId: this._id,
+      name: this.name,
+      email: this.email,
+      role: this.role,
+    },
     process.env.ACCESS_TOKEN_SECRET,
     { expiresIn: process.env.ACCESS_TOKEN_EXPIRY }
   );
@@ -152,7 +162,12 @@ receptionSchema.methods.generateAccessToken = function () {
 
 receptionSchema.methods.generateRefreshToken = function () {
   return jwt.sign(
-    { receptionId: this._id, name: this.name, email: this.email, role: this.role },
+    {
+      receptionId: this._id,
+      name: this.name,
+      email: this.email,
+      role: this.role,
+    },
     process.env.REFRESH_TOKEN_SECRET,
     { expiresIn: process.env.REFRESH_TOKEN_EXPIRY }
   );
