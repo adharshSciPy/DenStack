@@ -17,7 +17,8 @@ import {
   addReceptionBilling, getAllAppointments,
   getMonthlyAppointmentsClinicWise,
   getPatientHistoryById,
-  approveRecallAppointment
+  approveRecallAppointment,
+  getPatientTreatmentPlans
 } from "../controller/patientAppointmentController.js";
 import { authClinicDoctor } from "../middleware/authClinicDoctor.js";
 import { authDoctor } from "../middleware/authDoctor.js";
@@ -46,5 +47,6 @@ patientAppointmentRouter.route("/update_bills").patch(addReceptionBilling);
 patientAppointmentRouter.get("/allappointments", getAllAppointments);
 patientAppointmentRouter.route("/monthly_appointmnets/:id").get(verifyToken,attachPermissions,canReadAppointments,getMonthlyAppointmentsClinicWise)
 patientAppointmentRouter.route("/visit-history/:id").get(getPatientHistoryById);
-patientAppointmentRouter.route("/recall-approval/:id").patch(approveRecallAppointment)
+patientAppointmentRouter.route("/recall-approval/:id").patch(approveRecallAppointment);
+patientAppointmentRouter.route("/treatment-plans/:id").get(getPatientTreatmentPlans)
 export default patientAppointmentRouter;
