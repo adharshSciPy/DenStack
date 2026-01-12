@@ -40,12 +40,16 @@ const assistantSchema = new Schema(
     uniqueId: {
       type: String,
       required: true,
-      unique: true
+      unique: true,
+    },
+    permissions: {
+      type: Object,
+      default: {},
     },
     role: {
       type: String,
       default: ASSISTANT_ROLE,
-    }
+    },
   },
   { timestamps: true }
 );

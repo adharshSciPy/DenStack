@@ -109,6 +109,10 @@ const nurseSchema = new Schema(
             type: String,
             default: NURSE_ROLE,
         },
+        permissions: {
+    type: Object,
+    default: {}
+  },
         shifts: [shiftSchema],
         createdAt: {
             type: Date,
