@@ -22,7 +22,7 @@ export const verifyToken = (req, res, next) => {
     // console.log("ENV SUPERADMIN_ROLE:", process.env.SUPERADMIN_ROLE);
     console.log(req.user);
     
-    if (Number(decoded.role) === Number(process.env.SUPERADMIN_ROLE)) { // SUPERADMIN ROLE
+    if (Number(decoded.role) === Number(process.env.CLINIC_ROLE)) { // SUPERADMIN ROLE
       req.user.isSuperAdmin = true;
       req.user.permissions = {
         all: true,
