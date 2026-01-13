@@ -1077,7 +1077,7 @@ const getPatientTreatmentPlans = async (req, res) => {
       });
     }
 
-    // Fetch all treatment plans for the patient
+    // Fetch all treatment plans for the patient with all fields
     const treatmentPlans = await treatmentPlanSchema
       .find({ patientId })
       .populate({
@@ -1093,22 +1093,46 @@ const getPatientTreatmentPlans = async (req, res) => {
         select: "name specialization phoneNumber",
       })
       .sort({ createdAt: -1 })
-      .lean(); // important for faster transformation
+      .lean();
 
-    // 🔹 Extract treatments from TEETH array
+    // Format the response to include ALL fields
     const formattedPlans = treatmentPlans.map((plan) => {
-      const treatmentsFromTeeth = plan.teeth.map((tooth) => ({
+      // Safely extract treatments from teeth array (if exists)
+      const teethArray = plan.teeth || [];
+      const treatmentsFromTeeth = teethArray.map((tooth) => ({
+        _id: tooth._id,
         toothNumber: tooth.toothNumber,
         priority: tooth.priority,
         isCompleted: tooth.isCompleted,
-        procedures: tooth.procedures.map((procedure) => ({
+        procedures: (tooth.procedures || []).map((procedure) => ({
           procedureId: procedure._id,
           name: procedure.name,
           surface: procedure.surface,
           status: procedure.status,
           estimatedCost: procedure.estimatedCost,
           notes: procedure.notes,
+          stage: procedure.stage // Include stage if exists
         })),
+      }));
+
+      // Safely format stages with toothSurfaceProcedures (if exists)
+      const stagesArray = plan.stages || [];
+      const formattedStages = stagesArray.map((stage) => ({
+        _id: stage._id,
+        stageNumber: stage.stageNumber,
+        stageName: stage.stageName,
+        description: stage.description || "",
+        toothSurfaceProcedures: (stage.toothSurfaceProcedures || []).map((tsp) => ({
+          toothNumber: tsp.toothNumber,
+          surfaceProcedures: (tsp.surfaceProcedures || []).map((sp) => ({
+            surface: sp.surface,
+            procedureNames: sp.procedureNames || [],
+            _id: sp._id
+          }))
+        })),
+        status: stage.status || "pending",
+        scheduledDate: stage.scheduledDate,
+        notes: stage.notes || "",
       }));
 
       return {
@@ -1116,14 +1140,28 @@ const getPatientTreatmentPlans = async (req, res) => {
         planName: plan.planName,
         description: plan.description,
         status: plan.status,
-        startedAt: plan.startedAt,
-        conflictChecked: plan.conflictChecked,
+        conflictChecked: plan.conflictChecked || false,
+        currentStage: plan.currentStage || 1,
+        totalEstimatedCost: plan.totalEstimatedCost || 0,
+        completedCost: plan.completedCost || 0,
+        
+        // Patient, clinic, doctor info
         patient: plan.patientId,
         clinic: plan.clinicId,
         createdByDoctor: plan.createdByDoctorId,
-        treatments: treatmentsFromTeeth, // ✅ MAIN DATA
+        
+        // Main data arrays - include original arrays exactly as they are
+        teeth: teethArray, // Include original teeth array
+        treatments: treatmentsFromTeeth, // Also include formatted treatments
+        stages: formattedStages, // Include formatted stages
+        
+        // Timestamps
         createdAt: plan.createdAt,
         updatedAt: plan.updatedAt,
+        startedAt: plan.startedAt,
+        
+        // Version
+        __v: plan.__v || 0
       };
     });
 
@@ -1141,7 +1179,6 @@ const getPatientTreatmentPlans = async (req, res) => {
     });
   }
 };
-
 const getAppointmentsByDate = async (req, res) => {
   try {
     const { date, status } = req.query;
