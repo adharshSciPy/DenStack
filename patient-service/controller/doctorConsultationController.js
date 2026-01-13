@@ -298,172 +298,239 @@ const startTreatmentPlan = async (req, res) => {
     });
   }
 };
+//when adding the stage its actually adding to teeth array instead of stages in DB..
 const addStageToTreatmentPlan = async (req, res) => {
   try {
     const { id: treatmentPlanId } = req.params;
-    const { stageName, description = "", procedures = [], scheduledDate } = req.body;
+    const { teeth = [] } = req.body;
+    const doctorId = req.doctorId;
 
-    const doctorId = req.doctorId; // from authDoctor middleware
     if (!doctorId) {
-      return res.status(401).json({ success: false, message: "Unauthorized" });
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized"
+      });
     }
 
-    if (!stageName) {
-      return res.status(400).json({ success: false, message: "Stage name is required" });
+    if (!mongoose.Types.ObjectId.isValid(treatmentPlanId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid treatment plan ID"
+      });
+    }
+
+    if (!Array.isArray(teeth) || teeth.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Teeth array is required"
+      });
     }
 
     const treatmentPlan = await TreatmentPlan.findById(treatmentPlanId);
     if (!treatmentPlan) {
-      return res.status(404).json({ success: false, message: "Treatment plan not found" });
+      return res.status(404).json({
+        success: false,
+        message: "Treatment plan not found"
+      });
     }
 
     if (treatmentPlan.status === "completed") {
       return res.status(400).json({
         success: false,
-        message: "Cannot add stage to a completed treatment plan",
+        message: "Cannot modify a completed treatment plan"
       });
     }
 
-    const newStage = {
-      stageName,
-      description,
-      procedures: procedures.map((p) => ({
-        name: p.name,
-        doctorId: p.doctorId || doctorId, // assign doctor
-        referredByDoctorId: doctorId,
-        referredToDoctorId: p.doctorId || doctorId,
-        referralNotes: p.referralNotes || "",
-        completed: false,
-      })),
-      scheduledDate: scheduledDate || new Date().toISOString(),
-      status: "pending",
-    };
+    // ---------- normalize teeth ----------
+    const teethToInsert = teeth.map(tooth => ({
+      toothNumber: tooth.toothNumber,
+      priority: tooth.priority || "medium",
+      isCompleted: false,
+      procedures: (tooth.procedures || []).map(proc => ({
+        _id: new mongoose.Types.ObjectId(),
+        name: proc.name,
+        surface: proc.surface || "occlusal",
+        estimatedCost: proc.estimatedCost || 0,
+        notes: proc.notes || "",
+        status: proc.status || "planned",
+        createdByDoctorId: doctorId
+      }))
+    }));
 
-    treatmentPlan.stages.push(newStage);
-    await treatmentPlan.save();
+    // ---------- PUSH INTO TEETH ARRAY ----------
+    await TreatmentPlan.findByIdAndUpdate(
+      treatmentPlanId,
+      {
+        $push: {
+          teeth: { $each: teethToInsert }
+        }
+      },
+      { new: true }
+    );
 
     return res.status(200).json({
       success: true,
-      message: "New stage added successfully",
-      treatmentPlan,
+      message: "Teeth added successfully to treatment plan"
     });
+
   } catch (error) {
-    console.error("addStageToTreatmentPlan error:", error);
+    console.error("addTeethToTreatmentPlan error:", error);
     return res.status(500).json({
       success: false,
-      message: "Server error while adding stage",
-      error: error.message,
+      message: "Server error while adding teeth",
+      error: error.message
     });
   }
 };
+
 const updateProcedureStatus = async (req, res) => {
   try {
-    const { id: planId, stageIndex, procedureIndex } = req.params;
-    const { completed } = req.body;
+    const { id: planId, toothIndex } = req.params;
+    const { isCompleted } = req.body;
     const doctorId = req.doctorId;
 
     if (!doctorId) {
-      return res.status(401).json({ success: false, message: "Unauthorized" });
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized"
+      });
     }
 
-    if (typeof completed !== "boolean") {
-      return res
-        .status(400)
-        .json({ success: false, message: "Completed status must be boolean" });
+    if (typeof isCompleted !== "boolean") {
+      return res.status(400).json({
+        success: false,
+        message: "isCompleted must be boolean"
+      });
     }
 
     const treatmentPlan = await TreatmentPlan.findById(planId);
     if (!treatmentPlan) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Treatment plan not found" });
+      return res.status(404).json({
+        success: false,
+        message: "Treatment plan not found"
+      });
     }
 
     if (treatmentPlan.status === "completed") {
       return res.status(400).json({
         success: false,
-        message: "Cannot update procedure in a completed plan",
+        message: "Cannot update a completed treatment plan"
       });
     }
 
-    const stage = treatmentPlan.stages[stageIndex];
-    if (!stage) {
-      return res.status(404).json({ success: false, message: "Stage not found" });
+    const tooth = treatmentPlan.teeth[toothIndex];
+    if (!tooth) {
+      return res.status(404).json({
+        success: false,
+        message: "Tooth not found"
+      });
     }
 
-    // If procedures array is empty, create a default procedure
-    if (!stage.procedures || stage.procedures.length === 0) {
-      stage.procedures = [
-        {
-          name: "Default Procedure",
-          doctorId,
-          referredByDoctorId: doctorId,
-          referredToDoctorId: doctorId,
-          referralNotes: "",
-          completed: false,
-        },
-      ];
+    // ---------- UPDATE TOOTH ----------
+    tooth.isCompleted = isCompleted;
+
+    // ---------- OPTIONAL: SYNC PROCEDURES ----------
+    // (keep procedures consistent with tooth state)
+    if (Array.isArray(tooth.procedures)) {
+      tooth.procedures.forEach(proc => {
+        proc.isCompleted = isCompleted;
+      });
     }
 
-    const procedure = stage.procedures[procedureIndex];
-    if (!procedure) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Procedure not found" });
-    }
-
-    procedure.completed = completed;
-
-    // Mark stage completed if all procedures are done
-    if (stage.procedures.every((p) => p.completed)) {
-      stage.status = "completed";
-    }
+    // ---------- UPDATE PLAN STATUS ----------
+    treatmentPlan.status = treatmentPlan.teeth.every(t => t.isCompleted)
+      ? "completed"
+      : "ongoing";
 
     await treatmentPlan.save();
 
     return res.status(200).json({
       success: true,
-      message: "Procedure status updated",
-      treatmentPlan,
+      message: "Tooth status updated successfully",
+      treatmentPlan
     });
+
   } catch (error) {
     console.error("updateProcedureStatus error:", error);
     return res.status(500).json({
       success: false,
-      message: "Server error while updating procedure",
-      error: error.message,
+      message: "Server error while updating tooth status",
+      error: error.message
     });
   }
 };
+
 
 
 const finishTreatmentPlan = async (req, res) => {
   try {
     const { id: treatmentPlanId } = req.params;
+    const doctorId = req.doctorId;
+
+    if (!doctorId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized"
+      });
+    }
 
     const treatmentPlan = await TreatmentPlan.findById(treatmentPlanId);
     if (!treatmentPlan) {
-      return res.status(404).json({ success: false, message: "Treatment plan not found" });
+      return res.status(404).json({
+        success: false,
+        message: "Treatment plan not found"
+      });
     }
 
+    if (treatmentPlan.status === "completed") {
+      return res.status(400).json({
+        success: false,
+        message: "Treatment plan already completed"
+      });
+    }
+
+    const now = new Date();
+
+    // ---------- FORCE COMPLETE ALL TEETH ----------
+    treatmentPlan.teeth.forEach(tooth => {
+      if (!tooth.isCompleted) {
+        tooth.isCompleted = true;
+        tooth.completedAt = now;
+      }
+
+      // ---------- FORCE COMPLETE PROCEDURES ----------
+      if (Array.isArray(tooth.procedures)) {
+        tooth.procedures.forEach(proc => {
+          if (proc.status !== "completed") {
+            proc.status = "completed";
+            proc.completedAt = now;
+          }
+        });
+      }
+    });
+
+    // ---------- COMPLETE PLAN ----------
     treatmentPlan.status = "completed";
-    treatmentPlan.completedAt = new Date();
+    treatmentPlan.completedAt = now;
+
     await treatmentPlan.save();
 
     return res.status(200).json({
       success: true,
-      message: "Treatment plan marked as completed",
-      treatmentPlan,
+      message: "Treatment plan completed successfully",
+      treatmentPlan
     });
+
   } catch (error) {
     console.error("finishTreatmentPlan error:", error);
     return res.status(500).json({
       success: false,
       message: "Server error while completing treatment plan",
-      error: error.message,
+      error: error.message
     });
   }
 };
+
 
 
 

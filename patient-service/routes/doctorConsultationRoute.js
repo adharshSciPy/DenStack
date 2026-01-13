@@ -9,7 +9,7 @@ const doctorConsultationRouter = Router();
 doctorConsultationRouter.post("/consult-patient/:id", authDoctor, uploadFiles,consultPatient);
 doctorConsultationRouter.post("/start-treatment/:id", authDoctor,startTreatmentPlan);
 doctorConsultationRouter.patch("/add-stage/:id", authDoctor, addStageToTreatmentPlan);
-doctorConsultationRouter.patch("/update-procedure-status/:id/:stageIndex/:procedureIndex", authDoctor, updateProcedureStatus);
+doctorConsultationRouter.patch("/update-procedure-status/:id/:toothIndex", authDoctor, updateProcedureStatus);
 doctorConsultationRouter.patch("/finish-treatment/:id", authDoctor, finishTreatmentPlan);
 
 export default doctorConsultationRouter;
