@@ -10,7 +10,7 @@ doctorConsultationRouter.post("/consult-patient/:id", authDoctor, uploadFiles,co
 doctorConsultationRouter.post("/start-treatment/:id", authDoctor,startTreatmentPlan);
 doctorConsultationRouter.patch("/add-stage/:id", authDoctor, addStageToTreatmentPlan);
 doctorConsultationRouter.patch("/update-procedure-status/:id/:stageIndex/:procedureIndex", authDoctor, updateProcedureStatus);
-doctorConsultationRouter.patch("/complete-stage/:id/:stageNumber",authDoctor, completeStage)
+doctorConsultationRouter.patch("/complete-stage/:id/:stageIndex",authDoctor, completeStage)
 doctorConsultationRouter.patch("/finish-treatment/:id", authDoctor, finishTreatmentPlan);
 doctorConsultationRouter.delete("/remove-procedure/:id/:toothNumber", authDoctor, removeProcedure);
 doctorConsultationRouter.delete("/remove-stage/:id/:stageNumber", authDoctor, removeStage);
