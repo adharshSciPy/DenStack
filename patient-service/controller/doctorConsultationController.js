@@ -35,6 +35,7 @@ const consultPatient = async (req, res) => {
     const plannedProcedures = parseJSON(req.body.plannedProcedures, []);
     const performedTeeth = parseJSON(req.body.performedTeeth, []);
     const treatmentPlanInput = parseJSON(req.body.treatmentPlan, null);
+    const treatmentPlanStatusUpdate = parseJSON(req.body.treatmentPlanStatus, null); // NEW: Status updates
     const recall = parseJSON(req.body.recall, null);
     const notes = req.body.notes || "";
 
@@ -90,7 +91,6 @@ const consultPatient = async (req, res) => {
         notes: p.notes,
         performedBy: doctorId,
         performedAt: new Date(),
-        // Note: No treatmentPlanProcedureId needed in new schema
       }))
     }));
 
@@ -111,11 +111,102 @@ const consultPatient = async (req, res) => {
       { session }
     );
 
-    // ---------- TREATMENT PLAN CREATION (UPDATED FOR NEW SCHEMA) ----------
     let treatmentPlan = null;
+    let updatedExistingPlan = false;
 
-    if (treatmentPlanInput?.planName) {
-      console.log("Creating treatment plan with new schema:", treatmentPlanInput);
+    // ---------- CHECK FOR EXISTING TREATMENT PLAN TO UPDATE ----------
+    if (treatmentPlanStatusUpdate?.planId) {
+      console.log("Updating existing treatment plan status");
+      
+      treatmentPlan = await TreatmentPlan.findById(treatmentPlanStatusUpdate.planId).session(session);
+      if (!treatmentPlan) {
+        throw new Error("Treatment plan not found");
+      }
+
+      // Update stage completion if specified
+      if (treatmentPlanStatusUpdate.completedStageNumber) {
+        const stageNumber = treatmentPlanStatusUpdate.completedStageNumber;
+        const stage = treatmentPlan.stages.find(s => s.stageNumber == stageNumber);
+        
+        if (stage && stage.status !== "completed") {
+          // Complete all procedures in this stage
+          treatmentPlan.teeth.forEach(tooth => {
+            tooth.procedures.forEach(procedure => {
+              if (procedure.stage == stageNumber && procedure.status !== "completed") {
+                procedure.status = "completed";
+                procedure.completedAt = new Date();
+                procedure.completedInVisitId = visitDoc._id;
+                procedure.performedBy = doctorId;
+              }
+            });
+            
+            // Check if all procedures for this tooth are completed
+            const toothProcedures = tooth.procedures.filter(p => p.status === "completed");
+            if (toothProcedures.length === tooth.procedures.length) {
+              tooth.isCompleted = true;
+              tooth.completedAt = new Date();
+            }
+          });
+
+          // Update stage status
+          stage.status = "completed";
+          stage.completedAt = new Date();
+          stage.completedInVisitId = visitDoc._id;
+        }
+      }
+
+      // Update specific procedures if provided
+      if (treatmentPlanStatusUpdate.completedProcedures?.length > 0) {
+        treatmentPlanStatusUpdate.completedProcedures.forEach(procUpdate => {
+          const tooth = treatmentPlan.teeth.find(t => t.toothNumber == procUpdate.toothNumber);
+          if (tooth) {
+            const procedure = tooth.procedures.find(p => 
+              p.name === procUpdate.procedureName && 
+              p.surface === procUpdate.surface &&
+              p.stage == procUpdate.stageNumber
+            );
+            
+            if (procedure && procedure.status !== "completed") {
+              procedure.status = "completed";
+              procedure.completedAt = new Date();
+              procedure.completedInVisitId = visitDoc._id;
+              procedure.performedBy = doctorId;
+            }
+          }
+        });
+      }
+
+      // Update overall plan status
+      treatmentPlan.updatePlanStatus();
+      
+      // Update stage statuses based on completed procedures
+      treatmentPlan.stages.forEach(stage => {
+        const proceduresInStage = treatmentPlan.teeth.flatMap(tooth =>
+          tooth.procedures.filter(p => p.stage == stage.stageNumber)
+        );
+        
+        const completedCount = proceduresInStage.filter(p => p.status === "completed").length;
+        const totalCount = proceduresInStage.length;
+        
+        if (totalCount === 0) {
+          stage.status = "pending";
+        } else if (completedCount === totalCount) {
+          stage.status = "completed";
+          stage.completedAt = stage.completedAt || new Date();
+        } else if (completedCount > 0) {
+          stage.status = "in-progress";
+          stage.startedAt = stage.startedAt || new Date();
+        }
+      });
+
+      updatedExistingPlan = true;
+      await treatmentPlan.save({ session });
+      console.log("Existing treatment plan updated");
+    }
+
+    // ---------- CREATE NEW TREATMENT PLAN ----------
+    if (!updatedExistingPlan && treatmentPlanInput?.planName) {
+      console.log("Creating new treatment plan");
       
       // Process teeth data
       const teethData = (treatmentPlanInput.teeth || []).map(toothPlan => ({
@@ -186,6 +277,56 @@ const consultPatient = async (req, res) => {
         };
       });
 
+      // Check if procedures are being performed today (Stage 1)
+      const shouldStartToday = treatmentPlanInput.startToday === true;
+      const planStatus = shouldStartToday ? "ongoing" : "draft";
+      
+      // If starting today, mark Stage 1 procedures as completed if performed
+      if (shouldStartToday && performedTeeth.length > 0) {
+        // Mark stage 1 as in-progress or completed
+        if (stagesData[0]) {
+          stagesData[0].status = 'in-progress';
+          stagesData[0].startedAt = new Date();
+        }
+        
+        // Update procedures in teethData for stage 1
+        teethData.forEach(toothPlan => {
+          const toothNumber = toothPlan.toothNumber;
+          const performedTooth = performedTeeth.find(t => t.toothNumber === toothNumber);
+          
+          if (performedTooth) {
+            toothPlan.procedures.forEach(procedure => {
+              if (procedure.stage === 1) {
+                // Check if this procedure was performed
+                const matchingPerformedProc = performedTooth.procedures?.find(p => 
+                  p.name === procedure.name && 
+                  p.surface === procedure.surface
+                );
+                
+                if (matchingPerformedProc) {
+                  procedure.status = 'completed';
+                  procedure.completedAt = new Date();
+                  procedure.completedInVisitId = visitDoc._id;
+                  procedure.performedBy = doctorId;
+                }
+              }
+            });
+          }
+        });
+        
+        // Check if all stage 1 procedures are completed
+        const stage1Procedures = teethData.flatMap(t => 
+          t.procedures.filter(p => p.stage === 1)
+        );
+        const completedStage1Procedures = stage1Procedures.filter(p => p.status === 'completed');
+        
+        if (stagesData[0] && completedStage1Procedures.length === stage1Procedures.length) {
+          stagesData[0].status = 'completed';
+          stagesData[0].completedAt = new Date();
+          stagesData[0].completedInVisitId = visitDoc._id;
+        }
+      }
+
       // Create treatment plan
       [treatmentPlan] = await TreatmentPlan.create(
         [{
@@ -196,15 +337,17 @@ const consultPatient = async (req, res) => {
           description: treatmentPlanInput.description?.trim() || '',
           teeth: teethData,
           stages: stagesData,
-          status: "draft",
-          currentStage: 1
+          status: planStatus,
+          currentStage: 1,
+          startedAt: planStatus === "ongoing" ? new Date() : null
         }],
         { session }
       );
 
-      console.log("Treatment plan created with new schema:", {
+      console.log("Treatment plan created:", {
         teethCount: treatmentPlan.teeth.length,
         stagesCount: treatmentPlan.stages.length,
+        status: treatmentPlan.status,
         totalProcedures: treatmentPlan.teeth.reduce((sum, t) => sum + t.procedures.length, 0)
       });
 
@@ -216,25 +359,18 @@ const consultPatient = async (req, res) => {
       await patient.save({ session });
     }
 
-    // ---------- UPDATE TREATMENT PLAN IF PROCEDURES WERE PERFORMED ----------
-    if (treatmentPlan && performedTeeth.length > 0) {
-      console.log("Updating treatment plan with performed procedures");
+    // ---------- UPDATE NEWLY CREATED TREATMENT PLAN WITH PERFORMED PROCEDURES ----------
+    if (treatmentPlan && !updatedExistingPlan && performedTeeth.length > 0) {
+      console.log("Updating newly created treatment plan with performed procedures");
       
-      // Find the current stage
-      const currentStage = treatmentPlan.currentStage;
-      
-      // For each performed tooth, find matching procedures in the current stage
       performedTeeth.forEach(toothWork => {
         const toothNumber = toothWork.toothNumber;
         
-        // Find the tooth in treatment plan
         const toothPlan = treatmentPlan.teeth.find(t => t.toothNumber === toothNumber);
         if (!toothPlan) return;
         
-        // Mark procedures in current stage as completed
         toothPlan.procedures.forEach(procedure => {
-          if (procedure.stage === currentStage && procedure.status !== 'completed') {
-            // Check if this procedure matches any performed procedure
+          if (procedure.stage === 1 && procedure.status !== 'completed') {
             const matchingPerformedProc = toothWork.procedures?.find(p => 
               p.name === procedure.name && 
               p.surface === procedure.surface
@@ -258,9 +394,11 @@ const consultPatient = async (req, res) => {
       });
       
       // Update stage status
-      const stage = treatmentPlan.stages.find(s => s.stageNumber === currentStage);
+      const stage = treatmentPlan.stages.find(s => s.stageNumber === 1);
       if (stage) {
-        const proceduresInStage = treatmentPlan.getProceduresForStage(currentStage);
+        const proceduresInStage = treatmentPlan.teeth.flatMap(t => 
+          t.procedures.filter(p => p.stage === 1)
+        );
         const completedProcedures = proceduresInStage.filter(p => p.status === 'completed').length;
         const totalProcedures = proceduresInStage.length;
         
@@ -278,11 +416,16 @@ const consultPatient = async (req, res) => {
         }
       }
       
-      // Update overall plan status
+      // Update overall plan status if any procedures were completed
+      if (treatmentPlan.status === "draft" && performedTeeth.length > 0) {
+        treatmentPlan.status = "ongoing";
+        treatmentPlan.startedAt = new Date();
+      }
+      
       treatmentPlan.updatePlanStatus();
       
       await treatmentPlan.save({ session });
-      console.log("Treatment plan updated after performed procedures");
+      console.log("New treatment plan updated after performed procedures");
     }
 
     // ---------- link visit to treatment plan ----------
@@ -326,7 +469,8 @@ const consultPatient = async (req, res) => {
       success: true,
       message: "Consultation saved successfully",
       visit: visitDoc,
-      treatmentPlan: treatmentPlan || null
+      treatmentPlan: treatmentPlan || null,
+      planUpdated: updatedExistingPlan
     });
 
   } catch (err) {
@@ -336,7 +480,6 @@ const consultPatient = async (req, res) => {
       success: false,
       message: "Consultation failed",
       error: err.message,
-      // stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
     });
   } finally {
     session.endSession();
@@ -396,7 +539,6 @@ const startTreatmentPlan = async (req, res) => {
     });
   }
 };
-
 const addStageToTreatmentPlan = async (req, res) => {
   try {
     const { id: treatmentPlanId } = req.params;
@@ -481,7 +623,6 @@ const addStageToTreatmentPlan = async (req, res) => {
     });
   }
 };
-
 const updateProcedureStatus = async (req, res) => {
   try {
     const { id: planId, stageIndex, procedureIndex } = req.params;
@@ -551,13 +692,20 @@ const updateProcedureStatus = async (req, res) => {
 };
 const completeStage = async (req, res) => {
   try {
-    const { id: planId, stageNumber } = req.params;
+    const { id: planId, stageIndex } = req.params;
     const doctorId = req.doctorId;
 
     if (!doctorId) {
       return res.status(401).json({
         success: false,
-        message: "Unauthorized"
+        message: "Unauthorized",
+      });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(planId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid treatment plan ID",
       });
     }
 
@@ -565,29 +713,39 @@ const completeStage = async (req, res) => {
     if (!treatmentPlan) {
       return res.status(404).json({
         success: false,
-        message: "Treatment plan not found"
+        message: "Treatment plan not found",
       });
     }
 
-    const stage = treatmentPlan.stages.find(s => s.stageNumber == stageNumber);
-    if (!stage) {
-      return res.status(404).json({
+    const index = Number(stageIndex);
+
+    if (
+      Number.isNaN(index) ||
+      index < 0 ||
+      index >= treatmentPlan.stages.length
+    ) {
+      return res.status(400).json({
         success: false,
-        message: `Stage ${stageNumber} not found`
+        message: "Invalid stage index",
       });
     }
+
+    const stage = treatmentPlan.stages[index];
 
     if (stage.status === "completed") {
       return res.status(400).json({
         success: false,
-        message: `Stage ${stageNumber} is already completed`
+        message: `Stage "${stage.stageName}" is already completed`,
       });
     }
 
-    // Use the schema method to complete the stage
+    // 🔑 Resolve stageNumber from index
+    const stageNumber = stage.stageNumber;
+
+    // Use existing schema method (SAFE)
     const completedStage = treatmentPlan.completeStage(
       stageNumber,
-      null, // visitId (can be passed if available)
+      null, // visitId (optional)
       doctorId
     );
 
@@ -595,9 +753,11 @@ const completeStage = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: `Stage ${stageNumber} completed successfully`,
+      message: `Stage "${stage.stageName}" completed successfully`,
+      stageIndex: index,
+      stageNumber,
       stage: completedStage,
-      treatmentPlan
+      treatmentPlan,
     });
 
   } catch (error) {
@@ -605,7 +765,7 @@ const completeStage = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Server error while completing stage",
-      error: error.message
+      error: error.message,
     });
   }
 };
@@ -684,7 +844,6 @@ const finishTreatmentPlan = async (req, res) => {
     });
   }
 };
-
 const removeProcedure = async (req, res) => {
   try {
     const { id: planId, toothNumber } = req.params;

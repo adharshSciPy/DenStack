@@ -30,7 +30,7 @@ import { canReadAppointments, canWriteAppointments } from "../middleware/checkPe
 const patientAppointmentRouter = Router();
 
 // Existing routes
-patientAppointmentRouter.route("/book/:id").post(verifyToken,attachPermissions,canWriteAppointments, createAppointment);
+patientAppointmentRouter.route("/book/:id").post( createAppointment);
 patientAppointmentRouter.route("/fetch").get(authDoctor, getTodaysAppointments);
 patientAppointmentRouter.route("/fetch/:id").get(getAppointmentById);
 patientAppointmentRouter.route("/patient-history/:id")
@@ -45,7 +45,7 @@ patientAppointmentRouter.route("/by-date").get(getAppointmentsByDate);
 patientAppointmentRouter.route("/clinic/unpaid_bills/:id").get(getUnpaidBillsByClinic);
 patientAppointmentRouter.route("/update_bills").patch(addReceptionBilling);
 patientAppointmentRouter.get("/allappointments", getAllAppointments);
-patientAppointmentRouter.route("/monthly_appointmnets/:id").get(verifyToken,attachPermissions,canReadAppointments,getMonthlyAppointmentsClinicWise)
+patientAppointmentRouter.route("/monthly_appointmnets/:id").get(verifyToken,attachPermissions,getMonthlyAppointmentsClinicWise)
 patientAppointmentRouter.route("/visit-history/:id").get(getPatientHistoryById);
 patientAppointmentRouter.route("/recall-approval/:id").patch(approveRecallAppointment);
 patientAppointmentRouter.route("/treatment-plans/:id").get(getPatientTreatmentPlans)
