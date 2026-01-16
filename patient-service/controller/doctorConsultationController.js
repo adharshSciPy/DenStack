@@ -281,160 +281,120 @@ const consultPatient = async (req, res) => {
       });
       
       // Process stages data with toothSurfaceProcedures
-      const stagesData = (treatmentPlanInput.stages || []).map((stageInput, index) => {
-        const stageNumber = index + 1;
-        
-        console.log(`📋 Processing Stage ${stageNumber} from frontend:`);
-        console.log(`  Name: ${stageInput.stageName}`);
-        console.log(`  Status from frontend: ${stageInput.status || 'pending'}`);
-        console.log(`  Description: ${stageInput.description}`);
-        
-        // Build toothSurfaceProcedures for this stage
-        const toothSurfaceProcedures = [];
-        
-        // Group procedures by tooth and surface for this stage
-        const proceduresByToothAndSurface = {};
-        
-        teethData.forEach(tooth => {
-          // Get procedures for this stage
-          const stageProcedures = tooth.procedures.filter(p => p.stage === stageNumber);
-          
-          if (stageProcedures.length > 0) {
-            const toothKey = tooth.toothNumber;
-            proceduresByToothAndSurface[toothKey] = {};
-            
-            // Group by surface
-            stageProcedures.forEach(proc => {
-              const surfaceKey = proc.surface;
-              if (!proceduresByToothAndSurface[toothKey][surfaceKey]) {
-                proceduresByToothAndSurface[toothKey][surfaceKey] = new Set();
-              }
-              proceduresByToothAndSurface[toothKey][surfaceKey].add(proc.name);
-            });
-          }
-        });
-        
-        // Convert to toothSurfaceProcedures format
-        Object.entries(proceduresByToothAndSurface).forEach(([toothNumStr, surfaces]) => {
-          const toothNumber = parseInt(toothNumStr);
-          const surfaceProcedures = Object.entries(surfaces).map(([surface, procedureNamesSet]) => ({
-            surface: surface,
-            procedureNames: Array.from(procedureNamesSet)
-          }));
-          
-          toothSurfaceProcedures.push({
-            toothNumber: toothNumber,
-            surfaceProcedures: surfaceProcedures
-          });
-        });
-        
-        // CRITICAL FIX: Use status from frontend, not recalculate it
-     const stageStatus = stageInput.status || 'pending';
-        
-        console.log(`  Using status: ${stageStatus} (from frontend)`);
-        console.log(`  Tooth-Surface Procedures: ${toothSurfaceProcedures.length} entries`);
-        
-        return {
-          stageNumber: stageNumber,
-          stageName: stageInput.stageName || `Stage ${stageNumber}`,
-          description: stageInput.description || '',
-          status: stageStatus, // ← Use status from frontend
-          scheduledDate: stageInput.scheduledDate ? new Date(stageInput.scheduledDate) : null,
-          toothSurfaceProcedures: toothSurfaceProcedures,
-          notes: stageInput.notes || '',
-          // Set timestamps based on status
-          ...(stageStatus === 'in-progress' && { startedAt: new Date() }),
-          ...(stageStatus === 'completed' && { completedAt: new Date() })
-        };
-      });
-
-      // Check if procedures are being performed today (Stage 1)
-      const shouldStartToday = treatmentPlanInput.startToday === true;
-      const planStatus = shouldStartToday ? "ongoing" : "draft";
+    const stagesData = (treatmentPlanInput.stages || []).map((stageInput, index) => {
+  const stageNumber = index + 1;
+  
+  console.log(`📋 Processing Stage ${stageNumber} from frontend:`);
+  console.log(`  Name: ${stageInput.stageName}`);
+  console.log(`  Status from frontend: ${stageInput.status || 'pending'}`);
+  console.log(`  Scheduled Date: ${stageInput.scheduledDate}`);
+  
+  // Build toothSurfaceProcedures for this stage
+  const toothSurfaceProcedures = [];
+  
+  // Group procedures by tooth and surface for this stage
+  const proceduresByToothAndSurface = {};
+  
+  teethData.forEach(tooth => {
+    // Get procedures for this stage
+    const stageProcedures = tooth.procedures.filter(p => p.stage === stageNumber);
+    
+    if (stageProcedures.length > 0) {
+      const toothKey = tooth.toothNumber;
+      proceduresByToothAndSurface[toothKey] = {};
       
-      console.log(`📅 Plan start status: ${planStatus} (shouldStartToday: ${shouldStartToday})`);
-      
-      // If starting today, mark Stage 1 procedures as completed if performed
-      if (shouldStartToday && performedTeeth.length > 0) {
-        console.log("🎯 Starting treatment today - updating Stage 1");
-        
-        // Mark stage 1 as in-progress or completed
-        if (stagesData[0]) {
-          const currentStage1Status = stagesData[0].status;
-          // Only update if not already completed
-          if (currentStage1Status !== 'completed') {
-            stagesData[0].status = 'in-progress';
-            stagesData[0].startedAt = new Date();
-            console.log(`✅ Stage 1 marked as in-progress`);
-          }
+      // Group by surface
+      stageProcedures.forEach(proc => {
+        const surfaceKey = proc.surface;
+        if (!proceduresByToothAndSurface[toothKey][surfaceKey]) {
+          proceduresByToothAndSurface[toothKey][surfaceKey] = new Set();
         }
-        
-        // Update procedures in teethData for stage 1
-        teethData.forEach(toothPlan => {
-          const toothNumber = toothPlan.toothNumber;
-          const performedTooth = performedTeeth.find(t => t.toothNumber === toothNumber);
-          
-          if (performedTooth) {
-            toothPlan.procedures.forEach(procedure => {
-              if (procedure.stage === 1 && procedure.status !== 'completed') {
-                // Check if this procedure was performed
-                const matchingPerformedProc = performedTooth.procedures?.find(p => 
-                  p.name === procedure.name && 
-                  p.surface === procedure.surface
-                );
-                
-                if (matchingPerformedProc) {
-                  procedure.status = 'completed';
-                  procedure.completedAt = new Date();
-                  procedure.completedInVisitId = visitDoc._id;
-                  procedure.performedBy = doctorId;
-                  console.log(`✅ Procedure ${procedure.name} on tooth ${toothNumber} marked as completed`);
-                }
-              }
-            });
-          }
-        });
-        
-        // Check if all stage 1 procedures are completed
-        const stage1Procedures = teethData.flatMap(t => 
-          t.procedures.filter(p => p.stage === 1)
-        );
-        const completedStage1Procedures = stage1Procedures.filter(p => p.status === 'completed');
-        
-        console.log(`Stage 1 completion: ${completedStage1Procedures.length}/${stage1Procedures.length} procedures`);
-        
-        if (stagesData[0] && completedStage1Procedures.length === stage1Procedures.length && stage1Procedures.length > 0) {
-          stagesData[0].status = 'completed';
-          stagesData[0].completedAt = new Date();
-          stagesData[0].completedInVisitId = visitDoc._id;
-          console.log(`✅ Stage 1 marked as completed`);
-        }
-      }
-
-      // Create treatment plan
-      [treatmentPlan] = await TreatmentPlan.create(
-        [{
-          patientId: appointment.patientId,
-          clinicId: appointment.clinicId,
-          createdByDoctorId: doctorId,
-          planName: treatmentPlanInput.planName.trim(),
-          description: treatmentPlanInput.description?.trim() || '',
-          teeth: teethData,
-          stages: stagesData,
-          status: planStatus,
-          currentStage: 1,
-          startedAt: planStatus === "ongoing" ? new Date() : null
-        }],
-        { session }
-      );
-
-      console.log("✅ Treatment plan created:", {
-        planName: treatmentPlan.planName,
-        teethCount: treatmentPlan.teeth.length,
-        stagesCount: treatmentPlan.stages.length,
-        status: treatmentPlan.status,
-        totalProcedures: treatmentPlan.teeth.reduce((sum, t) => sum + t.procedures.length, 0)
+        proceduresByToothAndSurface[toothKey][surfaceKey].add(proc.name);
       });
+    }
+  });
+  
+  // Convert to toothSurfaceProcedures format
+  Object.entries(proceduresByToothAndSurface).forEach(([toothNumStr, surfaces]) => {
+    const toothNumber = parseInt(toothNumStr);
+    const surfaceProcedures = Object.entries(surfaces).map(([surface, procedureNamesSet]) => ({
+      surface: surface,
+      procedureNames: Array.from(procedureNamesSet)
+    }));
+    
+    toothSurfaceProcedures.push({
+      toothNumber: toothNumber,
+      surfaceProcedures: surfaceProcedures
+    });
+  });
+  
+  // CRITICAL FIX: Determine stage status correctly
+  const stageStatus = stageInput.status || 'pending';
+  
+  console.log(`  Using status: ${stageStatus} (from frontend)`);
+  console.log(`  Tooth-Surface Procedures: ${toothSurfaceProcedures.length} entries`);
+  
+  return {
+    stageNumber: stageNumber,
+    stageName: stageInput.stageName || `Stage ${stageNumber}`,
+    description: stageInput.description || '',
+    status: stageStatus,
+    scheduledDate: stageInput.scheduledDate ? new Date(stageInput.scheduledDate) : null,
+    toothSurfaceProcedures: toothSurfaceProcedures,
+    notes: stageInput.notes || '',
+    // Set timestamps based on status
+    ...(stageStatus === 'in-progress' && { startedAt: new Date() }),
+    ...(stageStatus === 'completed' && { completedAt: new Date() })
+  };
+});
+
+// FIX: Calculate overall plan status based on stages
+const hasInProgressStages = stagesData.some(stage => stage.status === 'in-progress');
+const hasCompletedStages = stagesData.some(stage => stage.status === 'completed');
+const allStagesCompleted = stagesData.length > 0 && stagesData.every(stage => stage.status === 'completed');
+const allStagesPending = stagesData.length > 0 && stagesData.every(stage => stage.status === 'pending');
+
+let planStatus = "draft";
+
+if (allStagesCompleted) {
+  planStatus = "completed";
+} else if (hasInProgressStages || hasCompletedStages) {
+  planStatus = "ongoing";
+} else if (allStagesPending) {
+  planStatus = "draft";
+}
+
+console.log(`📊 Calculated plan status: ${planStatus}`);
+console.log(`  Has in-progress stages: ${hasInProgressStages}`);
+console.log(`  Has completed stages: ${hasCompletedStages}`);
+console.log(`  All stages completed: ${allStagesCompleted}`);
+console.log(`  All stages pending: ${allStagesPending}`);
+
+// Create treatment plan
+[treatmentPlan] = await TreatmentPlan.create(
+  [{
+    patientId: appointment.patientId,
+    clinicId: appointment.clinicId,
+    createdByDoctorId: doctorId,
+    planName: treatmentPlanInput.planName.trim(),
+    description: treatmentPlanInput.description?.trim() || '',
+    teeth: teethData,
+    stages: stagesData,
+    status: planStatus, // Use calculated status
+    currentStage: 1,
+    startedAt: planStatus === "ongoing" || planStatus === "completed" ? new Date() : null,
+    completedAt: planStatus === "completed" ? new Date() : null
+  }],
+  { session }
+);
+
+console.log("✅ Treatment plan created:", {
+  planName: treatmentPlan.planName,
+  teethCount: treatmentPlan.teeth.length,
+  stagesCount: treatmentPlan.stages.length,
+  status: treatmentPlan.status,
+  totalProcedures: treatmentPlan.teeth.reduce((sum, t) => sum + t.procedures.length, 0)
+});
       
       // Log final stage statuses
       console.log("📊 FINAL STAGE STATUSES SAVED TO DATABASE:");
