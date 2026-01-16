@@ -97,26 +97,48 @@ const treatmentPlanSchema = new Schema(
 
 // ========== HELPER METHODS ==========
 // Method to update overall plan status
+// In your TreatmentPlan model, update the updatePlanStatus method:
+
 treatmentPlanSchema.methods.updatePlanStatus = function() {
-  // Calculate overall plan status
+  // Calculate based on stages first (priority)
+  if (this.stages && this.stages.length > 0) {
+    const allStagesCompleted = this.stages.every(s => s.status === 'completed');
+    const anyStageInProgress = this.stages.some(s => s.status === 'in-progress');
+    const anyStageCompleted = this.stages.some(s => s.status === 'completed');
+    
+    if (allStagesCompleted) {
+      this.status = "completed";
+      this.completedAt = this.completedAt || new Date();
+      this.startedAt = this.startedAt || new Date();
+    } else if (anyStageInProgress || anyStageCompleted) {
+      this.status = "ongoing";
+      this.startedAt = this.startedAt || new Date();
+    } else {
+      this.status = "draft";
+    }
+    
+    // Update current stage
+    const incompleteStage = this.stages.find(s => s.status !== 'completed');
+    if (incompleteStage) {
+      this.currentStage = incompleteStage.stageNumber;
+    } else if (this.stages.length > 0) {
+      this.currentStage = this.stages[this.stages.length - 1].stageNumber;
+    }
+    
+    return;
+  }
+  
+  // Fallback to old logic if no stages
   const totalProcedures = this.teeth.reduce((sum, tooth) => sum + tooth.procedures.length, 0);
   const completedProcedures = this.teeth.reduce((sum, tooth) => 
     sum + tooth.procedures.filter(p => p.status === 'completed').length, 0
   );
   
-  // Check if all teeth are completed
-  const allTeethCompleted = this.teeth.length > 0 && 
-    this.teeth.every(t => t.isCompleted);
-    
-  // Check if all stages are completed
-  const allStagesCompleted = this.stages.length > 0 && 
-    this.stages.every(s => s.status === 'completed');
-  
   if (totalProcedures === 0) {
     this.status = "draft";
   } else if (completedProcedures === 0) {
     this.status = "draft";
-  } else if (allTeethCompleted && allStagesCompleted) {
+  } else if (completedProcedures === totalProcedures) {
     this.status = "completed";
     this.completedAt = new Date();
   } else if (completedProcedures > 0 && completedProcedures < totalProcedures) {
@@ -124,14 +146,6 @@ treatmentPlanSchema.methods.updatePlanStatus = function() {
     this.startedAt = this.startedAt || new Date();
   } else {
     this.status = "draft";
-  }
-  
-  // Update current stage
-  const incompleteStage = this.stages.find(s => s.status !== 'completed');
-  if (incompleteStage) {
-    this.currentStage = incompleteStage.stageNumber;
-  } else if (this.stages.length > 0) {
-    this.currentStage = this.stages[this.stages.length - 1].stageNumber;
   }
 };
 
