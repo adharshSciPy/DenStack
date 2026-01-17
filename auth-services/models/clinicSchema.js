@@ -79,24 +79,16 @@ const clinicSchema = new Schema(
     },
 
     // ===== Subscription Plan =====
-    subscription: {
-      package: {
-        type: String,
-        enum: ["basic", "standard", "premium"],
-        default: "basic",
-      },
-      type: {
-        type: String,
-        enum: ["monthly", "annual"],
-        default: "monthly",
-      },
+  subscription: {
+      package: { type: String, enum: ["starter", "growth", "enterprise"], default: "starter" },
+      type: { type: String, enum: ["annual"], default: "annual" },
       price: { type: Number, default: 0 },
       startDate: { type: Date, default: Date.now },
-      endDate: { type: Date },
+      endDate: Date,
       isActive: { type: Boolean, default: true },
-      nextBillingDate: { type: Date },
-      lastPaymentDate: { type: Date },
-      transactionId: { type: String }, // optional for payment tracking
+      nextBillingDate: Date,
+      lastPaymentDate: Date,
+      transactionId: String,
     },
 
     // ===== Status =====

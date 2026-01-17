@@ -751,6 +751,7 @@ const registerSubClinic = async (req, res) => {
       theme,
       features,
       isOwnLab = false,
+      isSubClinic = true,
     } = req.body;
 
     // ===== Validate Parent Clinic =====
@@ -822,30 +823,54 @@ const registerSubClinic = async (req, res) => {
       isOwnLab,
       parentClinicId,
     });
-
-    // ===== Default Subscription =====
-    newSubClinic.activateSubscription("monthly", "basic", 0);
-    newSubClinic.applySubscriptionFeatures();
-
-    // ===== Optional Feature Overrides =====
-    if (features && typeof features === "object") {
-      Object.entries(features).forEach(([key, value]) => {
-        if (key in newSubClinic.features) {
-          if (typeof value === "object") {
-            Object.entries(value).forEach(([subKey, subVal]) => {
-              if (
-                newSubClinic.features[key] &&
-                subKey in newSubClinic.features[key]
-              ) {
-                newSubClinic.features[key][subKey] = !!subVal;
-              }
-            });
-          } else {
-            newSubClinic.features[key] = !!value;
-          }
-        }
-      });
+    if (parentClinic.subscription) {
+      // ✨ EDITED: align field names to subscription schema (package, type, price, startDate, endDate, isActive)
+      newSubClinic.subscription = {
+        package: parentClinic.subscription.package,
+        type: parentClinic.subscription.type,
+        price: parentClinic.subscription.price || 0,
+        startDate:
+          parentClinic.subscription.startDate ||
+          parentClinic.subscription.startDate,
+        endDate:
+          parentClinic.subscription.endDate ||
+          parentClinic.subscription.endDate,
+        isActive: !!parentClinic.subscription.isActive,
+        nextBillingDate:
+          parentClinic.subscription.nextBillingDate ||
+          parentClinic.subscription.endDate ||
+          null,
+        lastPaymentDate: parentClinic.subscription.lastPaymentDate || null,
+        transactionId: parentClinic.subscription.transactionId || null,
+      };
     }
+
+    // ================================================================
+    // ✅ Inherit All Features From Parent Clinic
+    // ================================================================
+
+    if (parentClinic.features) {
+      newSubClinic.features = JSON.parse(JSON.stringify(parentClinic.features)); // Deep copy
+    }
+    // ===== Optional Feature Overrides =====
+    // if (features && typeof features === "object") {
+    //   Object.entries(features).forEach(([key, value]) => {
+    //     if (key in newSubClinic.features) {
+    //       if (typeof value === "object") {
+    //         Object.entries(value).forEach(([subKey, subVal]) => {
+    //           if (
+    //             newSubClinic.features[key] &&
+    //             subKey in newSubClinic.features[key]
+    //           ) {
+    //             newSubClinic.features[key][subKey] = !!subVal;
+    //           }
+    //         });
+    //       } else {
+    //         newSubClinic.features[key] = !!value;
+    //       }
+    //     }
+    //   });
+    // }
 
     // ===== Save SubClinic =====
     await newSubClinic.save();
