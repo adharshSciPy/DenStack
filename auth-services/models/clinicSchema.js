@@ -219,18 +219,15 @@ clinicSchema.methods.generateRefreshToken = function (role = CLINIC_ROLE) {
 
 // 🔹 Activate subscription with dynamic duration
 clinicSchema.methods.activateSubscription = function (
-  type = "monthly",
-  pkg = "basic",
+  type = "annual",
+  pkg = "starter",
   price = 0
 ) {
   const now = new Date();
   const endDate = new Date(now);
 
-  if (type === "monthly") {
-    endDate.setMonth(now.getMonth() + 1);
-  } else if (type === "annual") {
-    endDate.setFullYear(now.getFullYear() + 1);
-  }
+  // ONLY annual allowed
+  endDate.setFullYear(now.getFullYear() + 1);
 
   this.subscription = {
     package: pkg,
@@ -244,6 +241,7 @@ clinicSchema.methods.activateSubscription = function (
 
   return this.subscription;
 };
+
 
 // 🔹 Check subscription validity
 clinicSchema.methods.isSubscriptionValid = function () {
@@ -262,7 +260,7 @@ clinicSchema.methods.cancelSubscription = function () {
 
 // 🔹 Auto-apply features based on package
 clinicSchema.methods.applySubscriptionFeatures = function () {
-  if (this.subscription.package === "basic") {
+  if (this.subscription.package === "starter") {
     this.features.canAddStaff = {
       nurses: false,
       receptionists: true,
@@ -271,7 +269,20 @@ clinicSchema.methods.applySubscriptionFeatures = function () {
       technicians: false,
     };
     this.features.canAccessReports = false;
-  } else if (this.subscription.package === "premium") {
+  }
+
+  if (this.subscription.package === "growth") {
+    this.features.canAddStaff = {
+      nurses: true,
+      receptionists: true,
+      pharmacists: false,
+      accountants: false,
+      technicians: true,
+    };
+    this.features.canAccessReports = true;
+  }
+
+  if (this.subscription.package === "enterprise") {
     this.features.canAddStaff = {
       nurses: true,
       receptionists: true,
@@ -281,6 +292,7 @@ clinicSchema.methods.applySubscriptionFeatures = function () {
     };
     this.features.canAccessReports = true;
   }
+
   return this.features;
 };
 

@@ -86,7 +86,7 @@ const registerClinic = async (req, res) => {
     });
 
     // 🔹 Default subscription on registration (basic/monthly)
-    newClinic.activateSubscription("monthly", "basic", 0);
+    newClinic.activateSubscription("annual", "starter", 0);
 
     // 🔹 Apply features based on default package
     newClinic.applySubscriptionFeatures();
