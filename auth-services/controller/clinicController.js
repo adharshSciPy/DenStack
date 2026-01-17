@@ -1100,9 +1100,234 @@ const toggleClinicAccess = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+const upgradeSubscription = async (req, res) => {
+  try {
+    const clinicId = req.clinicId; // ✅ FIX
+    const { package: newPackage, transactionId } = req.body;
 
+    if (!["starter", "growth", "enterprise"].includes(newPackage)) {
+      return res.status(400).json({ message: "Invalid plan" });
+    }
 
+    const clinic = await Clinic.findById(clinicId);
+    if (!clinic) {
+      return res.status(404).json({ message: "Clinic not found" });
+    }
+
+    const currentPackage = clinic.subscription?.package || "starter";
+
+    const order = ["starter", "growth", "enterprise"];
+    if (order.indexOf(newPackage) <= order.indexOf(currentPackage)) {
+      return res.status(400).json({
+        message: "Downgrade or same plan not allowed",
+      });
+    }
+
+    const now = new Date();
+    const endDate = new Date();
+    endDate.setFullYear(now.getFullYear() + 1);
+
+    clinic.subscription = {
+      package: newPackage,
+      type: "annual",
+      price: PLAN_PRICES[newPackage],
+      startDate: now,
+      endDate,
+      isActive: true,
+      nextBillingDate: endDate,
+      lastPaymentDate: now,
+      transactionId,
+    };
+
+    clinic.applySubscriptionFeatures(newPackage);
+    await clinic.save();
+
+    return res.status(200).json({
+      success: true,
+      message: `Upgraded to ${newPackage} plan successfully`,
+      subscription: clinic.subscription,
+    });
+  } catch (error) {
+    console.error("🔴 UPGRADE ERROR:", error);
+    return res.status(500).json({
+      message: "Subscription upgrade failed",
+    });
+  }
+};
+const updateSubClinic = async (req, res) => {
+  try {
+    const { subClinicId } = req.params;
+    const parentClinicId = req.clinicId;
+
+    // 1️⃣ Find sub-clinic
+    const subClinic = await Clinic.findById(subClinicId);
+
+    if (!subClinic) {
+      return res.status(404).json({ message: "Sub-clinic not found" });
+    }
+
+    // 2️⃣ Ownership check (SAFE)
+    if (
+      subClinic.parentClinicId &&
+      subClinic.parentClinicId.toString() !== parentClinicId.toString()
+    ) {
+      return res.status(403).json({
+        message: "You do not own this sub-clinic",
+      });
+    }
+
+    // 3️⃣ Build update payload
+    const updatePayload = {};
+    const { name, phoneNumber, address, bank } = req.body;
+
+    if (name) updatePayload.name = name;
+    if (phoneNumber) updatePayload.phoneNumber = phoneNumber;
+    if (address) updatePayload.address = address;
+    if (bank) updatePayload.bank = bank;
+
+    // 🔍 DEBUG (keep for now)
+    console.log("UPDATE PAYLOAD:", updatePayload);
+
+    // 4️⃣ Update
+    const updatedClinic = await Clinic.findByIdAndUpdate(
+      subClinicId,
+      { $set: updatePayload },
+      { new: true }
+    );
+
+    return res.json({
+      success: true,
+      message: "Sub-clinic updated successfully",
+      data: updatedClinic,
+    });
+  } catch (err) {
+    console.error("UPDATE SUB-CLINIC ERROR:", err);
+    return res.status(500).json({ message: "Update failed" });
+  }
+};
+const uploadClinicLogo = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: "No file uploaded" });
+    }
+
+    const clinic = await Clinic.findById(req.clinicId);
+    if (!clinic) {
+      return res.status(404).json({ message: "Clinic not found" });
+    }
+
+    // OPTIONAL: delete old logo file later (advanced)
+    clinic.logo = `/uploads/logos/${req.file.filename}`;
+    await clinic.save();
+
+    res.json({
+      success: true,
+      logo: clinic.logo,
+    });
+  } catch (error) {
+    console.error("uploadClinicLogo error:", error);
+    res.status(500).json({ message: "Logo upload failed" });
+  }
+};
+const deleteLogo = async (req, res) => {
+  try {
+    const clinic = await Clinic.findById(req.clinicId);
+    if (!clinic) {
+      return res.status(404).json({ message: "Clinic not found" });
+    }
+
+    clinic.logo = "";
+    await clinic.save();
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Delete logo error:", err);
+    res.status(500).json({ message: "Failed to delete logo" });
+  }
+};
+const getSubClinics = async (req, res) => {
+  try {
+    const parentClinicId = req.clinicId;
+
+    const subClinics = await Clinic.find({
+      parentClinicId: parentClinicId,
+    }).select("-password");
+
+    return res.status(200).json({
+      success: true,
+      data: subClinics, // ✅ ARRAY
+    });
+  } catch (error) {
+    console.error("GET SUB CLINICS ERROR:", error);
+    return res.status(500).json({
+      message: "Failed to fetch sub clinics",
+    });
+  }
+};
+const loginSubClinic = async (req, res) => {
+  const { email, password } = req.body;
+
+  try {
+    // ====== VALIDATIONS ======
+    if (!email || !emailValidator(email)) {
+      return res.status(400).json({ message: "Invalid email" });
+    }
+    if (!password) {
+      return res.status(400).json({ message: "Password is required" });
+    }
+
+    // ====== FIND CLINIC ======
+    const clinic = await Clinic.findOne({ email });
+    if (!clinic) {
+      return res.status(400).json({ message: "Invalid email or password" });
+    }
+
+    // CHECK ACTIVE STATUS
+    if (!clinic.isActive) {
+      return res.status(403).json({
+        message: "Your clinic access has been disabled by SuperAdmin.",
+      });
+    }
+
+    // ====== VERIFY PASSWORD ======
+    const isMatch = await clinic.isPasswordCorrect(password);
+    if (!isMatch) {
+      return res.status(400).json({ message: "Invalid email or password" });
+    }
+
+    // ====== GENERATE TOKENS ======
+    const accessToken = clinic.generateAccessToken();
+    const refreshToken = clinic.generateRefreshToken();
+    let subClinics = [];
+    if (clinic.isMultipleClinic) {
+      subClinics = await Clinic.find({ parentClinicId: clinic._id })
+        .select(
+          "_id name email phoneNumber type isOwnLab subscription isActive"
+        )
+        .lean();
+    }
+
+    res.status(200).json({
+      message: "Login successful",
+      clinic: {
+        id: clinic._id,
+        name: clinic.name,
+        email: clinic.email,
+        phoneNumber: clinic.phoneNumber,
+        type: clinic.type,
+        role: clinic.role,
+        subscription: clinic.subscription,
+        subClinics,
+      },
+      accessToken,
+      refreshToken,
+    });
+  } catch (error) {
+    console.error("❌ Error in loginClinic:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
 export {
   registerClinic, loginClinic, viewAllClinics, viewClinicById, editClinic, getClinicStaffs, getTheme, editTheme, subscribeClinic, getClinicDashboardDetails, addShiftToStaff, removeStaffFromClinic, getClinicStaffCounts, registerSubClinic, assignClinicLab, clicnicCount, allClinicsStatus,
-  getSubscriptionStats, toggleClinicAccess
+  getSubscriptionStats, toggleClinicAccess,upgradeSubscription,updateSubClinic,uploadClinicLogo,deleteLogo,getSubClinics,loginSubClinic
 }
