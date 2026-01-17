@@ -1,2 +1,7 @@
 node_modules/
 .env
+# Ignore NIfTI medical imaging files
+*.nii
+*.nii.gz
+uploads/lab-services/**/*.nii
+uploads/lab-services/**/*.nii.gz
