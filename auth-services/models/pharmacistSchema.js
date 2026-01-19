@@ -53,7 +53,7 @@ const shiftSchema = new Schema(
       type: Boolean,
       default: true,
     },
-     archivedAt: { type: Date, default: null },
+    archivedAt: { type: Date, default: null },
   },
   { _id: false }
 );
@@ -86,6 +86,10 @@ const pharmacistSchema = new mongoose.Schema(
       type: String,
       required: true,
       unique: true,
+    },
+    permissions: {
+      type: Object,
+      default: {},
     },
     password: {
       type: String,

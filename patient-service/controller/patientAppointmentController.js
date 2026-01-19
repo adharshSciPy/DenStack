@@ -1077,8 +1077,9 @@ const getPatientTreatmentPlans = async (req, res) => {
       });
     }
 
-    // ✅ Fetch all treatment plans for this patient
-    const treatmentPlans = await treatmentPlanSchema.find({ patientId })
+    // Fetch all treatment plans for the patient with all fields
+    const treatmentPlans = await treatmentPlanSchema
+      .find({ patientId })
       .populate({
         path: "patientId",
         select: "name phone email patientUniqueId patientRandomId",
@@ -1091,12 +1092,83 @@ const getPatientTreatmentPlans = async (req, res) => {
         path: "createdByDoctorId",
         select: "name specialization phoneNumber",
       })
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // Format the response to include ALL fields
+    const formattedPlans = treatmentPlans.map((plan) => {
+      // Safely extract treatments from teeth array (if exists)
+      const teethArray = plan.teeth || [];
+      const treatmentsFromTeeth = teethArray.map((tooth) => ({
+        _id: tooth._id,
+        toothNumber: tooth.toothNumber,
+        priority: tooth.priority,
+        isCompleted: tooth.isCompleted,
+        procedures: (tooth.procedures || []).map((procedure) => ({
+          procedureId: procedure._id,
+          name: procedure.name,
+          surface: procedure.surface,
+          status: procedure.status,
+          estimatedCost: procedure.estimatedCost,
+          notes: procedure.notes,
+          stage: procedure.stage // Include stage if exists
+        })),
+      }));
+
+      // Safely format stages with toothSurfaceProcedures (if exists)
+      const stagesArray = plan.stages || [];
+      const formattedStages = stagesArray.map((stage) => ({
+        _id: stage._id,
+        stageNumber: stage.stageNumber,
+        stageName: stage.stageName,
+        description: stage.description || "",
+        toothSurfaceProcedures: (stage.toothSurfaceProcedures || []).map((tsp) => ({
+          toothNumber: tsp.toothNumber,
+          surfaceProcedures: (tsp.surfaceProcedures || []).map((sp) => ({
+            surface: sp.surface,
+            procedureNames: sp.procedureNames || [],
+            _id: sp._id
+          }))
+        })),
+        status: stage.status || "pending",
+        scheduledDate: stage.scheduledDate,
+        notes: stage.notes || "",
+      }));
+
+      return {
+        _id: plan._id,
+        planName: plan.planName,
+        description: plan.description,
+        status: plan.status,
+        conflictChecked: plan.conflictChecked || false,
+        currentStage: plan.currentStage || 1,
+        totalEstimatedCost: plan.totalEstimatedCost || 0,
+        completedCost: plan.completedCost || 0,
+        
+        // Patient, clinic, doctor info
+        patient: plan.patientId,
+        clinic: plan.clinicId,
+        createdByDoctor: plan.createdByDoctorId,
+        
+        // Main data arrays - include original arrays exactly as they are
+        teeth: teethArray, // Include original teeth array
+        treatments: treatmentsFromTeeth, // Also include formatted treatments
+        stages: formattedStages, // Include formatted stages
+        
+        // Timestamps
+        createdAt: plan.createdAt,
+        updatedAt: plan.updatedAt,
+        startedAt: plan.startedAt,
+        
+        // Version
+        __v: plan.__v || 0
+      };
+    });
 
     return res.status(200).json({
       success: true,
-      count: treatmentPlans.length,
-      data: treatmentPlans,
+      count: formattedPlans.length,
+      data: formattedPlans,
     });
   } catch (error) {
     console.error("❌ Error fetching treatment plans:", error);
@@ -1479,8 +1551,130 @@ const getPatientHistoryById = async (req, res) => {
     });
   }
 };
+const approveRecallAppointment = async (req, res) => {
+  const session = await mongoose.startSession();
+
+  try {
+    const { id: appointmentId } = req.params;
+    const {
+      userId,
+      userRole,
+      appointmentDate: newDate,
+      appointmentTime: newTime
+    } = req.body;
+
+    if (!appointmentId || !mongoose.Types.ObjectId.isValid(appointmentId)) {
+      return res.status(400).json({ success: false, message: "Invalid appointment ID" });
+    }
+
+    if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ success: false, message: "Invalid userId" });
+    }
+
+    if (!["admin", "receptionist"].includes(userRole)) {
+      return res.status(403).json({ success: false, message: "Unauthorized role" });
+    }
+
+    session.startTransaction();
+
+    // 🔍 Fetch recall appointment
+    const appointment = await Appointment.findById(appointmentId).session(session);
+    if (!appointment) {
+      return res.status(404).json({ success: false, message: "Appointment not found" });
+    }
+
+    if (appointment.status !== "recall") {
+      return res.status(400).json({
+        success: false,
+        message: "Only recall appointments can be approved"
+      });
+    }
+
+    // 🗓 Use updated date/time if provided
+    const finalDate = newDate || appointment.appointmentDate;
+    const finalTime = newTime || appointment.appointmentTime;
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(finalDate)) {
+      return res.status(400).json({ success: false, message: "Invalid appointmentDate format" });
+    }
+
+    if (!/^\d{2}:\d{2}$/.test(finalTime)) {
+      return res.status(400).json({ success: false, message: "Invalid appointmentTime format" });
+    }
+
+    // ⏱ Prevent past booking
+    const [y, m, d] = finalDate.split("-").map(Number);
+    const [h, min] = finalTime.split(":").map(Number);
+    const appointmentDateTime = new Date(y, m - 1, d, h, min);
+
+    if (appointmentDateTime <= new Date()) {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot approve a recall in the past"
+      });
+    }
+
+    // 🛑 Prevent double booking (using final date/time)
+    const conflict = await Appointment.findOne({
+      _id: { $ne: appointmentId },
+      clinicId: appointment.clinicId,
+      doctorId: appointment.doctorId,
+      appointmentDate: finalDate,
+      appointmentTime: finalTime,
+      status: { $in: ["scheduled", "confirmed"] }
+    }).session(session);
+
+    if (conflict) {
+      return res.status(409).json({
+        success: false,
+        message: "Doctor already has an appointment at this time"
+      });
+    }
+
+    // 🔢 Generate OP number (based on FINAL DATE)
+    const lastAppointment = await Appointment.findOne({
+      clinicId: appointment.clinicId,
+      appointmentDate: finalDate,
+      opNumber: { $ne: null }
+    })
+      .sort({ opNumber: -1 })
+      .session(session);
+
+    const nextOpNumber = lastAppointment ? Number(lastAppointment.opNumber) + 1 : 1;
+
+    // ✅ Approve recall
+    appointment.appointmentDate = finalDate;
+    appointment.appointmentTime = finalTime;
+    appointment.status = "scheduled";
+    appointment.opNumber = nextOpNumber;
+    appointment.approvedBy = userId;
+    appointment.approvedAt = new Date();
+
+    await appointment.save({ session });
+
+    await session.commitTransaction();
+
+    return res.status(200).json({
+      success: true,
+      message: "Recall appointment approved successfully",
+      data: appointment
+    });
+
+  } catch (error) {
+    await session.abortTransaction();
+    console.error("❌ approveRecallAppointment error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Server error while approving recall appointment",
+      error: error.message
+    });
+  } finally {
+    session.endSession();
+  }
+};
 
 export {
   createAppointment, getTodaysAppointments, getAppointmentById, getPatientHistory, addLabOrderToPatientHistory, getAppointmentsByClinic, clearDoctorFromAppointments, appointmentReschedule, cancelAppointment, getPatientTreatmentPlans, getAppointmentsByDate, addReceptionBilling, getUnpaidBillsByClinic
   , getAllAppointments,getMonthlyAppointmentsClinicWise,getPatientHistoryById
-};
+,approveRecallAppointment};

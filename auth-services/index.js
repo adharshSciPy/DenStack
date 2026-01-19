@@ -15,6 +15,7 @@ import PRORouter from "./routes/PRORouter.js";
 import assistantRouter from "./routes/assistantRouter.js";
 import clinicSubscriptionCron from "./utils/clinicSubscriptionCron.js";
 import staffShiftCron from "./utils/staffShiftCron.js";
+import permissionRoutes from "./routes/permissionRoutes.js";
 
 dotenv.config();
 connectDB();
@@ -42,6 +43,7 @@ app.use("/api/v1/auth/receptionist", receptionAuthRouter)
 app.use("/api/v1/auth/technician", technicianAuthRouter)
 app.use("/api/v1/auth/PRO", PRORouter)
 app.use("/api/v1/auth/assistant", assistantRouter)
+app.use("/api/v1/auth/roles", permissionRoutes);
 app.use("/api/v1/super-admin", superAdminDashboardRouter);
 
 
