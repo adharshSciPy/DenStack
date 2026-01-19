@@ -84,6 +84,23 @@ const tmjInput = parseJSON(req.body.tmjExamination, []);
     if (!patient) {
       return res.status(404).json({ success: false, message: "Patient not found" });
     }
+// ---------- fetch consultation fee ----------
+let consultationFee = 0;
+
+try {
+  const doctorsResp = await axios.get(
+    `${CLINIC_SERVICE_BASE_URL}/active-doctors`,
+    { params: { clinicId: appointment.clinicId } }
+  );
+
+  const doctorData = doctorsResp.data?.doctors?.find(
+    d => d.doctorId?.toString() === doctorId.toString()
+  );
+
+  consultationFee = doctorData?.standardConsultationFee ?? 0;
+} catch (err) {
+  console.error("⚠️ Failed to fetch consultation fee:", err.message);
+}
 
     // ---------- files ----------
     const uploadedFiles = (req.files || []).map(f => ({
@@ -180,6 +197,7 @@ const tmjExamination = tmjInput.map(tmj => ({
         softTissueExamination,
         tmjExamination,
         plannedProcedures,
+         consultationFee,
         createdBy: doctorId
       }],
       { session }
