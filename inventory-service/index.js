@@ -10,8 +10,8 @@ import orderRouter from "./Routes/orderRouter.js";
 import vendorRouter from "./Routes/vendorRouter.js";
 import brandRouter from "./Routes/brandRouter.js";
 import notificationRouter from "./Routes/notificationRouter.js";
-
-
+import landingRouter from "./Routes/landingPageRouter.js"; // ✅ Added
+import ecomOrderRouter from "./Routes/E-OrderRouter.js";
 import lowStockAlertsCron from "./middlewares/lowStockCron.js";
 
 dotenv.config();
@@ -31,15 +31,13 @@ const __dirname = path.dirname(__filename);
 // ✅ Serve uploaded images statically
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 
-
 // Routes
 app.get("/", (req, res) => {
   res.send("🚀 API is running...");
 });
 
-//lowStock alerts
-lowStockAlertsCron()
-
+// Low Stock alerts
+lowStockAlertsCron();
 
 app.use("/api/v1/category", categoryRoute);
 app.use("/api/v1/product", productRoute);
@@ -47,9 +45,8 @@ app.use("/api/v1/order", orderRouter);
 app.use("/api/v1/vendor", vendorRouter);
 app.use("/api/v1/brand", brandRouter);
 app.use("/api/v1/notification", notificationRouter);
-
-
-
+app.use("/api/v1/landing", landingRouter); // ✅ Added Landing Page Routes
+app.use("/api/v1/ecom-order", ecomOrderRouter);
 
 const PORT = process.env.PORT || 8004;
 app.listen(PORT, () => {

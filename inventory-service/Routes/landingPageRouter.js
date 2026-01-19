@@ -1,74 +1,156 @@
 import express from "express";
 import {
-    createCarouselSlide,
-    getAllCarouselSlides,
-    updateCarouselSlide,
-    deleteCarouselSlide,
-    createTopBrand,
-    getAllTopBrands,
-    updateTopBrand,
-    deleteTopBrand,
-    createTopCategory,
-    getAllTopCategories,
-    updateTopCategory,
-    deleteTopCategory,
-    createFeaturedCategory,
-    getAllFeaturedCategories,
-    updateFeaturedCategory,
-    deleteFeaturedCategory,
-    createTopSellingProduct,
-    updateTopSellingProduct,
-    getAllTopSellingProducts,
-    deleteTopSellingProduct,
-    createCategorySection,
-    getAllCategorySections,
-    getCategorySectionById,
-    updateCategorySection,
-    addProductToCategorySection,
-    removeProductFromCategorySection,
-    deleteCategorySection
-} from "../Controller/landingPageController.js";
-import upload from "../middlewares/upload.js";
+  createCarouselSlide,
+  getAllCarouselSlides,
+  updateCarouselSlide,
+  deleteCarouselSlide,
+  createBrand,
+  getAllBrands,
+  getBrandById,
+  getBrandsByMainCategory,
+  getBrandsBySubCategory,
+  updateBrand,
+  deleteBrand,
+  createTopBrand,
+  getAllTopBrands,
+  updateTopBrand,
+  deleteTopBrand,
+  createMainCategory,
+  getAllMainCategories,
+  getMainCategoryById,
+  updateMainCategory,
+  deleteMainCategory,
+  createSubCategory,
+  getSubCategories,
+  getAllSubCategories,
+  getSubCategoryById,
+  updateSubCategory,
+  deleteSubCategory,
+  getMainCategoryHierarchy,
+  createTopCategory,
+  getAllTopCategories,
+  updateTopCategory,
+  deleteTopCategory,
+  createFeaturedCategory,
+  getAllFeaturedCategories,
+  updateFeaturedCategory,
+  deleteFeaturedCategory,
+  getTopSellingProducts,
+  // getTopSellingProductsForLanding,
+  createCategorySection,
+  getAllCategorySections,
+  getCategorySectionById,
+  updateCategorySection,
+  addProduct,
+  getProductsByFilters,
+  getProductsByMainCategory,
+  getProductsBySubCategory,
+  getProductsByBrand,
+  updateProduct,
+  deleteProduct,
+  getTopSellingProductsSimple
+
+} from "../Controller/LandingController.js";
+import landingUpload from "../middlewares/landingUpload.js";
 
 const landingRouter = express.Router();
 
+// Flexible middleware - accepts both single and multiple files
+const flexibleUpload = landingUpload.fields([
+  { name: "image", maxCount: 1 },
+  { name: "images", maxCount: 10 },
+]);
+
 // ============= CAROUSEL ROUTES =============
-landingRouter.post("/carousel/create", upload.single("image"), createCarouselSlide);
+landingRouter.post("/carousel/create", flexibleUpload, createCarouselSlide);
 landingRouter.get("/carousel/getAll", getAllCarouselSlides);
-landingRouter.put("/carousel/update/:id", upload.single("image"), updateCarouselSlide);
+landingRouter.put("/carousel/update/:id", flexibleUpload, updateCarouselSlide);
 landingRouter.delete("/carousel/delete/:id", deleteCarouselSlide);
 
-// ============= TOP BRANDS ROUTES =============
-landingRouter.post("/topBrands/create", upload.single("image"), createTopBrand);
+// =============BRAND , TOP BRANDS ROUTES =============
+landingRouter.post("/brands/create", flexibleUpload, createBrand);
+landingRouter.get("/brands/getAll", getAllBrands);
+landingRouter.get("/brands/getById/:id", getBrandById);
+landingRouter.get("/brands/byMainCategory/:mainCategoryId", getBrandsByMainCategory);
+landingRouter.get("/brands/bySubCategory/:subCategoryId", getBrandsBySubCategory);
+landingRouter.put("/brands/update/:id", flexibleUpload, updateBrand);
+landingRouter.delete("/brands/delete/:id", deleteBrand);
+
+landingRouter.post("/topBrands/create", flexibleUpload, createTopBrand);
 landingRouter.get("/topBrands/getAll", getAllTopBrands);
-landingRouter.put("/topBrands/update/:id", upload.single("image"), updateTopBrand); // NEW
+landingRouter.put("/topBrands/update/:id", flexibleUpload, updateTopBrand);
 landingRouter.delete("/topBrands/delete/:id", deleteTopBrand);
 
 // ============= TOP CATEGORIES ROUTES =============
-landingRouter.post("/topCategories/create", upload.single("image"), createTopCategory);
-landingRouter.get("/topCategories/getAll", getAllTopCategories);
-landingRouter.put("/topCategories/update/:id", upload.single("image"), updateTopCategory); // NEW
+landingRouter.post("/topCategories/create", flexibleUpload, createTopCategory);
+landingRouter.get("/-/getAll", getAllTopCategories);
+landingRouter.put(
+  "/topCategories/update/:id",
+  flexibleUpload,
+  updateTopCategory
+);
 landingRouter.delete("/topCategories/delete/:id", deleteTopCategory);
+// ============= MAIN CATEGORY ROUTES =============
+landingRouter.post("/main/create", createMainCategory);
+landingRouter.get("/main/getAll", getAllMainCategories);
+landingRouter.get("/main/getById/:id", getMainCategoryById);
+landingRouter.put("/main/update/:id", updateMainCategory);
+landingRouter.delete("/main/delete/:id", deleteMainCategory);
+
+// ============= SUB CATEGORY ROUTES =============
+landingRouter.post("/sub/create", createSubCategory);
+landingRouter.get("/sub/getByParent/:parentId", getSubCategories);
+landingRouter.get("/sub/getAll", getAllSubCategories);
+landingRouter.get("/sub/getById/:id", getSubCategoryById);
+landingRouter.put("/sub/update/:id", updateSubCategory);
+landingRouter.delete("/sub/delete/:id", deleteSubCategory);
+
+// ============= UTILITY ROUTES =============
+landingRouter.get("/hierarchy", getMainCategoryHierarchy);
 
 // ============= FEATURED CATEGORIES ROUTES =============
-landingRouter.post("/featuredCategories/create", upload.single("image"), createFeaturedCategory);
+landingRouter.post(
+  "/featuredCategories/create",
+  flexibleUpload,
+  createFeaturedCategory
+);
 landingRouter.get("/featuredCategories/getAll", getAllFeaturedCategories);
-landingRouter.put("/featuredCategories/update/:id", upload.single("image"), updateFeaturedCategory); // NEW
+landingRouter.put(
+  "/featuredCategories/update/:id",
+  flexibleUpload,
+  updateFeaturedCategory
+);
 landingRouter.delete("/featuredCategories/delete/:id", deleteFeaturedCategory);
 
 // ============= TOP SELLING PRODUCTS ROUTES =============
-landingRouter.post("/topSelling/create", createTopSellingProduct);
-landingRouter.get("/topSelling/getAll", getAllTopSellingProducts);
-landingRouter.put("/topSelling/update/:id", updateTopSellingProduct); // NEW
-landingRouter.delete("/topSelling/delete/:id", deleteTopSellingProduct);
+landingRouter.get("/topSelling/getAll", getTopSellingProducts);
 
-// ============= CATEGORY SECTIONS ROUTES (Category 1, 2, 3...) =============
 
+// ============= CATEGORY SECTIONS ROUTES =============
 landingRouter.post("/categorySections/create", createCategorySection);
 landingRouter.get("/categorySections/getAll", getAllCategorySections);
 landingRouter.get("/categorySections/getById/:id", getCategorySectionById);
 landingRouter.put("/categorySections/update/:id", updateCategorySection);
-landingRouter.post("/categorySections/:id/addProduct", addProductToCategorySection);
-landingRouter.delete("/categorySections/:id/removeProduct/:productId", removeProductFromCategorySection);
-landingRouter.delete("/categorySections/delete/:id", deleteCategorySection);
+// ============= PRODUCT MANAGEMENT ROUTES (NEW) =============
+// Add product (requires mainCategoryId, subCategoryId, brandId)
+landingRouter.post("/products/add", flexibleUpload, addProduct);
+
+// Get products with filters (query params: mainCategoryId, subCategoryId, brandId)
+landingRouter.get("/products/filter", getProductsByFilters);
+
+// Get products by specific category/brand
+landingRouter.get("/products/byMainCategory/:mainCategoryId", getProductsByMainCategory);
+landingRouter.get("/products/bySubCategory/:subCategoryId", getProductsBySubCategory);
+landingRouter.get("/products/byBrand/:brandId", getProductsByBrand);
+
+// Update and delete products
+landingRouter.put("/products/update/:productId", flexibleUpload, updateProduct);
+landingRouter.delete("/products/delete/:productId", deleteProduct);
+
+// Get top selling products 
+landingRouter.get("/products/top-selling", getTopSellingProducts);
+
+// Get top selling products 
+landingRouter.get("/products/top-selling-simple", getTopSellingProductsSimple);
+
 export default landingRouter;

@@ -1,24 +1,59 @@
 import Carousel from "../Model/CarouselSchema.js";
+import mongoose from "mongoose";
 import TopBrand from "../Model/TopBrandSchema.js";
 import TopCategory from "../Model/TopCategorySchema.js";
 import FeaturedCategory from "../Model/FeaturedCategorySchema.js";
 import TopSellingProduct from "../Model/TopSellingProductSchema.js";
 import CategorySection from "../Model/CategorySectionSchema.js";
+import Order from "../Model/OrderSchema.js";
+import Product from "../Model/ProductSchema.js";
+import MainCategory from "../Model/MainCategorySchema.js";
+import Brand from "../Model/BrandSchema.js";
+import SubCategory from "../Model/SubCategorySchema.js";
 
 // ============= CAROUSEL SLIDES =============
 export const createCarouselSlide = async (req, res) => {
     try {
-        const { title, subtitle, linkUrl, order } = req.body;
+        const { title, subtitle, order } = req.body;
 
-        if (!req.file) {
-            return res.status(400).json({ message: "Image is required" });
+        let files = [];
+        
+        if (req.files) {
+            if (req.files.image) {
+                files = req.files.image;
+            }
+            if (req.files.images) {
+                files = req.files.images;
+            }
         }
 
+        if (files.length === 0) {
+            return res.status(400).json({ message: "At least one image is required" });
+        }
+
+        // If multiple images, create multiple slides
+        if (files.length > 1) {
+            const carouselSlides = files.map((file, index) => ({
+                title: `${title} - Slide ${index + 1}`,
+                subtitle,
+                imageUrl: `/uploads/landing/${file.filename}`, // ✅ Fixed
+                order: (parseInt(order) || 0) + index
+            }));
+
+            const savedSlides = await Carousel.insertMany(carouselSlides);
+
+            return res.status(201).json({
+                message: "Multiple carousel slides created successfully",
+                count: savedSlides.length,
+                data: savedSlides
+            });
+        }
+
+        // Single image
         const carousel = new Carousel({
             title,
             subtitle,
-            imageUrl: req.file.path || `/uploads/${req.file.filename}`,
-            linkUrl,
+            imageUrl: `/uploads/landing/${files[0].filename}`, // ✅ Fixed
             order: order || 0
         });
 
@@ -32,7 +67,6 @@ export const createCarouselSlide = async (req, res) => {
         res.status(500).json({ message: "Server error", error: err.message });
     }
 };
-
 export const getAllCarouselSlides = async (req, res) => {
     try {
         const slides = await Carousel.find({ isActive: true })
@@ -47,16 +81,34 @@ export const getAllCarouselSlides = async (req, res) => {
         res.status(500).json({ message: "Server error", error: err.message });
     }
 };
-
 export const updateCarouselSlide = async (req, res) => {
     try {
         const { id } = req.params;
-        const { title, subtitle, linkUrl, order, isActive } = req.body;
+        const { title, subtitle, order, isActive } = req.body;
 
-        const updateData = { title, subtitle, linkUrl, order, isActive };
+        // 🔍 Debug logging
+        console.log("req.files:", req.files);
+        console.log("req.body:", req.body);
 
-        if (req.file) {
-            updateData.imageUrl = req.file.path || `/uploads/${req.file.filename}`;
+        const updateData = { title, subtitle, order, isActive };
+
+        let files = [];
+        
+        if (req.files) {
+            if (req.files.image && req.files.image.length > 0) {
+                files = req.files.image;
+                console.log("✅ Found image field:", files);
+            } else if (req.files.images && req.files.images.length > 0) {
+                files = req.files.images;
+                console.log("✅ Found images field:", files);
+            }
+        }
+        
+        if (files.length > 0) {
+            updateData.imageUrl = `/uploads/landing/${files[0].filename}`;
+            console.log("✅ New imageUrl:", updateData.imageUrl);
+        } else {
+            console.log("⚠️ No files found");
         }
 
         const carousel = await Carousel.findByIdAndUpdate(
@@ -74,10 +126,10 @@ export const updateCarouselSlide = async (req, res) => {
             data: carousel
         });
     } catch (err) {
+        console.error("❌ Error:", err);
         res.status(500).json({ message: "Server error", error: err.message });
     }
 };
-
 export const deleteCarouselSlide = async (req, res) => {
     try {
         const { id } = req.params;
@@ -95,17 +147,360 @@ export const deleteCarouselSlide = async (req, res) => {
 };
 
 // ============= TOP BRANDS =============
-export const createTopBrand = async (req, res) => {
+export const createBrand = async (req, res) => {
     try {
-        const { brandId, order } = req.body;
+        const { name, description, mainCategoryId, subCategoryId } = req.body;
 
-        if (!req.file) {
-            return res.status(400).json({ message: "Image is required" });
+        // Validate required fields
+        if (!name) {
+            return res.status(400).json({ message: "Brand name is required" });
+        }
+        if (!mainCategoryId) {
+            return res.status(400).json({ message: "Main category is required" });
+        }
+        if (!subCategoryId) {
+            return res.status(400).json({ message: "Sub category is required" });
         }
 
+        // Verify main category exists
+        const mainCategory = await MainCategory.findOne({
+            _id: mainCategoryId,
+            parentCategory: null,
+            isActive: true
+        });
+        
+        if (!mainCategory) {
+            return res.status(404).json({ message: "Main category not found or inactive" });
+        }
+
+        // ✅ USE SubCategory MODEL instead of MainCategory
+        const subCategory = await SubCategory.findOne({
+            _id: subCategoryId,
+            mainCategory: mainCategoryId,
+            isActive: true
+        });
+        
+        if (!subCategory) {
+            return res.status(404).json({ 
+                message: "Sub category not found, inactive, or doesn't belong to the specified main category" 
+            });
+        }
+
+        // Handle image upload (optional)
+        let imageUrl = null;
+        if (req.files) {
+            if (req.files.image && req.files.image.length > 0) {
+                imageUrl = `/uploads/brands/${req.files.image[0].filename}`;
+            } else if (req.files.images && req.files.images.length > 0) {
+                imageUrl = `/uploads/brands/${req.files.images[0].filename}`;
+            }
+        }
+
+        const brand = new Brand({
+            name,
+            description: description || "",
+            mainCategory: mainCategoryId,
+            subCategory: subCategoryId,
+            image: imageUrl  // Can be null
+        });
+
+        await brand.save();
+
+        // Populate and return
+        await brand.populate([
+            { path: 'mainCategory', select: 'categoryName mainCategoryId' },
+            { path: 'subCategory', select: 'categoryName subCategoryId' }  // ✅ Changed to subCategoryId
+        ]);
+
+        res.status(201).json({
+            message: "Brand created successfully",
+            data: brand
+        });
+    } catch (err) {
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
+
+export const getAllBrands = async (req, res) => {
+    try {
+        const { page = 1, limit = 10, mainCategoryId, subCategoryId } = req.query;
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+
+        // Build filter
+        const filter = { isActive: true };
+        if (mainCategoryId) filter.mainCategory = mainCategoryId;
+        if (subCategoryId) filter.subCategory = subCategoryId;
+
+        const brands = await Brand.find(filter)
+            .populate('mainCategory', 'categoryName mainCategoryId description')
+            .populate('subCategory', 'categoryName mainCategoryId description')
+            .sort({ name: 1 })
+            .skip(skip)
+            .limit(parseInt(limit));
+
+        const total = await Brand.countDocuments(filter);
+
+        res.status(200).json({
+            message: "Brands fetched successfully",
+            data: brands,
+            pagination: {
+                currentPage: parseInt(page),
+                totalPages: Math.ceil(total / parseInt(limit)),
+                totalItems: total,
+                itemsPerPage: parseInt(limit)
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
+// Get Brand by ID
+export const getBrandById = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const query = mongoose.Types.ObjectId.isValid(id) 
+            ? { _id: id } 
+            : { brandId: id };
+
+        const brand = await Brand.findOne(query)
+            .populate('mainCategory', 'categoryName mainCategoryId description')
+            .populate('subCategory', 'categoryName mainCategoryId description');
+
+        if (!brand) {
+            return res.status(404).json({ message: "Brand not found" });
+        }
+
+        res.status(200).json({
+            message: "Brand fetched successfully",
+            data: brand
+        });
+    } catch (err) {
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
+// Get Brands by Main Category
+export const getBrandsByMainCategory = async (req, res) => {
+    try {
+        const { mainCategoryId } = req.params;
+        const { page = 1, limit = 10 } = req.query;
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+
+        const brands = await Brand.find({ 
+            mainCategory: mainCategoryId,
+            isActive: true 
+        })
+            .populate('mainCategory', 'categoryName mainCategoryId description')
+            .populate('subCategory', 'categoryName mainCategoryId description')
+            .sort({ name: 1 })
+            .skip(skip)
+            .limit(parseInt(limit));
+
+        const total = await Brand.countDocuments({ 
+            mainCategory: mainCategoryId,
+            isActive: true 
+        });
+
+        res.status(200).json({
+            message: "Brands fetched successfully",
+            data: brands,
+            pagination: {
+                currentPage: parseInt(page),
+                totalPages: Math.ceil(total / parseInt(limit)),
+                totalItems: total,
+                itemsPerPage: parseInt(limit)
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
+
+// Get Brands by Sub Category
+export const getBrandsBySubCategory = async (req, res) => {
+    try {
+        const { subCategoryId } = req.params;
+        const { page = 1, limit = 10 } = req.query;
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+
+        const brands = await Brand.find({ 
+            subCategory: subCategoryId,
+            isActive: true 
+        })
+            .populate('mainCategory', 'categoryName mainCategoryId description')
+            .populate('subCategory', 'categoryName mainCategoryId description')
+            .sort({ name: 1 })
+            .skip(skip)
+            .limit(parseInt(limit));
+
+        const total = await Brand.countDocuments({ 
+            subCategory: subCategoryId,
+            isActive: true 
+        });
+
+        res.status(200).json({
+            message: "Brands fetched successfully",
+            data: brands,
+            pagination: {
+                currentPage: parseInt(page),
+                totalPages: Math.ceil(total / parseInt(limit)),
+                totalItems: total,
+                itemsPerPage: parseInt(limit)
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
+
+// Update Brand
+export const updateBrand = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { name, description, mainCategoryId, subCategoryId, isActive } = req.body;
+
+        const query = mongoose.Types.ObjectId.isValid(id) 
+            ? { _id: id } 
+            : { brandId: id };
+
+        const updateData = { name, description, isActive };
+
+        // If updating categories, validate them
+        if (mainCategoryId || subCategoryId) {
+            const categoryToCheck = mainCategoryId || (await Brand.findOne(query)).mainCategory;
+
+            // Verify main category
+            const mainCategory = await MainCategory.findOne({
+                _id: categoryToCheck,
+                parentCategory: null,
+                isActive: true
+            });
+            
+            if (!mainCategory) {
+                return res.status(404).json({ message: "Main category not found or inactive" });
+            }
+
+            if (subCategoryId) {
+                // Verify sub category belongs to main category
+                const subCategory = await MainCategory.findOne({
+                    _id: subCategoryId,
+                    parentCategory: categoryToCheck,
+                    isActive: true
+                });
+                
+                if (!subCategory) {
+                    return res.status(404).json({ 
+                        message: "Sub category not found, inactive, or doesn't belong to the main category" 
+                    });
+                }
+                updateData.subCategory = subCategoryId;
+            }
+
+            if (mainCategoryId) {
+                updateData.mainCategory = mainCategoryId;
+            }
+        }
+
+        // Handle image upload (optional)
+        if (req.files) {
+            if (req.files.image && req.files.image.length > 0) {
+                updateData.image = `/uploads/brands/${req.files.image[0].filename}`;
+            } else if (req.files.images && req.files.images.length > 0) {
+                updateData.image = `/uploads/brands/${req.files.images[0].filename}`;
+            }
+        }
+
+        const brand = await Brand.findOneAndUpdate(
+            query,
+            updateData,
+            { new: true, runValidators: true }
+        )
+            .populate('mainCategory', 'categoryName mainCategoryId description')
+            .populate('subCategory', 'categoryName mainCategoryId description');
+
+        if (!brand) {
+            return res.status(404).json({ message: "Brand not found" });
+        }
+
+        res.status(200).json({
+            message: "Brand updated successfully",
+            data: brand
+        });
+    } catch (err) {
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
+
+// Delete Brand
+export const deleteBrand = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const query = mongoose.Types.ObjectId.isValid(id) 
+            ? { _id: id } 
+            : { brandId: id };
+
+        const brand = await Brand.findOneAndDelete(query);
+
+        if (!brand) {
+            return res.status(404).json({ message: "Brand not found" });
+        }
+
+        res.status(200).json({ message: "Brand deleted successfully" });
+    } catch (err) {
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
+
+export const createTopBrand = async (req, res) => {
+    try {
+        const { brandId, brandIds, order, orders } = req.body;
+
+        let files = [];
+        
+        if (req.files) {
+            if (req.files.image) {
+                files = req.files.image;
+            }
+            if (req.files.images) {
+                files = req.files.images;
+            }
+        }
+
+        if (files.length === 0) {
+            return res.status(400).json({ message: "At least one image is required" });
+        }
+
+        // Multiple uploads
+        if (files.length > 1) {
+            const brandIdArray = typeof brandIds === 'string' ? JSON.parse(brandIds) : (brandIds || []);
+            const orderArray = typeof orders === 'string' ? JSON.parse(orders) : (orders || []);
+
+            if (files.length !== brandIdArray.length) {
+                return res.status(400).json({ 
+                    message: "Number of images must match number of brandIds" 
+                });
+            }
+
+            const topBrands = files.map((file, index) => ({
+                brandId: brandIdArray[index],
+                imageUrl: `/uploads/landing/${file.filename}`,
+                order: orderArray?.[index] || index
+            }));
+
+            const savedBrands = await TopBrand.insertMany(topBrands);
+
+            return res.status(201).json({
+                message: "Multiple top brands created successfully",
+                count: savedBrands.length,
+                data: savedBrands
+            });
+        }
+
+        // Single upload
         const topBrand = new TopBrand({
             brandId,
-            imageUrl: req.file.path || `/uploads/${req.file.filename}`,
+            imageUrl: `/uploads/landing/${files[0].filename}`,
             order: order || 0
         });
 
@@ -119,267 +514,6 @@ export const createTopBrand = async (req, res) => {
         res.status(500).json({ message: "Server error", error: err.message });
     }
 };
-
-export const getAllTopBrands = async (req, res) => {
-    try {
-        const { page = 1, limit = 10 } = req.query;
-        const skip = (parseInt(page) - 1) * parseInt(limit);
-
-        const topBrands = await TopBrand.find({ isActive: true })
-            .populate('brandId', 'brandName description')
-            .sort({ order: 1 })
-            .skip(skip)
-            .limit(parseInt(limit));
-
-        const total = await TopBrand.countDocuments({ isActive: true });
-
-        res.status(200).json({
-            message: "Top brands fetched successfully",
-            data: topBrands,
-            pagination: {
-                currentPage: parseInt(page),
-                totalPages: Math.ceil(total / parseInt(limit)),
-                totalItems: total,
-                itemsPerPage: parseInt(limit)
-            }
-        });
-    } catch (err) {
-        res.status(500).json({ message: "Server error", error: err.message });
-    }
-};
-
-export const deleteTopBrand = async (req, res) => {
-    try {
-        const { id } = req.params;
-
-        const topBrand = await TopBrand.findByIdAndDelete(id);
-
-        if (!topBrand) {
-            return res.status(404).json({ message: "Top brand not found" });
-        }
-
-        res.status(200).json({ message: "Top brand deleted successfully" });
-    } catch (err) {
-        res.status(500).json({ message: "Server error", error: err.message });
-    }
-};
-
-// ============= TOP CATEGORIES =============
-export const createTopCategory = async (req, res) => {
-    try {
-        const { categoryId, displayName, order } = req.body;
-
-        if (!req.file) {
-            return res.status(400).json({ message: "Image is required" });
-        }
-
-        const topCategory = new TopCategory({
-            categoryId,
-            displayName,
-            imageUrl: req.file.path || `/uploads/${req.file.filename}`,
-            order: order || 0
-        });
-
-        await topCategory.save();
-
-        res.status(201).json({
-            message: "Top category created successfully",
-            data: topCategory
-        });
-    } catch (err) {
-        res.status(500).json({ message: "Server error", error: err.message });
-    }
-};
-
-export const getAllTopCategories = async (req, res) => {
-    try {
-        const { page = 1, limit = 10 } = req.query;
-        const skip = (parseInt(page) - 1) * parseInt(limit);
-
-        const topCategories = await TopCategory.find({ isActive: true })
-            .populate('categoryId', 'categoryName description')
-            .sort({ order: 1 })
-            .skip(skip)
-            .limit(parseInt(limit));
-
-        const total = await TopCategory.countDocuments({ isActive: true });
-
-        res.status(200).json({
-            message: "Top categories fetched successfully",
-            data: topCategories,
-            pagination: {
-                currentPage: parseInt(page),
-                totalPages: Math.ceil(total / parseInt(limit)),
-                totalItems: total,
-                itemsPerPage: parseInt(limit)
-            }
-        });
-    } catch (err) {
-        res.status(500).json({ message: "Server error", error: err.message });
-    }
-};
-
-export const deleteTopCategory = async (req, res) => {
-    try {
-        const { id } = req.params;
-
-        const topCategory = await TopCategory.findByIdAndDelete(id);
-
-        if (!topCategory) {
-            return res.status(404).json({ message: "Top category not found" });
-        }
-
-        res.status(200).json({ message: "Top category deleted successfully" });
-    } catch (err) {
-        res.status(500).json({ message: "Server error", error: err.message });
-    }
-};
-
-// ============= FEATURED CATEGORIES =============
-export const createFeaturedCategory = async (req, res) => {
-    try {
-        const { categoryId, title, description, order } = req.body;
-
-        if (!req.file) {
-            return res.status(400).json({ message: "Image is required" });
-        }
-
-        const featuredCategory = new FeaturedCategory({
-            categoryId,
-            title,
-            description,
-            imageUrl: req.file.path || `/uploads/${req.file.filename}`,
-            order: order || 0
-        });
-
-        await featuredCategory.save();
-
-        res.status(201).json({
-            message: "Featured category created successfully",
-            data: featuredCategory
-        });
-    } catch (err) {
-        res.status(500).json({ message: "Server error", error: err.message });
-    }
-};
-
-export const getAllFeaturedCategories = async (req, res) => {
-    try {
-        const { page = 1, limit = 10 } = req.query;
-        const skip = (parseInt(page) - 1) * parseInt(limit);
-
-        const featuredCategories = await FeaturedCategory.find({ isActive: true })
-            .populate('categoryId', 'categoryName description')
-            .sort({ order: 1 })
-            .skip(skip)
-            .limit(parseInt(limit));
-
-        const total = await FeaturedCategory.countDocuments({ isActive: true });
-
-        res.status(200).json({
-            message: "Featured categories fetched successfully",
-            data: featuredCategories,
-            pagination: {
-                currentPage: parseInt(page),
-                totalPages: Math.ceil(total / parseInt(limit)),
-                totalItems: total,
-                itemsPerPage: parseInt(limit)
-            }
-        });
-    } catch (err) {
-        res.status(500).json({ message: "Server error", error: err.message });
-    }
-};
-
-export const deleteFeaturedCategory = async (req, res) => {
-    try {
-        const { id } = req.params;
-
-        const featuredCategory = await FeaturedCategory.findByIdAndDelete(id);
-
-        if (!featuredCategory) {
-            return res.status(404).json({ message: "Featured category not found" });
-        }
-
-        res.status(200).json({ message: "Featured category deleted successfully" });
-    } catch (err) {
-        res.status(500).json({ message: "Server error", error: err.message });
-    }
-};
-
-// ============= TOP SELLING PRODUCTS =============
-export const createTopSellingProduct = async (req, res) => {
-    try {
-        const { productId, salesCount, order } = req.body;
-
-        const topSelling = new TopSellingProduct({
-            productId,
-            salesCount: salesCount || 0,
-            order: order || 0
-        });
-
-        await topSelling.save();
-
-        res.status(201).json({
-            message: "Top selling product created successfully",
-            data: topSelling
-        });
-    } catch (err) {
-        res.status(500).json({ message: "Server error", error: err.message });
-    }
-};
-
-export const getAllTopSellingProducts = async (req, res) => {
-    try {
-        const { page = 1, limit = 10 } = req.query;
-        const skip = (parseInt(page) - 1) * parseInt(limit);
-
-        const topSelling = await TopSellingProduct.find({ isActive: true })
-            .populate({
-                path: 'productId',
-                select: 'productName description price discountPrice images rating reviewCount',
-                populate: [
-                    { path: 'category', select: 'categoryName' },
-                    { path: 'brand', select: 'brandName' }
-                ]
-            })
-            .sort({ salesCount: -1, order: 1 })
-            .skip(skip)
-            .limit(parseInt(limit));
-
-        const total = await TopSellingProduct.countDocuments({ isActive: true });
-
-        res.status(200).json({
-            message: "Top selling products fetched successfully",
-            data: topSelling,
-            pagination: {
-                currentPage: parseInt(page),
-                totalPages: Math.ceil(total / parseInt(limit)),
-                totalItems: total,
-                itemsPerPage: parseInt(limit)
-            }
-        });
-    } catch (err) {
-        res.status(500).json({ message: "Server error", error: err.message });
-    }
-};
-
-export const deleteTopSellingProduct = async (req, res) => {
-    try {
-        const { id } = req.params;
-
-        const topSelling = await TopSellingProduct.findByIdAndDelete(id);
-
-        if (!topSelling) {
-            return res.status(404).json({ message: "Top selling product not found" });
-        }
-
-        res.status(200).json({ message: "Top selling product deleted successfully" });
-    } catch (err) {
-        res.status(500).json({ message: "Server error", error: err.message });
-    }
-};
-// ============= UPDATE TOP BRAND =============
 export const updateTopBrand = async (req, res) => {
     try {
         const { id } = req.params;
@@ -409,7 +543,869 @@ export const updateTopBrand = async (req, res) => {
         res.status(500).json({ message: "Server error", error: err.message });
     }
 };
+export const getAllTopBrands = async (req, res) => {
+    try {
+        const { page = 1, limit = 10 } = req.query;
+        const skip = (parseInt(page) - 1) * parseInt(limit);
 
+        const topBrands = await TopBrand.find({ isActive: true })
+            .populate('brandId', 'brandName description')
+            .sort({ order: 1 })
+            .skip(skip)
+            .limit(parseInt(limit));
+
+        const total = await TopBrand.countDocuments({ isActive: true });
+
+        res.status(200).json({
+            message: "Top brands fetched successfully",
+            data: topBrands,
+            pagination: {
+                currentPage: parseInt(page),
+                totalPages: Math.ceil(total / parseInt(limit)),
+                totalItems: total,
+                itemsPerPage: parseInt(limit)
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
+export const deleteTopBrand = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const topBrand = await TopBrand.findByIdAndDelete(id);
+
+        if (!topBrand) {
+            return res.status(404).json({ message: "Top brand not found" });
+        }
+
+        res.status(200).json({ message: "Top brand deleted successfully" });
+    } catch (err) {
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
+// ============= TOP CATEGORIES,MAIN CATEGORY,SUB CATEGORY =============
+
+export const createMainCategory = async (req, res) => {
+    try {
+        const { categoryName, description, order } = req.body;
+
+        const category = new MainCategory({
+            categoryName,
+            description: description || "",
+            parentCategory: null,  // Main category has no parent
+            level: 0,
+            order: order || 0
+        });
+
+        await category.save();
+
+        res.status(201).json({
+            message: "Main category created successfully",
+            data: category
+        });
+    } catch (err) {
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
+export const getAllMainCategories = async (req, res) => {
+    try {
+        const { page = 1, limit = 10 } = req.query;
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+
+        const categories = await MainCategory.find({ 
+            isActive: true, 
+            parentCategory: null  // Only main categories
+        })
+            .sort({ order: 1, categoryName: 1 })
+            .skip(skip)
+            .limit(parseInt(limit));
+
+        const total = await MainCategory.countDocuments({ 
+            isActive: true, 
+            parentCategory: null 
+        });
+
+        res.status(200).json({
+            message: "Main categories fetched successfully",
+            data: categories,
+            pagination: {
+                currentPage: parseInt(page),
+                totalPages: Math.ceil(total / parseInt(limit)),
+                totalItems: total,
+                itemsPerPage: parseInt(limit)
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
+export const getMainCategoryById = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const query = mongoose.Types.ObjectId.isValid(id) 
+            ? { _id: id } 
+            : { mainCategoryId: id };
+
+        const category = await MainCategory.findOne({ 
+            ...query, 
+            parentCategory: null 
+        });
+
+        if (!category) {
+            return res.status(404).json({ message: "Main category not found" });
+        }
+
+        res.status(200).json({
+            message: "Main category fetched successfully",
+            data: category
+        });
+    } catch (err) {
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
+export const updateMainCategory = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { categoryName, description, order, isActive } = req.body;
+
+        const query = mongoose.Types.ObjectId.isValid(id) 
+            ? { _id: id } 
+            : { mainCategoryId: id };
+
+        const updateData = { categoryName, description, order, isActive };
+
+        const category = await MainCategory.findOneAndUpdate(
+            { ...query, parentCategory: null },
+            updateData,
+            { new: true, runValidators: true }
+        );
+
+        if (!category) {
+            return res.status(404).json({ message: "Main category not found" });
+        }
+
+        res.status(200).json({
+            message: "Main category updated successfully",
+            data: category
+        });
+    } catch (err) {
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
+export const deleteMainCategory = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const query = mongoose.Types.ObjectId.isValid(id) 
+            ? { _id: id } 
+            : { mainCategoryId: id };
+
+        // Check if category has subcategories
+        const subcategoriesCount = await MainCategory.countDocuments({ 
+            parentCategory: id 
+        });
+
+        if (subcategoriesCount > 0) {
+            return res.status(400).json({ 
+                message: "Cannot delete category with subcategories. Delete subcategories first." 
+            });
+        }
+
+        const category = await MainCategory.findOneAndDelete({ 
+            ...query, 
+            parentCategory: null 
+        });
+
+        if (!category) {
+            return res.status(404).json({ message: "Main category not found" });
+        }
+
+        res.status(200).json({ message: "Main category deleted successfully" });
+    } catch (err) {
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
+export const createSubCategory = async (req, res) => {
+    try {
+        const { categoryName, description, mainCategoryId, order } = req.body;
+
+        if (!mainCategoryId) {
+            return res.status(400).json({ message: "Main category ID is required" });
+        }
+
+        // Verify main category exists
+        const mainCategory = await MainCategory.findById(mainCategoryId);
+        if (!mainCategory) {
+            return res.status(404).json({ message: "Main category not found" });
+        }
+
+        const subCategory = new SubCategory({
+            categoryName,
+            description: description || "",
+            mainCategory: mainCategoryId,
+            order: order || 0
+        });
+
+        await subCategory.save();
+
+        res.status(201).json({
+            message: "Sub category created successfully",
+            data: subCategory
+        });
+    } catch (err) {
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
+// Get All Sub Categories (of a specific parent)
+export const getSubCategories = async (req, res) => {
+    try {
+        const { mainCategoryId } = req.params;  // Changed from parentId
+        const { page = 1, limit = 10 } = req.query;
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+
+        if (!mainCategoryId) {
+            return res.status(400).json({ message: "Main category ID is required" });
+        }
+
+        const categories = await MainCategory.find({ 
+            isActive: true, 
+            parentCategory: mainCategoryId  // Sub categories have parentCategory = mainCategoryId
+        })
+            .populate('parentCategory', 'categoryName mainCategoryId')
+            .sort({ order: 1, categoryName: 1 })
+            .skip(skip)
+            .limit(parseInt(limit));
+
+        const total = await MainCategory.countDocuments({ 
+            isActive: true, 
+            parentCategory: mainCategoryId 
+        });
+
+        res.status(200).json({
+            message: "Sub categories fetched successfully",
+            data: categories,
+            pagination: {
+                currentPage: parseInt(page),
+                totalPages: Math.ceil(total / parseInt(limit)),
+                totalItems: total,
+                itemsPerPage: parseInt(limit)
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
+// Get All Sub Categories (all)
+export const getAllSubCategories = async (req, res) => {
+    try {
+        const { page = 1, limit = 10 } = req.query;
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+
+        const subCategories = await SubCategory.find({ isActive: true })
+            .populate('mainCategory', 'categoryName mainCategoryId description')
+            .sort({ order: 1, categoryName: 1 })
+            .skip(skip)
+            .limit(parseInt(limit));
+
+        const total = await SubCategory.countDocuments({ isActive: true });
+
+        res.status(200).json({
+            message: "Sub categories fetched successfully",
+            data: subCategories,
+            pagination: {
+                currentPage: parseInt(page),
+                totalPages: Math.ceil(total / parseInt(limit)),
+                totalItems: total,
+                itemsPerPage: parseInt(limit)
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
+export const getSubCategoriesByMainCategory = async (req, res) => {
+    try {
+        const { mainCategoryId } = req.params;
+        const { page = 1, limit = 10 } = req.query;
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+
+        if (!mainCategoryId) {
+            return res.status(400).json({ message: "Main category ID is required" });
+        }
+
+        const subCategories = await SubCategory.find({ 
+            isActive: true, 
+            mainCategory: mainCategoryId 
+        })
+            .populate('mainCategory', 'categoryName mainCategoryId description')
+            .sort({ order: 1, categoryName: 1 })
+            .skip(skip)
+            .limit(parseInt(limit));
+
+        const total = await SubCategory.countDocuments({ 
+            isActive: true, 
+            mainCategory: mainCategoryId 
+        });
+
+        res.status(200).json({
+            message: "Sub categories fetched successfully",
+            data: subCategories,
+            pagination: {
+                currentPage: parseInt(page),
+                totalPages: Math.ceil(total / parseInt(limit)),
+                totalItems: total,
+                itemsPerPage: parseInt(limit)
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
+// Get Sub Category by ID
+export const getSubCategoryById = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const query = mongoose.Types.ObjectId.isValid(id) 
+            ? { _id: id } 
+            : { subCategoryId: id };
+
+        const subCategory = await SubCategory.findOne(query)
+            .populate('mainCategory', 'categoryName mainCategoryId description');
+
+        if (!subCategory) {
+            return res.status(404).json({ message: "Sub category not found" });
+        }
+
+        res.status(200).json({
+            message: "Sub category fetched successfully",
+            data: subCategory
+        });
+    } catch (err) {
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
+
+// Update Sub Category
+export const updateSubCategory = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { categoryName, description, mainCategoryId, order, isActive } = req.body;
+
+        const query = mongoose.Types.ObjectId.isValid(id) 
+            ? { _id: id } 
+            : { mainCategoryId: id };
+
+        const updateData = { categoryName, description, order, isActive };
+
+        // If changing main category
+        if (mainCategoryId) {
+            const mainCategory = await MainCategory.findOne({
+                _id: mainCategoryId,
+                parentCategory: null,  // Must be a main category
+                isActive: true
+            });
+            
+            if (!mainCategory) {
+                return res.status(404).json({ message: "Main category not found or inactive" });
+            }
+            
+            updateData.parentCategory = mainCategoryId;
+            updateData.level = 1;
+        }
+
+        const category = await MainCategory.findOneAndUpdate(
+            { ...query, parentCategory: { $ne: null } },  // Must be a sub category
+            updateData,
+            { new: true, runValidators: true }
+        ).populate('parentCategory', 'categoryName mainCategoryId');
+
+        if (!category) {
+            return res.status(404).json({ message: "Sub category not found" });
+        }
+
+        res.status(200).json({
+            message: "Sub category updated successfully",
+            data: category
+        });
+    } catch (err) {
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
+// Delete Sub Category
+export const deleteSubCategory = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const query = mongoose.Types.ObjectId.isValid(id) 
+            ? { _id: id } 
+            : { mainCategoryId: id };
+
+        const category = await MainCategory.findOneAndDelete({ 
+            ...query, 
+            parentCategory: { $ne: null } 
+        });
+
+        if (!category) {
+            return res.status(404).json({ message: "Sub category not found" });
+        }
+
+        res.status(200).json({ message: "Sub category deleted successfully" });
+    } catch (err) {
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
+// Get Category Hierarchy (Main + Subs)
+export const getMainCategoryHierarchy = async (req, res) => {
+    try {
+        const mainCategories = await MainCategory.find({ 
+            isActive: true, 
+            parentCategory: null 
+        }).sort({ order: 1, categoryName: 1 });
+
+        const hierarchy = await Promise.all(
+            mainCategories.map(async (mainCat) => {
+                const subCategories = await MainCategory.find({
+                    isActive: true,
+                    parentCategory: mainCat._id
+                }).sort({ order: 1, categoryName: 1 });
+
+                return {
+                    ...mainCat.toObject(),
+                    subCategories
+                };
+            })
+        );
+
+        res.status(200).json({
+            message: "Category hierarchy fetched successfully",
+            data: hierarchy
+        });
+    } catch (err) {
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
+export const createTopCategory = async (req, res) => {
+    try {
+        const { displayName, displayNames, order, orders } = req.body;
+        // Remove categoryId and categoryIds from destructuring
+
+        let files = [];
+
+        if (req.files) {
+            if (req.files.image) {
+                files = req.files.image;
+            }
+            if (req.files.images) {
+                files = req.files.images;
+            }
+        }
+
+        if (!files || files.length === 0) {
+            return res.status(400).json({ message: "At least one image is required" });
+        }
+
+        // MULTIPLE UPLOAD
+        if (files.length > 1) {
+            const displayNameArray = typeof displayNames === "string" ? JSON.parse(displayNames) : displayNames;
+            const orderArray = typeof orders === "string" ? JSON.parse(orders) : orders;
+
+            const topCategories = files.map((file, index) => ({
+                // categoryId will be auto-generated by MongoDB
+                displayName: displayNameArray[index],
+                imageUrl: `/uploads/landing/${file.filename}`,
+                order: orderArray?.[index] || index
+            }));
+
+            const savedCategories = await TopCategory.insertMany(topCategories);
+
+            return res.status(201).json({
+                message: "Multiple top categories created successfully",
+                count: savedCategories.length,
+                data: savedCategories
+            });
+        }
+
+        // SINGLE UPLOAD
+        const topCategory = new TopCategory({
+            // categoryId will be auto-generated by MongoDB
+            displayName,
+            imageUrl: `/uploads/landing/${files[0].filename}`,
+            order: order || 0
+        });
+
+        await topCategory.save();
+
+        res.status(201).json({
+            message: "Top category created successfully",
+            data: topCategory
+        });
+
+    } catch (err) {
+        console.error("TopCategory Error:", err);
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
+export const getAllTopCategories = async (req, res) => {
+    try {
+        const { page = 1, limit = 10 } = req.query;
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+
+        const topCategories = await TopCategory.find({ isActive: true })
+            .populate('categoryId', 'categoryName description')
+            .sort({ order: 1 })
+            .skip(skip)
+            .limit(parseInt(limit));
+
+        const total = await TopCategory.countDocuments({ isActive: true });
+
+        res.status(200).json({
+            message: "Top categories fetched successfully",
+            data: topCategories,
+            pagination: {
+                currentPage: parseInt(page),
+                totalPages: Math.ceil(total / parseInt(limit)),
+                totalItems: total,
+                itemsPerPage: parseInt(limit)
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
+export const deleteTopCategory = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const topCategory = await TopCategory.findByIdAndDelete(id);
+
+        if (!topCategory) {
+            return res.status(404).json({ message: "Top category not found" });
+        }
+
+        res.status(200).json({ message: "Top category deleted successfully" });
+    } catch (err) {
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
+// ============= FEATURED CATEGORIES =============
+export const createFeaturedCategory = async (req, res) => {
+    try {
+        const { categoryId, categoryIds, title, titles, description, descriptions, order, orders } = req.body;
+
+        const files = req.files || (req.file ? [req.file] : []);
+
+        if (files.length === 0) {
+            return res.status(400).json({ message: "At least one image is required" });
+        }
+
+        // Multiple uploads
+        if (files.length > 1) {
+            const categoryIdArray = typeof categoryIds === 'string' ? JSON.parse(categoryIds) : (categoryIds || []);
+            const titleArray = typeof titles === 'string' ? JSON.parse(titles) : (titles || []);
+            const descriptionArray = typeof descriptions === 'string' ? JSON.parse(descriptions) : (descriptions || []);
+            const orderArray = typeof orders === 'string' ? JSON.parse(orders) : (orders || []);
+
+            if (files.length !== categoryIdArray.length) {
+                return res.status(400).json({ 
+                    message: "Number of images must match number of categoryIds" 
+                });
+            }
+
+            const featuredCategories = files.map((file, index) => ({
+                categoryId: categoryIdArray[index],
+                title: titleArray[index],
+                description: descriptionArray?.[index] || "",
+                imageUrl: file.path || `/uploads/landing/${file.filename}`,
+                order: orderArray?.[index] || index
+            }));
+
+            const savedCategories = await FeaturedCategory.insertMany(featuredCategories);
+
+            return res.status(201).json({
+                message: "Multiple featured categories created successfully",
+                count: savedCategories.length,
+                data: savedCategories
+            });
+        }
+
+        // Single upload
+        const featuredCategory = new FeaturedCategory({
+            categoryId,
+            title,
+            description,
+            imageUrl: files[0].path || `/uploads/landing/${files[0].filename}`,
+            order: order || 0
+        });
+
+        await featuredCategory.save();
+
+        res.status(201).json({
+            message: "Featured category created successfully",
+            data: featuredCategory
+        });
+    } catch (err) {
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
+export const getAllFeaturedCategories = async (req, res) => {
+    try {
+        const { page = 1, limit = 10 } = req.query;
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+
+        const featuredCategories = await FeaturedCategory.find({ isActive: true })
+            .populate('categoryId', 'categoryName description')
+            .sort({ order: 1 })
+            .skip(skip)
+            .limit(parseInt(limit));
+
+        const total = await FeaturedCategory.countDocuments({ isActive: true });
+
+        res.status(200).json({
+            message: "Featured categories fetched successfully",
+            data: featuredCategories,
+            pagination: {
+                currentPage: parseInt(page),
+                totalPages: Math.ceil(total / parseInt(limit)),
+                totalItems: total,
+                itemsPerPage: parseInt(limit)
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
+export const deleteFeaturedCategory = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const featuredCategory = await FeaturedCategory.findByIdAndDelete(id);
+
+        if (!featuredCategory) {
+            return res.status(404).json({ message: "Featured category not found" });
+        }
+
+        res.status(200).json({ message: "Featured category deleted successfully" });
+    } catch (err) {
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
+// ============= TOP SELLING PRODUCTS =============
+// export const getTopSellingProducts = async (req, res) => {
+//     try {
+//         const { page = 1, limit = 10 } = req.query;
+//         const skip = (parseInt(page) - 1) * parseInt(limit);
+
+//         const topProducts = await Order.aggregate([
+//             // Only successful orders
+//             {
+//                 $match: {
+//                     orderStatus: "DELIVERED",
+//                     paymentStatus: "PAID",
+//                 },
+//             },
+
+//             { $unwind: "$items" },
+
+//             {
+//                 $group: {
+//                     _id: "$items.itemId",
+//                     totalUnitsSold: { $sum: "$items.quantity" },
+//                     totalRevenue: { $sum: "$items.totalCost" },
+//                 },
+//             },
+
+//             { $sort: { totalUnitsSold: -1 } },
+//             { $skip: skip },
+//             { $limit: parseInt(limit) },
+
+//             {
+//                 $lookup: {
+//                     from: "products",
+//                     localField: "_id",
+//                     foreignField: "_id",
+//                     as: "product",
+//                 },
+//             },
+
+//             {
+//                 $unwind: { path: "$product", preserveNullAndEmptyArrays: true }
+//             },
+
+//             // Lookup category
+//             {
+//                 $lookup: {
+//                     from: "categories",
+//                     localField: "product.category",
+//                     foreignField: "_id",
+//                     as: "category",
+//                 },
+//             },
+
+//             // Lookup brand
+//             {
+//                 $lookup: {
+//                     from: "brands",
+//                     localField: "product.brand",
+//                     foreignField: "_id",
+//                     as: "brand",
+//                 },
+//             },
+
+//             {
+//                 $project: {
+//                     _id: 0,
+//                     productId: "$_id",
+//                     productName: "$product.productName",
+//                     description: "$product.description",
+//                     price: "$product.price",
+//                     discountPrice: "$product.discountPrice",
+//                     images: "$product.images",
+//                     rating: "$product.rating",
+//                     reviewCount: "$product.reviewCount",
+//                     category: { $arrayElemAt: ["$category.categoryName", 0] },
+//                     brand: { $arrayElemAt: ["$brand.brandName", 0] },
+//                     totalUnitsSold: 1,
+//                     totalRevenue: 1,
+//                 },
+//             },
+//         ]);
+
+//         // Get total count for pagination
+//         const totalCount = await Order.aggregate([
+//             {
+//                 $match: {
+//                     orderStatus: "DELIVERED",
+//                     paymentStatus: "PAID",
+//                 },
+//             },
+//             { $unwind: "$items" },
+//             {
+//                 $group: {
+//                     _id: "$items.itemId",
+//                 },
+//             },
+//             { $count: "total" }
+//         ]);
+
+//         const total = totalCount.length > 0 ? totalCount[0].total : 0;
+
+//         res.status(200).json({
+//             success: true,
+//             message: "Top selling products fetched successfully",
+//             count: topProducts.length,
+//             data: topProducts,
+//             pagination: {
+//                 currentPage: parseInt(page),
+//                 totalPages: Math.ceil(total / parseInt(limit)),
+//                 totalItems: total,
+//                 itemsPerPage: parseInt(limit)
+//             }
+//         });
+//     } catch (error) {
+//         console.error("Top Selling Products Error:", error);
+//         res.status(500).json({
+//             success: false,
+//             message: "Failed to fetch top selling products",
+//             error: error.message
+//         });
+//     }
+// };
+// // Get top selling products without pagination (for landing page display)
+// export const getTopSellingProductsForLanding = async (req, res) => {
+//     try {
+//         const limit = parseInt(req.query.limit) || 12;
+
+//         const topProducts = await Order.aggregate([
+//             {
+//                 $match: {
+//                     orderStatus: "DELIVERED",
+//                     paymentStatus: "PAID",
+//                 },
+//             },
+
+//             { $unwind: "$items" },
+
+//             {
+//                 $group: {
+//                     _id: "$items.itemId",
+//                     totalUnitsSold: { $sum: "$items.quantity" },
+//                     totalRevenue: { $sum: "$items.totalCost" },
+//                 },
+//             },
+
+//             { $sort: { totalUnitsSold: -1 } },
+//             { $limit: limit },
+
+//             {
+//                 $lookup: {
+//                     from: "products",
+//                     localField: "_id",
+//                     foreignField: "_id",
+//                     as: "product",
+//                 },
+//             },
+
+//             {
+//                 $unwind: { path: "$product", preserveNullAndEmptyArrays: true }
+//             },
+
+//             {
+//                 $lookup: {
+//                     from: "categories",
+//                     localField: "product.category",
+//                     foreignField: "_id",
+//                     as: "category",
+//                 },
+//             },
+
+//             {
+//                 $lookup: {
+//                     from: "brands",
+//                     localField: "product.brand",
+//                     foreignField: "_id",
+//                     as: "brand",
+//                 },
+//             },
+
+//             {
+//                 $project: {
+//                     _id: 0,
+//                     productId: "$_id",
+//                     productName: "$product.productName",
+//                     description: "$product.description",
+//                     price: "$product.price",
+//                     discountPrice: "$product.discountPrice",
+//                     images: "$product.images",
+//                     rating: "$product.rating",
+//                     reviewCount: "$product.reviewCount",
+//                     stock: "$product.stock",
+//                     category: { $arrayElemAt: ["$category.categoryName", 0] },
+//                     brand: { $arrayElemAt: ["$brand.brandName", 0] },
+//                     totalUnitsSold: 1,
+//                     totalRevenue: 1,
+//                 },
+//             },
+//         ]);
+
+//         res.status(200).json({
+//             success: true,
+//             message: "Top selling products fetched successfully",
+//             count: topProducts.length,
+//             data: topProducts,
+//         });
+//     } catch (error) {
+//         console.error("Top Selling Products Error:", error);
+//         res.status(500).json({
+//             success: false,
+//             message: "Failed to fetch top selling products",
+//             error: error.message
+//         });
+//     }
+// };
 // ============= UPDATE TOP CATEGORY =============
 export const updateTopCategory = async (req, res) => {
     try {
@@ -440,7 +1436,6 @@ export const updateTopCategory = async (req, res) => {
         res.status(500).json({ message: "Server error", error: err.message });
     }
 };
-
 // ============= UPDATE FEATURED CATEGORY =============
 export const updateFeaturedCategory = async (req, res) => {
     try {
@@ -471,8 +1466,6 @@ export const updateFeaturedCategory = async (req, res) => {
         res.status(500).json({ message: "Server error", error: err.message });
     }
 };
-
-
 export const updateTopSellingProduct = async (req, res) => {
     try {
         const { id } = req.params;
@@ -507,35 +1500,33 @@ export const updateTopSellingProduct = async (req, res) => {
 };
 export const createCategorySection = async (req, res) => {
     try {
-        const { sectionTitle, categoryId, products, displayType, order, productsLimit } = req.body;
+        const { sectionTitle, products, displayType, order, productsLimit } = req.body;
 
         const categorySection = new CategorySection({
             sectionTitle,
-            categoryId,
             products: products || [],
             displayType: displayType || "grid",
             order: order || 0,
             productsLimit: productsLimit || 12
+            // categorySectionId will be auto-generated by pre-save hook
         });
 
         await categorySection.save();
 
         res.status(201).json({
             message: "Category section created successfully",
-            data: categorySection
+            data: categorySection  // Includes both _id and categorySectionId
         });
     } catch (err) {
         res.status(500).json({ message: "Server error", error: err.message });
     }
 };
-
 export const getAllCategorySections = async (req, res) => {
     try {
         const { page = 1, limit = 10 } = req.query;
         const skip = (parseInt(page) - 1) * parseInt(limit);
 
         const sections = await CategorySection.find({ isActive: true })
-            .populate('categoryId', 'categoryName description')
             .populate({
                 path: 'products',
                 select: 'productName description price discountPrice images rating reviewCount stock',
@@ -564,13 +1555,15 @@ export const getAllCategorySections = async (req, res) => {
         res.status(500).json({ message: "Server error", error: err.message });
     }
 };
-
 export const getCategorySectionById = async (req, res) => {
     try {
         const { id } = req.params;
 
-        const section = await CategorySection.findById(id)
-            .populate('categoryId', 'categoryName description')
+        const query = mongoose.Types.ObjectId.isValid(id) 
+            ? { _id: id } 
+            : { categorySectionId: id };
+
+        const section = await CategorySection.findOne(query)
             .populate({
                 path: 'products',
                 select: 'productName description price discountPrice images rating reviewCount stock',
@@ -592,15 +1585,17 @@ export const getCategorySectionById = async (req, res) => {
         res.status(500).json({ message: "Server error", error: err.message });
     }
 };
-
 export const updateCategorySection = async (req, res) => {
     try {
         const { id } = req.params;
-        const { sectionTitle, categoryId, products, displayType, order, productsLimit, isActive } = req.body;
+        const { sectionTitle, products, displayType, order, productsLimit, isActive } = req.body;
+
+        const query = mongoose.Types.ObjectId.isValid(id) 
+            ? { _id: id } 
+            : { categorySectionId: id };
 
         const updateData = {
             sectionTitle,
-            categoryId,
             products,
             displayType,
             order,
@@ -608,12 +1603,11 @@ export const updateCategorySection = async (req, res) => {
             isActive
         };
 
-        const section = await CategorySection.findByIdAndUpdate(
-            id,
+        const section = await CategorySection.findOneAndUpdate(
+            query,
             updateData,
             { new: true, runValidators: true }
         )
-            .populate('categoryId', 'categoryName description')
             .populate({
                 path: 'products',
                 select: 'productName description price discountPrice images rating reviewCount stock',
@@ -636,75 +1630,576 @@ export const updateCategorySection = async (req, res) => {
     }
 };
 
-export const addProductToCategorySection = async (req, res) => {
+// ============= ADD PRODUCT WITH VARIANTS =============
+export const addProduct = async (req, res) => {
     try {
-        const { id } = req.params;
-        const { productId } = req.body;
+        let { 
+            // Basic Info
+            name, 
+            description,
+            
+            // Hierarchy (Required)
+            mainCategoryId,
+            subCategoryId,
+            brandId,
+            
+            // Variants (Array of objects with size, color, material, pricing)
+            variants, // [{ size, color, material, originalPrice, discountPrice1, discountPrice2, stock }]
+            
+            // Stock (if single variant)
+            stock,
+            expiryDate,
+            
+            // Single pricing (if no variants)
+            originalPrice,
+            discountPrice1,
+            discountPrice2,
+            
+            // Optional: if you want to add existing product by ID
+            productId 
+        } = req.body;
 
-        const section = await CategorySection.findByIdAndUpdate(
-            id,
-            { $addToSet: { products: productId } }, // Prevents duplicate products
-            { new: true }
-        )
-            .populate('categoryId', 'categoryName description')
-            .populate({
-                path: 'products',
-                select: 'productName description price discountPrice images rating reviewCount stock'
-            });
-
-        if (!section) {
-            return res.status(404).json({ message: "Category section not found" });
+        // Parse variants if it's a JSON string (from form data)
+        if (typeof variants === 'string') {
+            try {
+                variants = JSON.parse(variants);
+            } catch (err) {
+                return res.status(400).json({ 
+                    message: "Invalid variants format. Must be valid JSON array" 
+                });
+            }
         }
 
-        res.status(200).json({
-            message: "Product added to category section successfully",
-            data: section
+        let finalProduct;
+
+        // OPTION 1: Adding existing product by ID
+        if (productId) {
+            const existingProduct = await Product.findById(productId)
+                .populate('mainCategory', 'categoryName mainCategoryId')
+                .populate('subCategory', 'categoryName subCategoryId')
+                .populate('brand', 'name brandId');
+                
+            if (!existingProduct) {
+                return res.status(404).json({ message: "Product not found" });
+            }
+            
+            finalProduct = existingProduct;
+        } 
+        // OPTION 2: Creating new product
+        else {
+            // Validate required fields
+            if (!name || !mainCategoryId || !subCategoryId || !brandId) {
+                return res.status(400).json({ 
+                    message: "Required fields: name, mainCategoryId, subCategoryId, brandId" 
+                });
+            }
+
+            // Validate pricing: either variants OR single pricing
+            if (!variants && !originalPrice) {
+                return res.status(400).json({ 
+                    message: "Either provide variants array OR originalPrice" 
+                });
+            }
+
+            // Step 1: Verify main category exists
+            const mainCategory = await MainCategory.findOne({
+                _id: mainCategoryId,
+                parentCategory: null,
+                isActive: true
+            });
+            if (!mainCategory) {
+                return res.status(404).json({ message: "Main category not found or inactive" });
+            }
+
+            // Step 2: Verify sub category exists and belongs to main category
+            const subCategory = await SubCategory.findOne({
+                _id: subCategoryId,
+                mainCategory: mainCategoryId,
+                isActive: true
+            });
+            if (!subCategory) {
+                return res.status(404).json({ 
+                    message: "Sub category not found, inactive, or doesn't belong to the main category" 
+                });
+            }
+
+            // Step 3: Verify brand exists and belongs to main category and sub category
+            const brand = await Brand.findOne({
+                _id: brandId,
+                mainCategory: mainCategoryId,
+                subCategory: subCategoryId,
+                isActive: true
+            });
+            if (!brand) {
+                return res.status(404).json({ 
+                    message: "Brand not found, inactive, or doesn't belong to the specified categories" 
+                });
+            }
+
+            // Handle image upload
+            let imageUrls = [];
+            if (req.files) {
+                if (req.files.image && req.files.image.length > 0) {
+                    imageUrls = req.files.image.map(file => `/uploads/landing/${file.filename}`);
+                } else if (req.files.images && req.files.images.length > 0) {
+                    imageUrls = req.files.images.map(file => `/uploads/landing/${file.filename}`);
+                }
+            }
+
+            if (imageUrls.length === 0) {
+                return res.status(400).json({ message: "At least one product image is required" });
+            }
+
+            // Process variants or create single variant
+            let processedVariants = [];
+            
+            if (variants && Array.isArray(variants)) {
+                // Multiple variants
+                processedVariants = variants.map(variant => {
+                    const original = parseFloat(variant.originalPrice);
+                    const discount1 = variant.discountPrice1 ? parseFloat(variant.discountPrice1) : null;
+                    const discount2 = variant.discountPrice2 ? parseFloat(variant.discountPrice2) : null;
+                    
+                    // Calculate discount percentages
+                    const discountPercentage1 = discount1 
+                        ? ((original - discount1) / original * 100).toFixed(2)
+                        : null;
+                    const discountPercentage2 = discount2 
+                        ? ((original - discount2) / original * 100).toFixed(2)
+                        : null;
+                    
+                    return {
+                        size: variant.size || null,
+                        color: variant.color || null,
+                        material: variant.material || null,
+                        originalPrice: original,
+                        discountPrice1: discount1,
+                        discountPrice2: discount2,
+                        discountPercentage1: discountPercentage1 ? parseFloat(discountPercentage1) : null,
+                        discountPercentage2: discountPercentage2 ? parseFloat(discountPercentage2) : null,
+                        stock: variant.stock ? parseInt(variant.stock) : 0
+                    };
+                });
+            } else {
+                // Single variant (backward compatibility)
+                const original = parseFloat(originalPrice);
+                const discount1 = discountPrice1 ? parseFloat(discountPrice1) : null;
+                const discount2 = discountPrice2 ? parseFloat(discountPrice2) : null;
+                
+                const discountPercentage1 = discount1 
+                    ? ((original - discount1) / original * 100).toFixed(2)
+                    : null;
+                const discountPercentage2 = discount2 
+                    ? ((original - discount2) / original * 100).toFixed(2)
+                    : null;
+                
+                processedVariants = [{
+                    size: null,
+                    color: null,
+                    material: null,
+                    originalPrice: original,
+                    discountPrice1: discount1,
+                    discountPrice2: discount2,
+                    discountPercentage1: discountPercentage1 ? parseFloat(discountPercentage1) : null,
+                    discountPercentage2: discountPercentage2 ? parseFloat(discountPercentage2) : null,
+                    stock: stock ? parseInt(stock) : 0
+                }];
+            }
+
+            // Create new product
+            const newProduct = new Product({
+                name,
+                description: description || "",
+                mainCategory: mainCategoryId,
+                subCategory: subCategoryId,
+                brand: brandId,
+                variants: processedVariants,
+                image: imageUrls,
+                expiryDate: expiryDate || null
+            });
+
+            await newProduct.save();
+            
+            // Populate before sending response
+            await newProduct.populate([
+                { path: 'mainCategory', select: 'categoryName mainCategoryId' },
+                { path: 'subCategory', select: 'categoryName subCategoryId' },
+                { path: 'brand', select: 'name brandId' }
+            ]);
+            
+            finalProduct = newProduct;
+        }
+
+        res.status(201).json({
+            message: productId 
+                ? "Product retrieved successfully" 
+                : "Product created successfully",
+            data: finalProduct
         });
     } catch (err) {
+        console.error("Add Product Error:", err);
         res.status(500).json({ message: "Server error", error: err.message });
     }
 };
 
-export const removeProductFromCategorySection = async (req, res) => {
+// ============= GET PRODUCTS BY FILTERS =============
+export const getProductsByFilters = async (req, res) => {
     try {
-        const { id, productId } = req.params;
-
-        const section = await CategorySection.findByIdAndUpdate(
-            id,
-            { $pull: { products: productId } },
-            { new: true }
-        )
-            .populate('categoryId', 'categoryName description')
-            .populate({
-                path: 'products',
-                select: 'productName description price discountPrice images rating reviewCount stock'
-            });
-
-        if (!section) {
-            return res.status(404).json({ message: "Category section not found" });
+        const { mainCategoryId, subCategoryId, brandId, minPrice, maxPrice, size, color, material } = req.query;
+        
+        let filter = {};
+        
+        if (mainCategoryId) {
+            filter.mainCategory = mainCategoryId;
+        }
+        
+        if (subCategoryId) {
+            filter.subCategory = subCategoryId;
+        }
+        
+        if (brandId) {
+            filter.brand = brandId;
         }
 
+        // Filter by variant properties
+        if (size) {
+            filter['variants.size'] = size;
+        }
+        
+        if (color) {
+            filter['variants.color'] = color;
+        }
+        
+        if (material) {
+            filter['variants.material'] = material;
+        }
+
+        // Price range filter
+        if (minPrice || maxPrice) {
+            filter['variants.originalPrice'] = {};
+            if (minPrice) filter['variants.originalPrice'].$gte = parseFloat(minPrice);
+            if (maxPrice) filter['variants.originalPrice'].$lte = parseFloat(maxPrice);
+        }
+        
+        const products = await Product.find(filter)
+            .populate('mainCategory', 'categoryName mainCategoryId')
+            .populate('subCategory', 'categoryName subCategoryId')
+            .populate('brand', 'name brandId')
+            .sort({ createdAt: -1 });
+        
         res.status(200).json({
-            message: "Product removed from category section successfully",
-            data: section
+            message: "Products retrieved successfully",
+            count: products.length,
+            data: products
         });
     } catch (err) {
+        console.error("Get Products Error:", err);
         res.status(500).json({ message: "Server error", error: err.message });
     }
 };
 
-export const deleteCategorySection = async (req, res) => {
+// ============= GET PRODUCTS BY MAIN CATEGORY =============
+export const getProductsByMainCategory = async (req, res) => {
     try {
-        const { id } = req.params;
+        const { mainCategoryId } = req.params;
+        
+        const products = await Product.find({ mainCategory: mainCategoryId })
+            .populate('mainCategory', 'categoryName mainCategoryId')
+            .populate('subCategory', 'categoryName subCategoryId')
+            .populate('brand', 'name brandId')
+            .sort({ createdAt: -1 });
+        
+        res.status(200).json({
+            message: "Products retrieved successfully",
+            count: products.length,
+            data: products
+        });
+    } catch (err) {
+        console.error("Get Products Error:", err);
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
 
-        const section = await CategorySection.findByIdAndDelete(id);
+// ============= GET PRODUCTS BY SUB CATEGORY =============
+export const getProductsBySubCategory = async (req, res) => {
+    try {
+        const { subCategoryId } = req.params;
+        
+        const products = await Product.find({ subCategory: subCategoryId })
+            .populate('mainCategory', 'categoryName mainCategoryId')
+            .populate('subCategory', 'categoryName subCategoryId')
+            .populate('brand', 'name brandId')
+            .sort({ createdAt: -1 });
+        
+        res.status(200).json({
+            message: "Products retrieved successfully",
+            count: products.length,
+            data: products
+        });
+    } catch (err) {
+        console.error("Get Products Error:", err);
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
 
-        if (!section) {
-            return res.status(404).json({ message: "Category section not found" });
+// ============= GET PRODUCTS BY BRAND =============
+export const getProductsByBrand = async (req, res) => {
+    try {
+        const { brandId } = req.params;
+        
+        const products = await Product.find({ brand: brandId })
+            .populate('mainCategory', 'categoryName mainCategoryId')
+            .populate('subCategory', 'categoryName subCategoryId')
+            .populate('brand', 'name brandId')
+            .sort({ createdAt: -1 });
+        
+        res.status(200).json({
+            message: "Products retrieved successfully",
+            count: products.length,
+            data: products
+        });
+    } catch (err) {
+        console.error("Get Products Error:", err);
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
+
+// ============= UPDATE PRODUCT =============
+export const updateProduct = async (req, res) => {
+    try {
+        const { productId } = req.params;
+        const updateData = { ...req.body };
+        
+        // Handle image upload if new images are provided
+        if (req.files) {
+            let imageUrls = [];
+            if (req.files.image && req.files.image.length > 0) {
+                imageUrls = req.files.image.map(file => `/uploads/landing/${file.filename}`);
+            } else if (req.files.images && req.files.images.length > 0) {
+                imageUrls = req.files.images.map(file => `/uploads/landing/${file.filename}`);
+            }
+            
+            if (imageUrls.length > 0) {
+                updateData.image = imageUrls;
+            }
         }
 
-        res.status(200).json({ message: "Category section deleted successfully" });
+        // Process variants if provided
+        if (updateData.variants && Array.isArray(updateData.variants)) {
+            updateData.variants = updateData.variants.map(variant => {
+                const original = parseFloat(variant.originalPrice);
+                const discount1 = variant.discountPrice1 ? parseFloat(variant.discountPrice1) : null;
+                const discount2 = variant.discountPrice2 ? parseFloat(variant.discountPrice2) : null;
+                
+                const discountPercentage1 = discount1 
+                    ? ((original - discount1) / original * 100).toFixed(2)
+                    : null;
+                const discountPercentage2 = discount2 
+                    ? ((original - discount2) / original * 100).toFixed(2)
+                    : null;
+                
+                return {
+                    ...variant,
+                    originalPrice: original,
+                    discountPrice1: discount1,
+                    discountPrice2: discount2,
+                    discountPercentage1: discountPercentage1 ? parseFloat(discountPercentage1) : null,
+                    discountPercentage2: discountPercentage2 ? parseFloat(discountPercentage2) : null,
+                    stock: variant.stock ? parseInt(variant.stock) : 0
+                };
+            });
+        }
+        
+        const product = await Product.findByIdAndUpdate(
+            productId,
+            updateData,
+            { new: true, runValidators: true }
+        )
+            .populate('mainCategory', 'categoryName mainCategoryId')
+            .populate('subCategory', 'categoryName subCategoryId')
+            .populate('brand', 'name brandId');
+        
+        if (!product) {
+            return res.status(404).json({ message: "Product not found" });
+        }
+        
+        res.status(200).json({
+            message: "Product updated successfully",
+            data: product
+        });
     } catch (err) {
+        console.error("Update Product Error:", err);
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
+
+// ============= DELETE PRODUCT =============
+export const deleteProduct = async (req, res) => {
+    try {
+        const { productId } = req.params;
+        
+        const product = await Product.findByIdAndDelete(productId);
+        
+        if (!product) {
+            return res.status(404).json({ message: "Product not found" });
+        }
+        
+        res.status(200).json({
+            message: "Product deleted successfully",
+            data: product
+        });
+    } catch (err) {
+        console.error("Delete Product Error:", err);
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
+
+// ============= GET TOP SELLING PRODUCTS =============
+export const getTopSellingProducts = async (req, res) => {
+    try {
+        const { limit = 10, mainCategoryId, subCategoryId, brandId } = req.query;
+        
+        // Build match conditions
+        let matchConditions = {};
+        if (mainCategoryId) matchConditions.mainCategory = mongoose.Types.ObjectId(mainCategoryId);
+        if (subCategoryId) matchConditions.subCategory = mongoose.Types.ObjectId(subCategoryId);
+        if (brandId) matchConditions.brand = mongoose.Types.ObjectId(brandId);
+        
+        // Aggregate pipeline to get top selling products
+        const topProducts = await Product.aggregate([
+            // Match filters if provided
+            ...(Object.keys(matchConditions).length > 0 ? [{ $match: matchConditions }] : []),
+            
+            // Lookup orders to get sales data
+            {
+                $lookup: {
+                    from: "orders", // Your orders collection name
+                    localField: "_id",
+                    foreignField: "items.product",
+                    as: "orderData"
+                }
+            },
+            
+            // Unwind order data
+            { $unwind: { path: "$orderData", preserveNullAndEmptyArrays: true } },
+            
+            // Unwind order items to get individual product quantities
+            { $unwind: { path: "$orderData.items", preserveNullAndEmptyArrays: true } },
+            
+            // Match only items that belong to this product
+            {
+                $match: {
+                    $expr: { $eq: ["$_id", "$orderData.items.product"] }
+                }
+            },
+            
+            // Group by product and calculate total quantity sold
+            {
+                $group: {
+                    _id: "$_id",
+                    product: { $first: "$ROOT" },
+                    totalQuantitySold: { $sum: "$orderData.items.quantity" },
+                    totalRevenue: { 
+                        $sum: { 
+                            $multiply: ["$orderData.items.quantity", "$orderData.items.price"] 
+                        } 
+                    },
+                    totalOrders: { $sum: 1 }
+                }
+            },
+            
+            // Sort by total quantity sold (descending)
+            { $sort: { totalQuantitySold: -1 } },
+            
+            // Limit results
+            { $limit: parseInt(limit) },
+            
+            // Lookup populated data
+            {
+                $lookup: {
+                    from: "maincategories",
+                    localField: "product.mainCategory",
+                    foreignField: "_id",
+                    as: "mainCategoryData"
+                }
+            },
+            {
+                $lookup: {
+                    from: "subcategories",
+                    localField: "product.subCategory",
+                    foreignField: "_id",
+                    as: "subCategoryData"
+                }
+            },
+            {
+                $lookup: {
+                    from: "brands",
+                    localField: "product.brand",
+                    foreignField: "_id",
+                    as: "brandData"
+                }
+            },
+            
+            // Project final structure
+            {
+                $project: {
+                    _id: 1,
+                    productId: "$product.productId",
+                    name: "$product.name",
+                    description: "$product.description",
+                    variants: "$product.variants",
+                    image: "$product.image",
+                    status: "$product.status",
+                    mainCategory: { $arrayElemAt: ["$mainCategoryData", 0] },
+                    subCategory: { $arrayElemAt: ["$subCategoryData", 0] },
+                    brand: { $arrayElemAt: ["$brandData", 0] },
+                    totalQuantitySold: 1,
+                    totalRevenue: 1,
+                    totalOrders: 1,
+                    createdAt: "$product.createdAt",
+                    updatedAt: "$product.updatedAt"
+                }
+            }
+        ]);
+        
+        res.status(200).json({
+            message: "Top selling products retrieved successfully",
+            count: topProducts.length,
+            data: topProducts
+        });
+    } catch (err) {
+        console.error("Get Top Selling Products Error:", err);
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
+
+// ============= GET TOP SELLING PRODUCTS (SIMPLE VERSION - without orders) =============
+export const getTopSellingProductsSimple = async (req, res) => {
+    try {
+        const { limit = 10, mainCategoryId, subCategoryId, brandId } = req.query;
+        
+        // Build filter
+        let filter = {};
+        if (mainCategoryId) filter.mainCategory = mainCategoryId;
+        if (subCategoryId) filter.subCategory = subCategoryId;
+        if (brandId) filter.brand = brandId;
+        
+        // For now, sort by stock sold (you can add a 'soldCount' field to track this)
+        // Or sort by createdAt (newest first) as placeholder
+        const products = await Product.find(filter)
+            .populate('mainCategory', 'categoryName mainCategoryId')
+            .populate('subCategory', 'categoryName subCategoryId')
+            .populate('brand', 'name brandId')
+            .sort({ createdAt: -1 }) // Change this to { soldCount: -1 } if you add that field
+            .limit(parseInt(limit));
+        
+        res.status(200).json({
+            message: "Top products retrieved successfully",
+            count: products.length,
+            data: products
+        });
+    } catch (err) {
+        console.error("Get Top Products Error:", err);
         res.status(500).json({ message: "Server error", error: err.message });
     }
 };
