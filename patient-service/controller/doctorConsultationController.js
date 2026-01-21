@@ -38,6 +38,9 @@ const consultPatient = async (req, res) => {
     const treatmentPlanStatusUpdate = parseJSON(req.body.treatmentPlanStatus, null);
     const recall = parseJSON(req.body.recall, null);
     const notes = req.body.notes || "";
+    const softTissueInput = parseJSON(req.body.softTissueExamination, []);
+const tmjInput = parseJSON(req.body.tmjExamination, []);
+
 
     console.log("📥 ========== CONSULTATION REQUEST RECEIVED ==========");
     console.log("📋 Treatment Plan Input:", treatmentPlanInput ? {
@@ -81,6 +84,23 @@ const consultPatient = async (req, res) => {
     if (!patient) {
       return res.status(404).json({ success: false, message: "Patient not found" });
     }
+// ---------- fetch consultation fee ----------
+let consultationFee = 0;
+
+try {
+  const doctorsResp = await axios.get(
+    `${CLINIC_SERVICE_BASE_URL}/active-doctors`,
+    { params: { clinicId: appointment.clinicId } }
+  );
+
+  const doctorData = doctorsResp.data?.doctors?.find(
+    d => d.doctorId?.toString() === doctorId.toString()
+  );
+
+  consultationFee = doctorData?.standardConsultationFee ?? 0;
+} catch (err) {
+  console.error("⚠️ Failed to fetch consultation fee:", err.message);
+}
 
     // ---------- files ----------
     const uploadedFiles = (req.files || []).map(f => ({
@@ -118,6 +138,49 @@ const consultPatient = async (req, res) => {
       count: performedTeeth.length,
       proceduresCount: performedTeeth.reduce((sum, t) => sum + (t.procedures?.length || 0), 0)
     });
+const softTissueExamination = softTissueInput.map(st => ({
+  id: st.id,
+  name: st.name,
+
+  onExamination: (st.onExamination || []).map(e => ({
+    value: e.value,
+    isCustom: !!e.isCustom
+  })),
+
+  diagnosis: (st.diagnosis || []).map(d => ({
+    value: d.value,
+    isCustom: !!d.isCustom
+  })),
+
+  treatment: (st.treatment || []).map(t => ({
+    value: t.value,
+    isCustom: !!t.isCustom
+  })),
+
+  notes: st.notes || ""
+}));
+const tmjExamination = tmjInput.map(tmj => ({
+  id: tmj.id,
+  name: tmj.name,
+
+
+  onExamination: (tmj.onExamination || []).map(e => ({
+    value: e.value,
+    isCustom: !!e.isCustom
+  })),
+
+  diagnosis: (tmj.diagnosis || []).map(d => ({
+    value: d.value,
+    isCustom: !!d.isCustom
+  })),
+
+  treatment: (tmj.treatment || []).map(t => ({
+    value: t.value,
+    isCustom: !!t.isCustom
+  })),
+
+  notes: tmj.notes || ""
+}));
 
     const [visitDoc] = await PatientHistory.create(
       [{
@@ -131,6 +194,10 @@ const consultPatient = async (req, res) => {
         notes,
         files: allFiles,
         dentalWork,
+        softTissueExamination,
+        tmjExamination,
+        plannedProcedures,
+        consultationFee,
         createdBy: doctorId
       }],
       { session }

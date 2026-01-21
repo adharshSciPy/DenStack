@@ -292,13 +292,25 @@ export const getAllPatientsBillsByClinic = async (req, res) => {
   try {
     const { clinicId } = req.params;
 
+    console.log('🔍 Fetching bills for clinicId:', clinicId);
+
+    // Validate clinicId
+    if (!clinicId || !/^[a-f\d]{24}$/i.test(clinicId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid clinicId format"
+      });
+    }
+
     // 1️⃣ Fetch all patients from this clinic
+    console.log('📞 Fetching patients...');
     const patientsResp = await axios.get(
-      `${PATIENT_SERVICE_BASE_URL}/patients/clinic/${clinicId}`,
-      // { timeout: 15000 }
+      `${PATIENT_SERVICE_BASE_URL}/patient-service/patient/all-patients/${clinicId}`,
+      { timeout: 15000 }
     );
 
     const patients = patientsResp.data?.data || [];
+    console.log('✅ Patients fetched:', patients.length);
 
     if (patients.length === 0) {
       return res.status(404).json({
@@ -308,6 +320,8 @@ export const getAllPatientsBillsByClinic = async (req, res) => {
     }
 
     // 2️⃣ Fetch pharmacy orders
+    console.log('📞 Fetching pharmacy orders...');
+    console.log('📍 Pharmacy URL:', `${PHARMACY_SERVICE_BASE_URL}/pharmacy/orders`);
     let allOrders = [];
     try {
       const pharmacyResp = await axios.get(
@@ -315,11 +329,17 @@ export const getAllPatientsBillsByClinic = async (req, res) => {
         { timeout: 15000 }
       );
       allOrders = pharmacyResp.data || [];
+      console.log('✅ Pharmacy orders fetched:', allOrders.length);
     } catch (error) {
-      console.error("Error fetching pharmacy orders:", error.message);
+      console.error("❌ Error fetching pharmacy orders:", {
+        message: error.message,
+        status: error.response?.status,
+        url: error.config?.url
+      });
     }
 
     // 3️⃣ Build billing summary per patient
+    console.log('📊 Building billing summary...');
     const billsByPatient = await Promise.all(
       patients.map(async (patient) => {
         const patientId = patient._id.toString();
@@ -328,16 +348,24 @@ export const getAllPatientsBillsByClinic = async (req, res) => {
         let consultationTotal = 0;
         let consultationsCount = 0;
         try {
-          const historyResp = await axios.post(
-            `${PATIENT_SERVICE_BASE_URL}/patients/patient-history/${patientId}`,
-            { clinicId },
-            { timeout: 5000 }
-          );
+          const historyUrl = `${PATIENT_SERVICE_BASE_URL}/patient-service/appointment/patient-history/${patientId}`;
+          console.log(`  📞 Fetching history: ${historyUrl}?clinicId=${clinicId}`);
+          
+          const historyResp = await axios.get(historyUrl, { 
+            params: { clinicId },
+            timeout: 5000 
+          });
           const visits = historyResp.data?.data || [];
           consultationTotal = visits.reduce((sum, v) => sum + (v.totalAmount || 0), 0);
           consultationsCount = visits.length;
+          console.log(`  ✅ ${patient.name}: ${consultationsCount} visits, ₹${consultationTotal}`);
         } catch (err) {
-          console.error(`Error fetching history for patient ${patientId}:`, err.message);
+          console.error(`  ❌ Error for patient ${patientId}:`, {
+            message: err.message,
+            status: err.response?.status,
+            url: err.config?.url,
+            data: err.response?.data
+          });
         }
 
         // Filter pharmacy orders for this patient
@@ -363,6 +391,8 @@ export const getAllPatientsBillsByClinic = async (req, res) => {
     const totalConsultations = billsByPatient.reduce((sum, p) => sum + p.consultations, 0);
     const totalPharmacyOrders = billsByPatient.reduce((sum, p) => sum + p.pharmacyOrders, 0);
 
+    console.log('✅ Summary complete');
+
     res.status(200).json({
       success: true,
       data: {
@@ -376,7 +406,7 @@ export const getAllPatientsBillsByClinic = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("Error fetching all patients bills:", error.message);
+    console.error("❌ Error fetching all patients bills:", error.message);
     res.status(500).json({
       success: false,
       message: "Failed to fetch all patients bills",

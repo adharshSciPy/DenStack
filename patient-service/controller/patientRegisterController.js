@@ -851,5 +851,28 @@ const updatePatientDetails = async (req, res) => {
     });
   }
 };
+ const getAllPatientsWithBirthdays = async (req, res) => {
+  try {
+    // Fetch all patients that have a dateOfBirth
+    const patients = await Patient.find({
+      dateOfBirth: { $exists: true, $ne: null }
+    })
+    .select('name phone email dateOfBirth clinicId patientUniqueId _id')
+    .lean();
+    
+    return res.status(200).json({
+      success: true,
+      data: patients,
+      count: patients.length
+    });
+  } catch (error) {
+    console.error('Error fetching patients with birthdays:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error fetching patients',
+      error: error.message
+    });
+  }
+};
 
-export { registerPatient, getPatientWithUniqueId, getAllPatients, patientCheck, getPatientsByClinic, getPatientById, sendSMSLink, setPassword, login,getPatientByRandomId ,addLabOrderToPatient,getPatientFullCRM,updatePatientDetails}
+export { registerPatient, getPatientWithUniqueId, getAllPatients, patientCheck, getPatientsByClinic, getPatientById, sendSMSLink, setPassword, login,getPatientByRandomId ,addLabOrderToPatient,getPatientFullCRM,updatePatientDetails,getAllPatientsWithBirthdays}

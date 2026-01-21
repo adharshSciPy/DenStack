@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 import cors from "cors";
 import connectDB from "./mongoDB/connectDb.js";
 import superAdminAuthRoutes from "./routes/superAdminRouter.js";
+import superAdminDashboardRouter from "./routes/superAdminDashboardRouter.js";
 import clinicAuthRoutes from "./routes/clinicRouter.js";
 import doctorAuthRouter from "./routes/doctorRoute.js";
 import nurseAuthRouter from "./routes/nurseRouter.js";
@@ -43,6 +44,7 @@ app.use("/api/v1/auth/technician", technicianAuthRouter)
 app.use("/api/v1/auth/PRO", PRORouter)
 app.use("/api/v1/auth/assistant", assistantRouter)
 app.use("/api/v1/auth/roles", permissionRoutes);
+app.use("/api/v1/super-admin", superAdminDashboardRouter);
 
 
 const PORT = process.env.PORT || 8001;
