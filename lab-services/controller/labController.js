@@ -16,9 +16,6 @@ const createLabVendor = async (req, res) => {
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return res.status(400).json({ message: "Invalid email format" });
     }
-    // if (clinicId){
-    //   return res.status(400).json({ message: "Clinic ID is not allowed" });
-    // }
 
     const vendor = new LabVendor({
       name: name.trim(),
@@ -43,7 +40,45 @@ const createLabVendor = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+const createAlignerVendor = async (req, res) => {
+  try {
+    const { name, contactPerson, email, services, isActive } = req.body;
 
+    // Basic manual validations
+    if (!name || name.trim().length < 2) {
+      return res.status(400).json({
+        message:
+          "Vendor name is required and must be at least 2 characters long",
+      });
+    }
+
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ message: "Invalid email format" });
+    }
+
+    const vendor = new LabVendor({
+      name: name.trim(),
+      contactPerson: contactPerson?.trim(),
+      email: email?.trim(),
+      services,
+      type: "aligner",
+      isActive,
+    });
+
+    await vendor.save();
+
+    res.status(201).json({
+      message: "Lab vendor created successfully",
+      vendor,
+    });
+  } catch (error) {
+    if (error.name === "ValidationError") {
+      const messages = Object.values(error.errors).map((err) => err.message);
+      return res.status(400).json({ message: messages.join(", ") });
+    }
+    res.status(500).json({ message: error.message });
+  }
+};
 const createInHouseLabVendor = async (req, res) => {
   const { name, contactPerson, email, services, isActive, clinicId } = req.body;
 
@@ -103,7 +138,7 @@ const getLabByClinicId = async (req, res) => {
   try {
     const { clinicId } = req.params;
     const vendor = await LabVendor.find({ clinicId });
-    if (!vendor) {
+    if (!vendor || vendor.length === 0) {
       return res.status(404).json({ message: "Lab not found for this clinic" });
     }
     res.status(200).json(vendor);
@@ -111,6 +146,7 @@ const getLabByClinicId = async (req, res) => {
     res.status(500).json({ message: error.message });
   } 
 };
+
 const getAllLabVendors = async (req, res) => {
   try {
     const vendors = await LabVendor.find().sort({ createdAt: -1 });
@@ -119,6 +155,59 @@ const getAllLabVendors = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+// NEW: Get only in-house lab vendors
+const getInHouseLabVendors = async (req, res) => {
+  try {
+    const vendors = await LabVendor.find({ type: "inHouse" }).sort({ createdAt: -1 });
+    res.status(200).json(vendors);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// NEW: Get only external lab vendors
+const getExternalLabVendors = async (req, res) => {
+  try {
+    const vendors = await LabVendor.find({ type: "external" }).sort({ createdAt: -1 });
+    res.status(200).json(vendors);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+
+const getAlignerVendors = async (req, res) => {
+  try {
+    const vendors = await LabVendor.find({ type: "aligner" }).sort({ createdAt: -1 });
+    res.status(200).json(vendors);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+
+// NEW: Get in-house labs by specific clinic ID
+const getInHouseLabsByClinicId = async (req, res) => {
+  try {
+    const { clinicId } = req.params;
+    const vendors = await LabVendor.find({ 
+      type: "inHouse", 
+      clinicId 
+    }).sort({ createdAt: -1 });
+    
+    if (!vendors || vendors.length === 0) {
+      return res.status(404).json({ 
+        message: "No in-house labs found for this clinic" 
+      });
+    }
+    
+    res.status(200).json(vendors);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 const getLabVendorById = async (req, res) => {
   try {
     const vendor = await LabVendor.findById(req.params.id);
@@ -128,6 +217,7 @@ const getLabVendorById = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
 const updateLabVendor = async (req, res) => {
   try {
     const updatedVendor = await LabVendor.findByIdAndUpdate(
@@ -142,6 +232,7 @@ const updateLabVendor = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
 const deleteLabVendor = async (req, res) => {
   try {
     const vendor = await LabVendor.findByIdAndDelete(req.params.id);
@@ -159,5 +250,10 @@ export {
   updateLabVendor,
   deleteLabVendor,
   createInHouseLabVendor,
-  getLabByClinicId
+  getLabByClinicId,
+  getInHouseLabVendors,
+  getExternalLabVendors,
+  getInHouseLabsByClinicId,
+  createAlignerVendor,
+  getAlignerVendors
 };

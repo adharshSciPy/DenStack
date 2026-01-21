@@ -3,6 +3,10 @@ import LabVendor from "../model/LabVendor.js";
 import axios from "axios";
 import path from "path";
 import dotenv from "dotenv";
+import fs from "fs";
+import {
+  convertDicomToNifti,
+} from "../utils/dicomConverter.js";
 dotenv.config();
 
 const { DOCTOR_SERVICE_URL, PATIENT_SERVICE_URL } = process.env;
@@ -15,7 +19,7 @@ export const createDentalLabOrder = async (req, res) => {
       deliveryDate,
       note,
       price,
-      appointmentId,  
+      appointmentId,
     } = req.body;
 
     if (
@@ -24,8 +28,7 @@ export const createDentalLabOrder = async (req, res) => {
       !patientName ||
       !deliveryDate ||
       !price ||
-      !note ||
-      !appointmentId
+      !note
     ) {
       return res.status(400).json({
         message:
@@ -53,6 +56,10 @@ export const createDentalLabOrder = async (req, res) => {
       attachments,
       note,
       appointmentId,
+      niftiFile: {
+        fileName: "",
+        fileUrl: "",
+      },
     });
 
     await order.save();
@@ -108,7 +115,7 @@ export const updateDentalLabOrderStatus = async (req, res) => {
     const order = await DentalLabOrder.findByIdAndUpdate(
       id,
       { status },
-      { new: true }
+      { new: true },
     );
     if (!order) {
       return res.status(404).json({ message: "Dental lab order not found" });
@@ -127,43 +134,131 @@ export const updateDentalLabOrderStatus = async (req, res) => {
 
 export const uploadLabResults = async (req, res) => {
   try {
-    const { id } = req.params;
+    const { id, labOrderId } = req.params;
     const files = req.files;
 
-    if (!files || files.length === 0)
-      return res.status(400).json({ message: "No files uploaded" });
-
-    const order = await DentalLabOrder.findById(id);
-    if (!order) return res.status(404).json({ message: "Lab order not found" });
-
-    // ✅ Store uploaded files (including DICOMs)
-    const newResults = files.map((file) => ({
-      fileName: file.originalname,
-      fileUrl: `/uploads/labResults/${file.filename}`,
-      fileType: path.extname(file.originalname).toLowerCase(),
-    }));
-
-    order.resultFiles.push(...newResults);
-    order.status = "ready";
-    await order.save();
-
-    // ✅ Sync with Consulting History service
-    const appointmentId = order.appointmentId;
-
-    if (appointmentId) {
-      await axios.patch(
-        `${process.env.PATIENT_SERVICE_URL}/api/v1/patient-service/appointment/lab-details/${appointmentId}`,
-        { labOrderId: id }
-      );
+    if (!labOrderId) {
+      return res.status(400).json({ message: "labOrderId is required" });
     }
 
-    res.status(200).json({
-      message: "Lab result files uploaded successfully",
-      order,
+    if (!files || files.length === 0) {
+      return res.status(400).json({ message: "No files uploaded" });
+    }
+
+    const order = await DentalLabOrder.findById(labOrderId);
+    if (!order) {
+      return res.status(404).json({ message: "Lab order not found" });
+    }
+
+    if (order.status === "processing") {
+      return res.status(409).json({
+        message: "DICOM conversion already in progress",
+      });
+    }
+
+    const baseDir = path.join(
+      process.cwd(),
+      "uploads",
+      "labResults",
+      labOrderId,
+    );
+
+    const dicomDir = path.join(baseDir, "dicom");
+    const niftiDir = path.join(baseDir, "nifti");
+    const otherDir = path.join(baseDir, "other");
+
+    fs.mkdirSync(dicomDir, { recursive: true });
+    fs.mkdirSync(niftiDir, { recursive: true });
+    fs.mkdirSync(otherDir, { recursive: true });
+
+    let hasDicom = false;
+    const resultFiles = [];
+
+    // ✅ Handle uploads properly
+    for (const file of files) {
+      const lower = file.originalname.toLowerCase();
+
+      const isDicom = lower.endsWith(".dcm") || lower.endsWith(".ima");
+      const isNifti = lower.endsWith(".nii") || lower.endsWith(".nii.gz");
+
+      if (isDicom) {
+        hasDicom = true;
+
+        fs.renameSync(file.path, path.join(dicomDir, file.filename));
+
+        resultFiles.push({
+          fileName: file.originalname,
+          fileUrl: `/uploads/labResults/${labOrderId}/dicom/${file.filename}`,
+          fileType: "dicom",
+        });
+      } else if (isNifti) {
+        fs.renameSync(file.path, path.join(niftiDir, file.filename));
+
+        await DentalLabOrder.findByIdAndUpdate(labOrderId, {
+          $set: {
+            niftiFile: {
+              fileName: file.originalname,
+              fileUrl: `/uploads/labResults/${labOrderId}/nifti/${file.filename}`,
+            },
+            status: "ready",
+          },
+        });
+      } else {
+        fs.renameSync(file.path, path.join(otherDir, file.filename));
+
+        resultFiles.push({
+          fileName: file.originalname,
+          fileUrl: `/uploads/labResults/${labOrderId}/other/${file.filename}`,
+          fileType: path.extname(file.originalname),
+        });
+      }
+    }
+
+    await DentalLabOrder.findByIdAndUpdate(labOrderId, {
+      $push: { resultFiles: { $each: resultFiles } },
+    });
+
+    // 🔥 Run conversion ASYNC (non-blocking)
+    if (hasDicom) {
+      setImmediate(async () => {
+        const result = await convertDicomToNifti(
+          dicomDir,
+          niftiDir,
+          labOrderId,
+        );
+
+        if (result?.success) {
+          console.log(
+            `✅ DICOM to NIfTI conversion successful for order ${labOrderId}`,
+          );
+          console.log(`   NIfTI File: ${result.niftiFile}`);
+          console.log(`   URL: ${result.fileUrl}`);
+          await axios.patch(
+            `${process.env.PATIENT_SERVICE_URL}/api/v1/patient-service/patient/lab-order/${id}`,
+            { labOrderId },
+          );
+          await DentalLabOrder.findByIdAndUpdate(labOrderId, {
+            $set: {
+              status: "ready",
+              niftiFile: {
+                fileName: result.niftiFile,
+                fileUrl: result.fileUrl,
+              },
+            },
+          });
+        }
+      });
+    }
+
+    const finalOrder = await DentalLabOrder.findById(labOrderId);
+
+    return res.status(200).json({
+      message: "Lab results uploaded successfully",
+      order: finalOrder,
     });
   } catch (error) {
-    console.error("❌ Error uploading lab results:", error);
-    res.status(500).json({
+    console.error("❌ Upload error:", error);
+    return res.status(500).json({
       message: "Failed to upload lab results",
       error: error.message,
     });
@@ -237,19 +332,14 @@ export const getAllLabOrdersByClinicId = async (req, res) => {
     // ✅ Fetch doctors
     for (let id of uniqueDoctorIds) {
       try {
-
         const resp = await axios.get(
-          `${DOCTOR_SERVICE_URL}/api/v1/auth/doctor/details/${id}`
+          `${DOCTOR_SERVICE_URL}/api/v1/auth/doctor/details/${id}`,
         );
 
-        
-
         const name = resp.data?.data?.name;
-       
 
         doctorCache[id] = name || null;
       } catch (err) {
-       
         doctorCache[id] = null;
       }
     }
@@ -257,16 +347,14 @@ export const getAllLabOrdersByClinicId = async (req, res) => {
     // ✅ Fetch patients
     for (let id of uniquePatientIds) {
       try {
-        
         const resp = await axios.get(
-          `${PATIENT_SERVICE_URL}/api/v1/patient-service/patient/details/${id}`
+          `${PATIENT_SERVICE_URL}/api/v1/patient-service/patient/details/${id}`,
         );
-        
+
         // ✅ using correct path (same structure assumption)
         const name = resp.data?.data?.name;
         patientCache[id] = resp.data?.data?.name || null;
       } catch {
-        
         patientCache[id] = null;
       }
     }
@@ -358,34 +446,102 @@ export const getMonthlyInHouseLabRevenue = async (req, res) => {
 
     // Get clinic-owned labs
     const vendors = await LabVendor.find({ clinicId, type: "inHouse" });
-    const vendorIds = vendors.map(v => v._id);
+    const vendorIds = vendors.map((v) => v._id);
 
     const stats = await DentalLabOrder.aggregate([
       {
         $match: {
           vendor: { $in: vendorIds },
-          createdAt: { $gte: startDate, $lt: endDate }
-        }
+          createdAt: { $gte: startDate, $lt: endDate },
+        },
       },
       {
         $group: {
           _id: null,
           totalRevenue: { $sum: "$price" },
-          totalOrders: { $sum: 1 }
-        }
-      }
+          totalOrders: { $sum: 1 },
+        },
+      },
     ]);
 
     return res.status(200).json({
       message: `Revenue for ${month}-${year}`,
       month,
       year,
-      stats: stats[0] || { totalRevenue: 0, totalOrders: 0 }
+      stats: stats[0] || { totalRevenue: 0, totalOrders: 0 },
     });
-
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
 
+export const getLatestLabOrdersByClinicId = async (req, res) => {
+  try {
+    const { clinicId } = req.params;
 
+    // Step 1: Get vendors
+    const labVendors = await LabVendor.find({ clinicId });
+    const labVendorIds = labVendors.map((v) => v._id);
+
+    // Step 2: Fetch top 5 most recent
+    let orders = await DentalLabOrder.find({
+      vendor: { $in: labVendorIds },
+    })
+      .sort({ createdAt: -1 })
+      .limit(5);
+
+    // Prepare doctor & patient lookups
+    const uniqueDoctorIds = [
+      ...new Set(orders.map((o) => o.dentist).filter(Boolean)),
+    ];
+    const uniquePatientIds = [
+      ...new Set(orders.map((o) => o.patientName).filter(Boolean)),
+    ];
+
+    const doctorCache = {};
+    const patientCache = {};
+
+    // Fetch doctors
+    for (let id of uniqueDoctorIds) {
+      try {
+        const resp = await axios.get(
+          `${DOCTOR_SERVICE_URL}/api/v1/auth/doctor/details/${id}`,
+        );
+        doctorCache[id] = resp.data?.data?.name || null;
+      } catch {
+        doctorCache[id] = null;
+      }
+    }
+
+    // Fetch patients
+    for (let id of uniquePatientIds) {
+      try {
+        const resp = await axios.get(
+          `${PATIENT_SERVICE_URL}/api/v1/patient-service/patient/details/${id}`,
+        );
+        patientCache[id] = resp.data?.data?.name || null;
+      } catch {
+        patientCache[id] = null;
+      }
+    }
+
+    // Merge doctor & patient names
+    const finalOrders = orders.map((order) => ({
+      ...order.toObject(),
+      doctorName: doctorCache[order.dentist] || "",
+      patientname: patientCache[order.patientName] || "",
+    }));
+
+    return res.status(200).json({
+      count: finalOrders.length,
+      labOrders: finalOrders,
+      message: "Latest lab orders fetched successfully",
+    });
+  } catch (error) {
+    console.error("Error fetching latest lab orders:", error);
+    return res.status(500).json({
+      message: "Internal server error",
+      error: error.message,
+    });
+  }
+};
