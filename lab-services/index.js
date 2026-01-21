@@ -5,6 +5,7 @@ import connectDB from "./mongoDB/connectDB.js";
 import labRouter from "./routes/labRoutes.js";
 import labOrderRouter from "./routes/labOrderRoutes.js";
 import labInventoryRouter from "./routes/LabInventoryRouter.js";
+import alignerRouter from "./routes/alignerRouter.js";
 import path from "path";
 dotenv.config();
 connectDB();
@@ -27,7 +28,7 @@ app.use("/api/v1/lab",labRouter)
 app.use("/api/v1/lab-orders",labOrderRouter)
 app.use("/api/v1/lab-inventory",labInventoryRouter)
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
-
+app.use("/api/v1/aligners", alignerRouter);
 
 const PORT = process.env.PORT || 8005;
 app.listen(PORT, () => {

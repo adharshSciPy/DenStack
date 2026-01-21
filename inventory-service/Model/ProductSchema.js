@@ -1,18 +1,55 @@
 import mongoose, { Schema } from "mongoose";
 
+// Variant Sub-Schema
+const variantSchema = new Schema({
+    size: {
+        type: String,
+        default: null
+    },
+    color: {
+        type: String,
+        default: null
+    },
+    material: {
+        type: String,
+        default: null
+    },
+    originalPrice: {
+        type: Number,
+        required: true,
+        min: 0
+    },
+    discountPrice1: {
+        type: Number,
+        default: null,
+        min: 0
+    },
+    discountPrice2: {
+        type: Number,
+        default: null,
+        min: 0
+    },
+    discountPercentage1: {
+        type: Number,
+        default: null,
+        min: 0,
+        max: 100
+    },
+    discountPercentage2: {
+        type: Number,
+        default: null,
+        min: 0,
+        max: 100
+    },
+    stock: {
+        type: Number,
+        default: 0,
+        min: 0
+    }
+}, { _id: true });
+
 const productSchema = new Schema(
     {
-        addedByType: {
-            type: String,
-            enum: ["vendor", "superadmin"],
-            required: true,
-        },
-
-        addedById: {
-            type: mongoose.Schema.Types.ObjectId,
-            required: true,
-            ref: "addedByType",  // Dynamically reference Vendor OR Admin
-        },
         productId: {
             type: String,
             unique: true,
@@ -22,29 +59,34 @@ const productSchema = new Schema(
             required: [true, "Product name is required"],
             trim: true,
         },
-        brand: { type: mongoose.Schema.Types.ObjectId, ref: "Brand", required: true },
-        // NEW FIELDS
+        brand: { 
+            type: mongoose.Schema.Types.ObjectId, 
+            ref: "Brand", 
+            required: true 
+        },
         mainCategory: {
             type: Schema.Types.ObjectId,
-            ref: "Category",
+            ref: "MainCategory",
             required: true,
         },
         subCategory: {
             type: Schema.Types.ObjectId,
-            ref: "Category",
-            default: null,
+            ref: "SubCategory",
+            required: true,
         },
         description: {
-            type: String
+            type: String,
+            default: ""
         },
-        price: {
-            type: Number,
+        variants: {
+            type: [variantSchema],
             required: true,
-            min: 0,
-        },
-        stock: {
-            type: Number,
-            default: 0,
+            validate: {
+                validator: function(v) {
+                    return v && v.length > 0;
+                },
+                message: 'Product must have at least one variant'
+            }
         },
         image: [{ type: String, required: true }],
         expiryDate: {
@@ -55,7 +97,10 @@ const productSchema = new Schema(
             enum: ["Available", "Out of Stock", "Discontinued", "Expired"],
             default: "Available",
         },
-        isLowStock: { type: Boolean, default: false }
+        isLowStock: { 
+            type: Boolean, 
+            default: false 
+        }
     },
     { timestamps: true }
 );
@@ -74,19 +119,19 @@ productSchema.pre("save", async function (next) {
     next();
 });
 
-// VALIDATE SUBCATEGORY BELONGS TO MAIN CATEGORY
+// Validate subcategory belongs to main category
 productSchema.pre("save", async function (next) {
     if (this.subCategory) {
-        const Category = mongoose.model("Category");
+        const SubCategory = mongoose.model("SubCategory");
 
-        const subCat = await Category.findById(this.subCategory);
+        const subCat = await SubCategory.findById(this.subCategory);
         if (!subCat)
             return next(new Error("Invalid Sub Category ID"));
 
-        if (!subCat.parentCategory)
-            return next(new Error("Selected Sub Category has no parent"));
+        if (!subCat.mainCategory)
+            return next(new Error("Selected Sub Category has no main category"));
 
-        if (String(subCat.parentCategory) !== String(this.mainCategory)) {
+        if (String(subCat.mainCategory) !== String(this.mainCategory)) {
             return next(
                 new Error("Sub Category does not belong to selected Main Category")
             );
@@ -99,9 +144,26 @@ productSchema.pre("save", async function (next) {
 // Auto-update status based on stock or expiry
 productSchema.pre("save", function (next) {
     const today = new Date();
-    if (this.expiryDate && this.expiryDate < today) this.status = "Expired";
-    else if (this.stock <= 0) this.status = "Out of Stock";
-    else this.status = "Available";
+    
+    // Check expiry
+    if (this.expiryDate && this.expiryDate < today) {
+        this.status = "Expired";
+    } 
+    // Check total stock across all variants
+    else {
+        const totalStock = this.variants.reduce((sum, variant) => sum + (variant.stock || 0), 0);
+        
+        if (totalStock <= 0) {
+            this.status = "Out of Stock";
+        } else if (totalStock <= 10) {
+            this.status = "Available";
+            this.isLowStock = true;
+        } else {
+            this.status = "Available";
+            this.isLowStock = false;
+        }
+    }
+    
     next();
 });
 

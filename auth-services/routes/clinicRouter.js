@@ -44,7 +44,7 @@ clinicAuthRoutes.route("/dashboard/:id").get(getClinicDashboardDetails); //id:cl
 clinicAuthRoutes.route("/staff/add-shift/:id").patch(addShiftToStaff); //need to pass staff id and role like nurse for Nurse and pharmacist for Pharmacist in req body
 clinicAuthRoutes.route("/staff/remove/:id").delete(removeStaffFromClinic); //{id:clinicId}need to pass staff id and role like nurse for Nurse and pharmacist for Pharmacist in req body
 clinicAuthRoutes.route("/getStaff/:id").get(getClinicStaffCounts); //to get staff details
-clinicAuthRoutes.route("/register-subclinic/:id").post(registerSubClinic); //to register sub clinic inside the clinic
+// clinicAuthRoutes.route("/register-subclinic/:id").post(registerSubClinic);
 clinicAuthRoutes.route("/add-ownlabs/:id").patch(assignClinicLab);
 clinicAuthRoutes.route("/clicnicCount").get(clicnicCount);
 clinicAuthRoutes.route("/allClinicsStatus").get(allClinicsStatus);

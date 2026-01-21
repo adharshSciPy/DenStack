@@ -12,5 +12,4 @@ superAdminAuthRoutes.get("/getMonthlySummary", getMonthlySummary)
 superAdminAuthRoutes.get("/appointmentStats", getDashboardStats)
 superAdminAuthRoutes.get("/dashStats", getDashboardSummary)
 superAdminAuthRoutes.get("/usageAnalytics", verifyAuthToken, authorizeRoles(SUPERADMIN), getUsageAnalytics);
-
 export default superAdminAuthRoutes

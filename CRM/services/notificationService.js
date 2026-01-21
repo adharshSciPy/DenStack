@@ -1,5 +1,5 @@
 // ================================
-// services/notificationService.js
+// services/notificationService.js (UPDATED)
 // ================================
 import axios from "axios";
 import dotenv from "dotenv";
@@ -73,7 +73,7 @@ class NotificationService {
             country: "91",
             sms: [{
               message: notification.message,
-              to: [cleanedPhone] // ✅ FIXED: Use cleaned phone without country code
+              to: [cleanedPhone]
             }]
           },
           {
@@ -114,7 +114,7 @@ class NotificationService {
         const response = await axios.post(
           `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`,
           new URLSearchParams({
-            To: `+91${cleanedPhone}`, // Twilio needs full international format
+            To: `+91${cleanedPhone}`,
             From: TWILIO_PHONE_NUMBER,
             Body: notification.message
           }),
@@ -141,7 +141,6 @@ class NotificationService {
     } catch (error) {
       console.error("❌ SMS sending failed:", error.message);
       
-      // Log the full error for debugging
       if (error.response) {
         console.error("Response error:", error.response.data);
       }
@@ -269,6 +268,30 @@ class NotificationService {
           body: "Dear Dr. {{doctorName}},\n\nYou have a new appointment scheduled:\n\nPatient: {{patientName}}\nDate: {{appointmentDate}}\nTime: {{appointmentTime}}\nOP Number: {{opNumber}}\n\nBest regards,\n{{clinicName}}"
         },
         sms: "Dr. {{doctorName}}, new appointment: {{patientName}} on {{appointmentDate}} at {{appointmentTime}}. OP#{{opNumber}}"
+      },
+      // ✅ ADD THIS: Birthday wish template
+      birthday_wish: {
+        sms: "🎉 Happy Birthday {{patientName}}! 🎂\n\nWishing you a wonderful day filled with joy and good health!\n\n- {{clinicName}}",
+        email: {
+          subject: "🎉 Happy Birthday {{patientName}}!",
+          body: `<div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px;">
+  <h1 style="color: #4CAF50;">🎉 Happy Birthday {{patientName}}! 🎂</h1>
+  
+  <p style="font-size: 16px; line-height: 1.6;">
+    Wishing you a wonderful birthday filled with joy, laughter, and good health!
+  </p>
+  
+  <p style="font-size: 16px; line-height: 1.6;">
+    Thank you for trusting us with your healthcare. We hope you have an amazing year ahead!
+  </p>
+  
+  <p style="margin-top: 30px; font-size: 14px; color: #666;">
+    Warm wishes,<br>
+    <strong>{{clinicName}}</strong>
+  </p>
+</div>`
+        },
+        whatsapp: "🎉🎂 Happy Birthday {{patientName}}! Wishing you health and happiness! - {{clinicName}}"
       }
     };
     
