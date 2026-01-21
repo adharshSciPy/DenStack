@@ -197,7 +197,7 @@ const tmjExamination = tmjInput.map(tmj => ({
         softTissueExamination,
         tmjExamination,
         plannedProcedures,
-         consultationFee,
+        consultationFee,
         createdBy: doctorId
       }],
       { session }

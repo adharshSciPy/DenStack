@@ -97,7 +97,6 @@ const treatmentPlanSchema = new Schema(
 
 // ========== HELPER METHODS ==========
 // Method to update overall plan status
-// In your TreatmentPlan model, update the updatePlanStatus method:
 
 treatmentPlanSchema.methods.updatePlanStatus = function() {
   // Calculate based on stages first (priority)
