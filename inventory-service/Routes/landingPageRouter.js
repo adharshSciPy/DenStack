@@ -91,10 +91,10 @@ landingRouter.put(
 );
 landingRouter.delete("/topCategories/delete/:id", deleteTopCategory);
 // ============= MAIN CATEGORY ROUTES =============
-landingRouter.post("/main/create", createMainCategory);
+landingRouter.post("/main/create", flexibleUpload, createMainCategory);
 landingRouter.get("/main/getAll", getAllMainCategories);
 landingRouter.get("/main/getById/:id", getMainCategoryById);
-landingRouter.put("/main/update/:id", updateMainCategory);
+landingRouter.put("/main/update/:id", flexibleUpload, updateMainCategory);
 landingRouter.delete("/main/delete/:id", deleteMainCategory);
 
 // ============= SUB CATEGORY ROUTES =============

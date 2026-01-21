@@ -31,7 +31,7 @@ ecomOrderRouter.get("/analytics", getEcomOrderAnalytics);
 ecomOrderRouter.get("/getById/:orderId", getEcomOrderById);
 
 // Get user's ecom orders
-ecomOrderRouter.get("/user/:userId", getClinicEcomOrders);
+ecomOrderRouter.get("/clinic/:clinicId", getClinicEcomOrders);
 
 // Update ecom order status
 ecomOrderRouter.put("/updateStatus/:orderId", updateEcomOrderStatus);

@@ -12,6 +12,8 @@ import brandRouter from "./Routes/brandRouter.js";
 import notificationRouter from "./Routes/notificationRouter.js";
 import landingRouter from "./Routes/landingPageRouter.js"; // ✅ Added
 import ecomOrderRouter from "./Routes/E-OrderRouter.js";
+import cartRouter from "./Routes/cartRouter.js";
+
 import lowStockAlertsCron from "./middlewares/lowStockCron.js";
 
 dotenv.config();
@@ -47,6 +49,7 @@ app.use("/api/v1/brand", brandRouter);
 app.use("/api/v1/notification", notificationRouter);
 app.use("/api/v1/landing", landingRouter); // ✅ Added Landing Page Routes
 app.use("/api/v1/ecom-order", ecomOrderRouter);
+app.use("/api/v1/cart", cartRouter);
 
 const PORT = process.env.PORT || 8004;
 app.listen(PORT, () => {

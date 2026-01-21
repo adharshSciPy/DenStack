@@ -4,6 +4,7 @@ const mainCategorySchema = new mongoose.Schema({
     mainCategoryId: { type: String, unique: true },
     categoryName: { type: String, required: true, trim: true },
     description: { type: String, default: "" },
+    image: { type: String, default: null },  // ✅ Added image field
     parentCategory: { 
         type: mongoose.Schema.Types.ObjectId, 
         ref: 'MainCategory',

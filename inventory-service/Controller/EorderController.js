@@ -91,7 +91,7 @@ export const createEcomOrder = async (req, res) => {
             const totalCost = price * item.quantity;
 
             orderItems.push({
-                product: product._id,
+                product: new mongoose.Types.ObjectId(product._id),
                 productName: product.name,
                 variant: {
                     variantId: variant._id,
