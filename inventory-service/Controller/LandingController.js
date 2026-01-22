@@ -10,6 +10,7 @@ import Product from "../Model/ProductSchema.js";
 import MainCategory from "../Model/MainCategorySchema.js";
 import Brand from "../Model/BrandSchema.js";
 import SubCategory from "../Model/SubCategorySchema.js";
+import FeaturedProduct from "../Model/featuredProductSchema.js";
 
 // ============= CAROUSEL SLIDES =============
 export const createCarouselSlide = async (req, res) => {
@@ -190,7 +191,7 @@ export const createBrand = async (req, res) => {
       });
     }
 
-    // Handle image upload (optional)
+    // Handle image upload (required)
     let imageUrl = null;
     if (req.files) {
       if (req.files.image && req.files.image.length > 0) {
@@ -200,12 +201,16 @@ export const createBrand = async (req, res) => {
       }
     }
 
+    if (!imageUrl) {
+      return res.status(400).json({ message: "Image is required" });
+    }
+
     const brand = new Brand({
       name,
       description: description || "",
       mainCategory: mainCategoryId,
       subCategory: subCategoryId,
-      image: imageUrl, // Can be null
+      image: imageUrl,
     });
 
     await brand.save();
@@ -460,127 +465,219 @@ export const deleteBrand = async (req, res) => {
   }
 };
 
-export const createTopBrand = async (req, res) => {
+export const addTopBrand = async (req, res) => {
   try {
-    const { brandId, brandIds, order, orders } = req.body;
+    const { brandId, order } = req.body;
 
-    let files = [];
-
-    if (req.files) {
-      if (req.files.image) {
-        files = req.files.image;
-      }
-      if (req.files.images) {
-        files = req.files.images;
-      }
-    }
-
-    if (files.length === 0) {
-      return res
-        .status(400)
-        .json({ message: "At least one image is required" });
-    }
-
-    // Multiple uploads
-    if (files.length > 1) {
-      const brandIdArray =
-        typeof brandIds === "string" ? JSON.parse(brandIds) : brandIds || [];
-      const orderArray =
-        typeof orders === "string" ? JSON.parse(orders) : orders || [];
-
-      if (files.length !== brandIdArray.length) {
-        return res.status(400).json({
-          message: "Number of images must match number of brandIds",
-        });
-      }
-
-      const topBrands = files.map((file, index) => ({
-        brandId: brandIdArray[index],
-        imageUrl: `/uploads/landing/${file.filename}`,
-        order: orderArray?.[index] || index,
-      }));
-
-      const savedBrands = await TopBrand.insertMany(topBrands);
-
-      return res.status(201).json({
-        message: "Multiple top brands created successfully",
-        count: savedBrands.length,
-        data: savedBrands,
+    // Validate brand exists
+    const brand = await Brand.findById(brandId);
+    if (!brand) {
+      return res.status(404).json({
+        success: false,
+        message: "Brand not found"
       });
     }
 
-    // Single upload
+    // Check if brand is already in top brands
+    const existingTopBrand = await TopBrand.findOne({ brandId });
+    if (existingTopBrand) {
+      return res.status(400).json({
+        success: false,
+        message: "Brand is already in top brands"
+      });
+    }
+
+    // Create top brand entry
     const topBrand = new TopBrand({
       brandId,
-      imageUrl: `/uploads/landing/${files[0].filename}`,
       order: order || 0,
     });
 
     await topBrand.save();
 
-    res.status(201).json({
-      message: "Top brand created successfully",
-      data: topBrand,
+    // Populate before sending response
+    await topBrand.populate({
+      path: 'brandId',
+      select: 'brandName description brandLogo'
     });
-  } catch (err) {
-    res.status(500).json({ message: "Server error", error: err.message });
+
+    res.status(201).json({
+      success: true,
+      message: "Brand added to top brands successfully",
+      data: topBrand
+    });
+  } catch (error) {
+    console.error("Add Top Brand Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to add top brand",
+      error: error.message
+    });
   }
 };
+
+// ============= ADD MULTIPLE BRANDS TO TOP BRANDS =============
+export const addMultipleTopBrands = async (req, res) => {
+  try {
+    const { brands } = req.body; // Array of { brandId, order }
+
+    if (!brands || !Array.isArray(brands) || brands.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide an array of brands"
+      });
+    }
+
+    const results = {
+      success: [],
+      failed: []
+    };
+
+    for (const item of brands) {
+      try {
+        const { brandId, order } = item;
+
+        // Validate brand exists
+        const brand = await Brand.findById(brandId);
+        if (!brand) {
+          results.failed.push({
+            brandId,
+            reason: "Brand not found"
+          });
+          continue;
+        }
+
+        // Check if already in top brands
+        const existingTopBrand = await TopBrand.findOne({ brandId });
+        if (existingTopBrand) {
+          results.failed.push({
+            brandId,
+            reason: "Brand is already in top brands"
+          });
+          continue;
+        }
+
+        // Create top brand entry
+        const topBrand = new TopBrand({
+          brandId,
+          order: order || 0
+        });
+
+        await topBrand.save();
+
+        // Populate before adding to success list
+        await topBrand.populate({
+          path: 'brandId',
+          select: 'brandName description brandLogo'
+        });
+
+        results.success.push(topBrand);
+      } catch (error) {
+        results.failed.push({
+          brandId: item.brandId,
+          reason: error.message
+        });
+      }
+    }
+
+    res.status(201).json({
+      success: true,
+      message: `Added ${results.success.length} brands to top brands. ${results.failed.length} failed.`,
+      data: {
+        added: results.success,
+        failed: results.failed,
+        summary: {
+          total: brands.length,
+          successful: results.success.length,
+          failed: results.failed.length
+        }
+      }
+    });
+  } catch (error) {
+    console.error("Add Multiple Top Brands Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to add top brands",
+      error: error.message
+    });
+  }
+};
+
+// ============= GET ALL TOP BRANDS =============
+export const getAllTopBrands = async (req, res) => {
+  try {
+    const { includeInactive = false } = req.query;
+
+    let filter = {};
+    if (includeInactive !== 'true') {
+      filter.isActive = true;
+    }
+
+    const topBrands = await TopBrand.find(filter)
+      .populate({
+        path: 'brandId',
+        select: 'brandName description brandLogo status'
+      })
+      .sort({ order: 1, createdAt: -1 });
+
+    res.status(200).json({
+      success: true,
+      message: "Top brands retrieved successfully",
+      count: topBrands.length,
+      data: topBrands
+    });
+  } catch (error) {
+    console.error("Get Top Brands Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch top brands",
+      error: error.message
+    });
+  }
+};
+
+// ============= UPDATE TOP BRAND =============
 export const updateTopBrand = async (req, res) => {
   try {
     const { id } = req.params;
-    const { brandId, order, isActive } = req.body;
+    const { order, isActive } = req.body;
 
-    const updateData = { brandId, order, isActive };
+    const updateData = {};
+    if (order !== undefined) updateData.order = order;
+    if (isActive !== undefined) updateData.isActive = isActive;
 
-    if (req.file) {
-      updateData.imageUrl = req.file.path || `/uploads/${req.file.filename}`;
-    }
-
-    const topBrand = await TopBrand.findByIdAndUpdate(id, updateData, {
-      new: true,
-      runValidators: true,
-    }).populate("brandId", "brandName description");
+    const topBrand = await TopBrand.findByIdAndUpdate(
+      id,
+      updateData,
+      { new: true, runValidators: true }
+    ).populate({
+      path: 'brandId',
+      select: 'brandName description brandLogo'
+    });
 
     if (!topBrand) {
-      return res.status(404).json({ message: "Top brand not found" });
+      return res.status(404).json({
+        success: false,
+        message: "Top brand not found"
+      });
     }
 
     res.status(200).json({
+      success: true,
       message: "Top brand updated successfully",
-      data: topBrand,
+      data: topBrand
     });
-  } catch (err) {
-    res.status(500).json({ message: "Server error", error: err.message });
+  } catch (error) {
+    console.error("Update Top Brand Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to update top brand",
+      error: error.message
+    });
   }
 };
-export const getAllTopBrands = async (req, res) => {
-  try {
-    const { page = 1, limit = 10 } = req.query;
-    const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    const topBrands = await TopBrand.find({ isActive: true })
-      .populate("brandId", "brandName description")
-      .sort({ order: 1 })
-      .skip(skip)
-      .limit(parseInt(limit));
-
-    const total = await TopBrand.countDocuments({ isActive: true });
-
-    res.status(200).json({
-      message: "Top brands fetched successfully",
-      data: topBrands,
-      pagination: {
-        currentPage: parseInt(page),
-        totalPages: Math.ceil(total / parseInt(limit)),
-        totalItems: total,
-        itemsPerPage: parseInt(limit),
-      },
-    });
-  } catch (err) {
-    res.status(500).json({ message: "Server error", error: err.message });
-  }
-};
+// ============= DELETE TOP BRAND =============
 export const deleteTopBrand = async (req, res) => {
   try {
     const { id } = req.params;
@@ -588,12 +685,56 @@ export const deleteTopBrand = async (req, res) => {
     const topBrand = await TopBrand.findByIdAndDelete(id);
 
     if (!topBrand) {
-      return res.status(404).json({ message: "Top brand not found" });
+      return res.status(404).json({
+        success: false,
+        message: "Top brand not found"
+      });
     }
 
-    res.status(200).json({ message: "Top brand deleted successfully" });
-  } catch (err) {
-    res.status(500).json({ message: "Server error", error: err.message });
+    res.status(200).json({
+      success: true,
+      message: "Top brand removed successfully"
+    });
+  } catch (error) {
+    console.error("Delete Top Brand Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to remove top brand",
+      error: error.message
+    });
+  }
+};
+
+// ============= GET SINGLE TOP BRAND =============
+export const getTopBrandById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const topBrand = await TopBrand.findById(id)
+      .populate({
+        path: 'brandId',
+        select: 'brandName description brandLogo status'
+      });
+
+    if (!topBrand) {
+      return res.status(404).json({
+        success: false,
+        message: "Top brand not found"
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Top brand retrieved successfully",
+      data: topBrand
+    });
+  } catch (error) {
+    console.error("Get Top Brand Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch top brand",
+      error: error.message
+    });
   }
 };
 // ============= TOP CATEGORIES,MAIN CATEGORY,SUB CATEGORY =============
@@ -2317,4 +2458,414 @@ export const getTopSellingProductsSimple = async (req, res) => {
     console.error("Get Top Products Error:", err);
     res.status(500).json({ message: "Server error", error: err.message });
   }
+};
+// ============= ADD PRODUCT TO FEATURED =============
+export const addFeaturedProduct = async (req, res) => {
+    try {
+        const { 
+            productId, 
+            title, 
+            description, 
+            badge, 
+            order, 
+            startDate, 
+            endDate 
+        } = req.body;
+
+        // Validate product exists
+        const product = await Product.findById(productId);
+        if (!product) {
+            return res.status(404).json({
+                success: false,
+                message: "Product not found"
+            });
+        }
+
+        // Check if product is already featured
+        const existingFeatured = await FeaturedProduct.findOne({ product: productId });
+        if (existingFeatured) {
+            return res.status(400).json({
+                success: false,
+                message: "Product is already featured"
+            });
+        }
+
+        // Create featured product
+        const featuredProduct = new FeaturedProduct({
+            product: productId,
+            title: title || product.name,
+            description: description || product.description,
+            badge: badge || null,
+            order: order || 0,
+            startDate: startDate || Date.now(),
+            endDate: endDate || null
+        });
+
+        await featuredProduct.save();
+
+        // Populate before sending response
+        await featuredProduct.populate({
+            path: 'product',
+            select: 'name description image variants brand mainCategory subCategory',
+            populate: [
+                { path: 'brand', select: 'name' },
+                { path: 'mainCategory', select: 'categoryName' },
+                { path: 'subCategory', select: 'categoryName' }
+            ]
+        });
+
+        res.status(201).json({
+            success: true,
+            message: "Product added to featured successfully",
+            data: featuredProduct
+        });
+    } catch (error) {
+        console.error("Add Featured Product Error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Failed to add featured product",
+            error: error.message
+        });
+    }
+};
+
+// ============= ADD MULTIPLE PRODUCTS TO FEATURED =============
+export const addMultipleFeaturedProducts = async (req, res) => {
+    try {
+        const { products } = req.body; // Array of product objects
+
+        if (!products || !Array.isArray(products) || products.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: "Please provide an array of products"
+            });
+        }
+
+        const results = {
+            success: [],
+            failed: []
+        };
+
+        for (const item of products) {
+            try {
+                const { productId, title, description, badge, order, startDate, endDate } = item;
+
+                // Validate product exists
+                const product = await Product.findById(productId);
+                if (!product) {
+                    results.failed.push({
+                        productId,
+                        reason: "Product not found"
+                    });
+                    continue;
+                }
+
+                // Check if product is already featured
+                const existingFeatured = await FeaturedProduct.findOne({ product: productId });
+                if (existingFeatured) {
+                    results.failed.push({
+                        productId,
+                        reason: "Product is already featured"
+                    });
+                    continue;
+                }
+
+                // Create featured product
+                const featuredProduct = new FeaturedProduct({
+                    product: productId,
+                    title: title || product.name,
+                    description: description || product.description,
+                    badge: badge || null,
+                    order: order || 0,
+                    startDate: startDate || Date.now(),
+                    endDate: endDate || null
+                });
+
+                await featuredProduct.save();
+
+                // Populate before adding to success list
+                await featuredProduct.populate({
+                    path: 'product',
+                    select: 'name description image variants brand mainCategory subCategory',
+                    populate: [
+                        { path: 'brand', select: 'name' },
+                        { path: 'mainCategory', select: 'categoryName' },
+                        { path: 'subCategory', select: 'categoryName' }
+                    ]
+                });
+
+                results.success.push(featuredProduct);
+            } catch (error) {
+                results.failed.push({
+                    productId: item.productId,
+                    reason: error.message
+                });
+            }
+        }
+
+        res.status(201).json({
+            success: true,
+            message: `Added ${results.success.length} products to featured. ${results.failed.length} failed.`,
+            data: {
+                added: results.success,
+                failed: results.failed,
+                summary: {
+                    total: products.length,
+                    successful: results.success.length,
+                    failed: results.failed.length
+                }
+            }
+        });
+    } catch (error) {
+        console.error("Add Multiple Featured Products Error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Failed to add featured products",
+            error: error.message
+        });
+    }
+};
+
+// ============= GET ALL FEATURED PRODUCTS =============
+export const getAllFeaturedProducts = async (req, res) => {
+    try {
+        const { includeInactive = false } = req.query;
+
+        let filter = {};
+        if (includeInactive !== 'true') {
+            filter.isActive = true;
+            // Also filter by date
+            filter.$or = [
+                { endDate: null },
+                { endDate: { $gte: new Date() } }
+            ];
+        }
+
+        const featuredProducts = await FeaturedProduct.find(filter)
+            .populate({
+                path: 'product',
+                select: 'name description image variants brand mainCategory subCategory status',
+                populate: [
+                    { path: 'brand', select: 'name brandId' },
+                    { path: 'mainCategory', select: 'categoryName mainCategoryId' },
+                    { path: 'subCategory', select: 'categoryName subCategoryId' }
+                ]
+            })
+            .sort({ order: 1, createdAt: -1 });
+
+        res.status(200).json({
+            success: true,
+            message: "Featured products retrieved successfully",
+            count: featuredProducts.length,
+            data: featuredProducts
+        });
+    } catch (error) {
+        console.error("Get Featured Products Error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Failed to fetch featured products",
+            error: error.message
+        });
+    }
+};
+
+// ============= GET FEATURED PRODUCT BY ID =============
+export const getFeaturedProductById = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const featuredProduct = await FeaturedProduct.findById(id)
+            .populate({
+                path: 'product',
+                select: 'name description image variants brand mainCategory subCategory',
+                populate: [
+                    { path: 'brand', select: 'name' },
+                    { path: 'mainCategory', select: 'categoryName' },
+                    { path: 'subCategory', select: 'categoryName' }
+                ]
+            });
+
+        if (!featuredProduct) {
+            return res.status(404).json({
+                success: false,
+                message: "Featured product not found"
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: "Featured product retrieved successfully",
+            data: featuredProduct
+        });
+    } catch (error) {
+        console.error("Get Featured Product Error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Failed to fetch featured product",
+            error: error.message
+        });
+    }
+};
+
+// ============= UPDATE FEATURED PRODUCT =============
+export const updateFeaturedProduct = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { title, description, badge, order, isActive, startDate, endDate } = req.body;
+
+        const updateData = {};
+        if (title !== undefined) updateData.title = title;
+        if (description !== undefined) updateData.description = description;
+        if (badge !== undefined) updateData.badge = badge;
+        if (order !== undefined) updateData.order = order;
+        if (isActive !== undefined) updateData.isActive = isActive;
+        if (startDate !== undefined) updateData.startDate = startDate;
+        if (endDate !== undefined) updateData.endDate = endDate;
+
+        const featuredProduct = await FeaturedProduct.findByIdAndUpdate(
+            id,
+            updateData,
+            { new: true, runValidators: true }
+        ).populate({
+            path: 'product',
+            select: 'name description image variants brand mainCategory subCategory',
+            populate: [
+                { path: 'brand', select: 'name' },
+                { path: 'mainCategory', select: 'categoryName' },
+                { path: 'subCategory', select: 'categoryName' }
+            ]
+        });
+
+        if (!featuredProduct) {
+            return res.status(404).json({
+                success: false,
+                message: "Featured product not found"
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: "Featured product updated successfully",
+            data: featuredProduct
+        });
+    } catch (error) {
+        console.error("Update Featured Product Error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Failed to update featured product",
+            error: error.message
+        });
+    }
+};
+
+// ============= DELETE FEATURED PRODUCT =============
+export const deleteFeaturedProduct = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const featuredProduct = await FeaturedProduct.findByIdAndDelete(id);
+
+        if (!featuredProduct) {
+            return res.status(404).json({
+                success: false,
+                message: "Featured product not found"
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: "Featured product deleted successfully",
+            data: featuredProduct
+        });
+    } catch (error) {
+        console.error("Delete Featured Product Error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Failed to delete featured product",
+            error: error.message
+        });
+    }
+};
+
+// ============= TOGGLE FEATURED PRODUCT STATUS =============
+export const toggleFeaturedProductStatus = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const featuredProduct = await FeaturedProduct.findById(id);
+
+        if (!featuredProduct) {
+            return res.status(404).json({
+                success: false,
+                message: "Featured product not found"
+            });
+        }
+
+        featuredProduct.isActive = !featuredProduct.isActive;
+        await featuredProduct.save();
+
+        await featuredProduct.populate({
+            path: 'product',
+            select: 'name description image'
+        });
+
+        res.status(200).json({
+            success: true,
+            message: `Featured product ${featuredProduct.isActive ? 'activated' : 'deactivated'} successfully`,
+            data: featuredProduct
+        });
+    } catch (error) {
+        console.error("Toggle Featured Product Error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Failed to toggle featured product status",
+            error: error.message
+        });
+    }
+};
+
+// ============= GET ACTIVE FEATURED PRODUCTS (FOR LANDING PAGE) =============
+export const getActiveFeaturedProducts = async (req, res) => {
+    try {
+        const { limit = 10 } = req.query;
+
+        const now = new Date();
+
+        const featuredProducts = await FeaturedProduct.find({
+            isActive: true,
+            $or: [
+                { endDate: null },
+                { endDate: { $gte: now } }
+            ]
+        })
+            .populate({
+                path: 'product',
+                match: { status: 'Available' }, // Only show available products
+                select: 'name description image variants brand mainCategory subCategory',
+                populate: [
+                    { path: 'brand', select: 'name' },
+                    { path: 'mainCategory', select: 'categoryName' },
+                    { path: 'subCategory', select: 'categoryName' }
+                ]
+            })
+            .sort({ order: 1, createdAt: -1 })
+            .limit(parseInt(limit));
+
+        // Filter out featured products where the product is null (out of stock or deleted)
+        const validFeaturedProducts = featuredProducts.filter(fp => fp.product !== null);
+
+        res.status(200).json({
+            success: true,
+            message: "Active featured products retrieved successfully",
+            count: validFeaturedProducts.length,
+            data: validFeaturedProducts
+        });
+    } catch (error) {
+        console.error("Get Active Featured Products Error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Failed to fetch active featured products",
+            error: error.message
+        });
+    }
 };
