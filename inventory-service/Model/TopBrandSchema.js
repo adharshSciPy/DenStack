@@ -7,8 +7,7 @@ const topBrandSchema = new Schema({
         required: true
     },
     imageUrl: {
-        type: String,
-        required: true
+        type: String
     },
     order: {
         type: Number,
