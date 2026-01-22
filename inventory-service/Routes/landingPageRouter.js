@@ -11,10 +11,12 @@ import {
   getBrandsBySubCategory,
   updateBrand,
   deleteBrand,
-  createTopBrand,
+  addTopBrand,
+  addMultipleTopBrands,
   getAllTopBrands,
   updateTopBrand,
   deleteTopBrand,
+  getTopBrandById,
   createMainCategory,
   getAllMainCategories,
   getMainCategoryById,
@@ -48,7 +50,15 @@ import {
   getProductsByBrand,
   updateProduct,
   deleteProduct,
-  getTopSellingProductsSimple
+  getTopSellingProductsSimple,
+  addFeaturedProduct,
+  addMultipleFeaturedProducts,
+  getAllFeaturedProducts,
+  getFeaturedProductById,
+  updateFeaturedProduct,
+  deleteFeaturedProduct,
+  toggleFeaturedProductStatus,
+  getActiveFeaturedProducts,
 
 } from "../Controller/LandingController.js";
 import landingUpload from "../middlewares/landingUpload.js";
@@ -76,10 +86,12 @@ landingRouter.get("/brands/bySubCategory/:subCategoryId", getBrandsBySubCategory
 landingRouter.put("/brands/update/:id", flexibleUpload, updateBrand);
 landingRouter.delete("/brands/delete/:id", deleteBrand);
 
-landingRouter.post("/topBrands/create", flexibleUpload, createTopBrand);
-landingRouter.get("/topBrands/getAll", getAllTopBrands);
-landingRouter.put("/topBrands/update/:id", flexibleUpload, updateTopBrand);
-landingRouter.delete("/topBrands/delete/:id", deleteTopBrand);
+landingRouter.post("/top-brands/add", addTopBrand);
+landingRouter.post("/top-brands/add-multiple", addMultipleTopBrands);
+landingRouter.get("/top-brands/getAll", getAllTopBrands);
+landingRouter.put("/top-brands/update/:id", updateTopBrand);
+landingRouter.delete("/top-brands/delete/:id", deleteTopBrand);
+landingRouter.get("/top-brands/:id", getTopBrandById);
 
 // ============= TOP CATEGORIES ROUTES =============
 landingRouter.post("/topCategories/create", flexibleUpload, createTopCategory);
@@ -152,5 +164,30 @@ landingRouter.get("/products/top-selling", getTopSellingProducts);
 
 // Get top selling products 
 landingRouter.get("/products/top-selling-simple", getTopSellingProductsSimple);
+
+// ============= FEATURED PRODUCTS ROUTES =============
+// Add product to featured
+landingRouter.post("/featured-products/add", addFeaturedProduct);
+
+// Add multiple products to featured
+landingRouter.post("/featured-products/add-multiple", addMultipleFeaturedProducts);
+
+// Get all featured products (admin)
+landingRouter.get("/featured-products/getAll", getAllFeaturedProducts);
+
+// Get active featured products (for landing page)
+landingRouter.get("/featured-products/active", getActiveFeaturedProducts);
+
+// Get featured product by ID
+landingRouter.get("/featured-products/getById/:id", getFeaturedProductById);
+
+// Update featured product
+landingRouter.put("/featured-products/update/:id", updateFeaturedProduct);
+
+// Toggle featured product status
+landingRouter.put("/featured-products/toggle/:id", toggleFeaturedProductStatus);
+
+// Delete featured product
+landingRouter.delete("/featured-products/delete/:id", deleteFeaturedProduct);
 
 export default landingRouter;

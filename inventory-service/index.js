@@ -10,7 +10,7 @@ import orderRouter from "./Routes/orderRouter.js";
 import vendorRouter from "./Routes/vendorRouter.js";
 import brandRouter from "./Routes/brandRouter.js";
 import notificationRouter from "./Routes/notificationRouter.js";
-import landingRouter from "./Routes/landingPageRouter.js"; // ✅ Added
+import landingRouter from "./Routes/landingPageRouter.js";
 import ecomOrderRouter from "./Routes/E-OrderRouter.js";
 import cartRouter from "./Routes/cartRouter.js";import buyingGuideRouter from "./Routes/buyingGuideRouter.js";
 
@@ -22,8 +22,15 @@ connectDB();
 
 const app = express();
 
+// ✅ CORS Configuration - MUST come before routes
+app.use(cors({
+  origin: ['http://localhost:3000', 'http://localhost:3001'], // Add your frontend URL
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
 // Middleware
-app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -31,8 +38,12 @@ app.use(express.urlencoded({ extended: true }));
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// ✅ Serve uploaded images statically
-app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+// ✅ Serve uploaded images statically with CORS headers
+app.use("/uploads", (req, res, next) => {
+  res.header('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.header('Access-Control-Allow-Origin', '*');
+  next();
+}, express.static(path.join(process.cwd(), "uploads")));
 
 // Routes
 app.get("/", (req, res) => {
@@ -49,7 +60,7 @@ app.use("/api/v1/vendor", vendorRouter);
 app.use("/api/v1/brand", brandRouter);
 app.use("/api/v1/notification", notificationRouter);
 app.use("/api/v1/buyingGuide", buyingGuideRouter);
-app.use("/api/v1/landing", landingRouter); // ✅ Added Landing Page Routes
+app.use("/api/v1/landing", landingRouter);
 app.use("/api/v1/ecom-order", ecomOrderRouter);
 app.use("/api/v1/cart", cartRouter);
 

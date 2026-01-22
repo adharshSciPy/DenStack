@@ -1202,6 +1202,9 @@ const removeStage = async (req, res) => {
       treatmentPlan.currentStage = 1;
     }
 
+    // CRITICAL FIX: Update overall plan status after removing stage
+    treatmentPlan.updatePlanStatus();
+
     await treatmentPlan.save();
 
     return res.status(200).json({
