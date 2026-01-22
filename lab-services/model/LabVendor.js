@@ -7,7 +7,7 @@ const LabVendor = new mongoose.Schema(
       required: true,
       trim: true,
     },
-    type: { type: String, enum: ["inHouse", "external"], required: true },
+    type: { type: String, enum: ["inHouse", "external","aligner"], required: true },
     clinicId: { type: String, default: null },
     contactPerson: {
       type: String,

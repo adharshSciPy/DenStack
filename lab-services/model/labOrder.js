@@ -22,20 +22,19 @@ const dentalLabOrderSchema = new mongoose.Schema(
       type: Date,
       required: true,
     },
+    niftiFile: {
+      fileName: String,
+      fileUrl: String,
+    },
     price: {
       type: Number,
-      required: true,
-    },
-    appointmentId: {
-      type: mongoose.Schema.Types.ObjectId,
-      required: true,
     },
     note: {
       type: String,
     },
     status: {
       type: String,
-      enum: ["pending", "in-progress", "ready", "delivered", "cancelled"],
+      enum: ["pending", "processing", "ready", "conversion_failed"],
       default: "pending",
     },
     attachments: [
@@ -44,7 +43,7 @@ const dentalLabOrderSchema = new mongoose.Schema(
         fileUrl: String,
       },
     ],
-     resultFiles: [
+    resultFiles: [
       {
         fileName: String,
         fileUrl: String,
@@ -52,7 +51,7 @@ const dentalLabOrderSchema = new mongoose.Schema(
       },
     ],
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 // Auto-generate order number

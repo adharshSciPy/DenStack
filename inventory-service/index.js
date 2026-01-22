@@ -12,7 +12,8 @@ import brandRouter from "./Routes/brandRouter.js";
 import notificationRouter from "./Routes/notificationRouter.js";
 import landingRouter from "./Routes/landingPageRouter.js";
 import ecomOrderRouter from "./Routes/E-OrderRouter.js";
-import cartRouter from "./Routes/cartRouter.js";
+import cartRouter from "./Routes/cartRouter.js";import buyingGuideRouter from "./Routes/buyingGuideRouter.js";
+
 
 import lowStockAlertsCron from "./middlewares/lowStockCron.js";
 
@@ -58,6 +59,7 @@ app.use("/api/v1/order", orderRouter);
 app.use("/api/v1/vendor", vendorRouter);
 app.use("/api/v1/brand", brandRouter);
 app.use("/api/v1/notification", notificationRouter);
+app.use("/api/v1/buyingGuide", buyingGuideRouter);
 app.use("/api/v1/landing", landingRouter);
 app.use("/api/v1/ecom-order", ecomOrderRouter);
 app.use("/api/v1/cart", cartRouter);
