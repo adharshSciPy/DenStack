@@ -372,36 +372,121 @@ const getBlogsByDoctor = async (req, res) => {
 const getOtherDoctorBlogs = async (req, res) => {
   try {
     const doctorId = req.user.doctorId;
+    const { 
+      page = 1, 
+      limit = 12, 
+      search, 
+      tags, 
+      sortBy = "createdAt",
+      sortOrder = "desc" 
+    } = req.query;
 
-    const blogs = await Blog.find({
+    // Build query
+    const query = {
       doctorId: { $ne: doctorId },
       status: "published",
-    })
-      .sort({ createdAt: -1 })
-      .limit(20)
+    };
+
+    // Add search filter
+    if (search) {
+      const searchRegex = new RegExp(search, 'i');
+      query.$or = [
+        { title: searchRegex },
+        { content: searchRegex },
+        { 'doctorId.name': searchRegex }
+      ];
+    }
+
+    // Add tags filter
+    if (tags) {
+      const tagArray = tags.split(',').map(tag => tag.trim());
+      query.tags = { $in: tagArray };
+    }
+
+    // Build sort options
+    let sortOptions = {};
+    switch (sortBy) {
+      case 'likesCount':
+        sortOptions.likesCount = sortOrder === 'asc' ? 1 : -1;
+        break;
+      case 'viewCount':
+        sortOptions.viewCount = sortOrder === 'asc' ? 1 : -1;
+        break;
+      case 'commentsCount':
+        sortOptions.commentsCount = sortOrder === 'asc' ? 1 : -1;
+        break;
+      default:
+        sortOptions.createdAt = sortOrder === 'asc' ? 1 : -1;
+    }
+
+    // Get pagination info
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const totalBlogs = await Blog.countDocuments(query);
+    const totalPages = Math.ceil(totalBlogs / parseInt(limit));
+
+    // Get blogs with pagination
+    const blogs = await Blog.find(query)
+      .sort(sortOptions)
+      .skip(skip)
+      .limit(parseInt(limit))
       .lean();
 
     if (!blogs.length) {
-      return res.json({ success: true, blogs: [] });
+      return res.json({ 
+        success: true, 
+        blogs: [],
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages,
+          totalBlogs,
+          hasNextPage: parseInt(page) < totalPages,
+          hasPrevPage: parseInt(page) > 1,
+        }
+      });
     }
 
-    // ✅ unique doctor ids
+    // Get unique doctor IDs
     const doctorIds = [...new Set(blogs.map((b) => b.doctorId.toString()))];
 
-    // ✅ SINGLE batch fetch (modify your API accordingly)
-    // const doctors = await fetchDoctorsBatch(doctorIds);
+    // Fetch doctor data in batch
+    let doctorsMap = {};
+    if (doctorIds.length > 0) {
+      doctorsMap = await batchFetchDoctors(doctorIds);
+    }
 
-    // ✅ map for O(1) lookup
-    const doctorsMap = {};
-    
-    const enrichedBlogs = blogs.map((blog) => ({
-      ...blog,
-      doctor: doctorsMap[blog.doctorId.toString()] || null,
-    }));
+    // Enrich blogs with doctor data
+    const enrichedBlogs = blogs.map((blog) => {
+      const doctorData = doctorsMap[blog.doctorId.toString()] || {
+        _id: blog.doctorId,
+        name: "Doctor",
+        email: "",
+        profilePicture: null,
+        specialty: "General"
+      };
+      
+      return {
+        ...blog,
+        doctorId: doctorData,
+      };
+    });
+
+    // Get all unique tags from the database for suggestions
+    const allTags = await Blog.distinct('tags', { 
+      doctorId: { $ne: doctorId },
+      status: "published" 
+    });
 
     res.json({
       success: true,
       blogs: enrichedBlogs,
+      allTags: allTags.filter(tag => tag).sort(), // Remove null values and sort
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages,
+        totalBlogs,
+        hasNextPage: parseInt(page) < totalPages,
+        hasPrevPage: parseInt(page) > 1,
+      },
     });
   } catch (error) {
     console.error("Error getting other doctors blogs:", error);
@@ -868,7 +953,293 @@ const deleteComment = async (req, res) => {
     });
   }
 };
+/**
+ * Reply to a comment (Doctor only)
+ */
+const replyComment = async (req, res) => {
+  try {
+    const { blogId, commentId } = req.params;
+    const { reply } = req.body;
+    const doctorId = req.user.doctorId;
 
+    // Validate required fields
+    if (!reply || reply.trim() === '') {
+      return res.status(400).json({
+        success: false,
+        message: "Reply text is required",
+      });
+    }
+
+    // Validate blog exists
+    const blog = await Blog.findById(blogId);
+    if (!blog) {
+      return res.status(404).json({
+        success: false,
+        message: "Blog not found",
+      });
+    }
+
+    // Validate parent comment/reply exists
+    const parent = await Comment.findById(commentId);
+    if (!parent) {
+      return res.status(404).json({
+        success: false,
+        message: "Comment not found",
+      });
+    }
+
+    // Ensure parent belongs to the same blog
+    if (parent.blogId.toString() !== blogId) {
+      return res.status(400).json({
+        success: false,
+        message: "Parent does not belong to this blog",
+      });
+    }
+
+    // Fetch doctor data for reply author
+    const doctorData = await fetchDoctorData(doctorId);
+    if (!doctorData) {
+      return res.status(404).json({
+        success: false,
+        message: "Doctor not found",
+      });
+    }
+
+    // Create reply (can be a reply to comment or another reply)
+    const newReply = new Comment({
+      blogId,
+      doctorId,
+      text: reply.trim(),
+      parentCommentId: commentId, // Can be either a comment ID or reply ID
+      authorInfo: {
+        name: doctorData.name,
+        profilePicture: doctorData.profilePicture,
+        specialty: doctorData.specialty,
+      },
+      status: "active",
+    });
+
+    await newReply.save();
+
+    // Update parent's reply count (whether it's a comment or reply)
+    await Comment.findByIdAndUpdate(commentId, {
+      $inc: { replyCount: 1 },
+    });
+
+    // Prepare response with doctor data
+    const enrichedReply = {
+      ...newReply.toObject(),
+      doctor: doctorData,
+    };
+
+    res.status(201).json({
+      success: true,
+      message: "Reply added successfully",
+      reply: enrichedReply,
+    });
+  } catch (error) {
+    console.error("Error adding reply:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Internal server error",
+    });
+  }
+};
+
+/**
+ * Get nested replies for a comment or reply
+ */
+const   getNestedReplies = async (req, res) => {
+  try {
+    const { parentId } = req.params; // Can be comment ID or reply ID
+    const { limit = 10, depth = 1 } = req.query;
+
+    // Validate parent exists
+    const parent = await Comment.findById(parentId);
+    if (!parent) {
+      return res.status(404).json({
+        success: false,
+        message: "Parent not found",
+      });
+    }
+
+    // Get direct replies
+    const replies = await Comment.find({
+      parentCommentId: parentId,
+      status: "active",
+    })
+      .sort({ createdAt: 1 })
+      .limit(parseInt(limit))
+      .lean();
+      
+      // Get doctor IDs
+      const doctorIds = replies.map((reply) => reply.doctorId).filter(id => id);
+      let doctorsMap = {};
+      console.log("df",doctorIds);
+      
+    if (doctorIds.length > 0) {
+      doctorsMap = await batchFetchDoctors(doctorIds);
+    }
+
+    // Enrich replies with doctor data
+    let enrichedReplies = replies.map((reply) => {
+      const doctorData = doctorsMap[reply.doctorId] || 
+                        reply.authorInfo || {
+                          _id: reply.doctorId,
+                          name: "Doctor",
+                          profilePicture: null,
+                          specialty: "General",
+                        };
+      return {
+        ...reply,
+        doctor: doctorData,
+        replies: [], // Initialize empty for nested replies
+        hasMoreReplies: reply.replyCount > 0,
+      };
+    });
+
+    // If depth > 1, recursively fetch nested replies
+    if (parseInt(depth) > 1) {
+      enrichedReplies = await Promise.all(
+        enrichedReplies.map(async (reply) => {
+          if (reply.hasMoreReplies) {
+            const nestedReplies = await Comment.find({
+              parentCommentId: reply._id,
+              status: "active",
+            })
+              .sort({ createdAt: 1 })
+              .limit(parseInt(limit))
+              .lean();
+
+            // Get doctor data for nested replies
+            const nestedDoctorIds = nestedReplies.map(r => r.doctorId).filter(id => id);
+            let nestedDoctorsMap = {};
+            
+            if (nestedDoctorIds.length > 0) {
+              nestedDoctorsMap = await batchFetchDoctors(nestedDoctorIds);
+            }
+
+            const enrichedNested = nestedReplies.map(nested => {
+              const doctorData = nestedDoctorsMap[nested.doctorId] || 
+                               nested.authorInfo || {
+                                 _id: nested.doctorId,
+                                 name: "Doctor",
+                                 profilePicture: null,
+                                 specialty: "General",
+                               };
+              return {
+                ...nested,
+                doctor: doctorData,
+              };
+            });
+
+            return {
+              ...reply,
+              replies: enrichedNested,
+              hasMoreReplies: reply.replyCount > enrichedNested.length,
+            };
+          }
+          return reply;
+        })
+      );
+    }
+
+    const totalReplies = await Comment.countDocuments({
+      parentCommentId: parentId,
+      status: "active",
+    });
+
+    res.json({
+      success: true,
+      replies: enrichedReplies,
+      pagination: {
+        totalReplies,
+        hasMore: totalReplies > enrichedReplies.length,
+      },
+    });
+  } catch (error) {
+    console.error("Error getting nested replies:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+/**
+ * Get replies for a specific comment
+ */
+const getCommentReplies = async (req, res) => {
+  try {
+    const { commentId } = req.params;
+    const { page = 1, limit = 10 } = req.query;
+
+    // Validate parent comment exists
+    const parentComment = await Comment.findById(commentId);
+    if (!parentComment) {
+      return res.status(404).json({
+        success: false,
+        message: "Comment not found",
+      });
+    }
+
+    // Get replies with pagination
+    const replies = await Comment.find({
+      parentCommentId: commentId,
+      status: "active",
+    })
+      .sort({ createdAt: 1 }) // Oldest first for replies
+      .limit(parseInt(limit))
+      .skip((parseInt(page) - 1) * parseInt(limit))
+      .lean();
+
+    // Get doctor IDs for all replies
+    const doctorIds = replies.map((reply) => reply.doctorId).filter((id) => id);
+
+    // Fetch doctor data in batch
+    let doctorsMap = {};
+    if (doctorIds.length > 0) {
+      doctorsMap = await batchFetchDoctors(doctorIds);
+    }
+
+    // Enrich replies with doctor data
+    const enrichedReplies = replies.map((reply) => {
+      const doctorData = doctorsMap[reply.doctorId] || 
+                        reply.authorInfo || {
+                          _id: reply.doctorId,
+                          name: "Doctor",
+                          profilePicture: null,
+                          specialty: "General",
+                        };
+      return {
+        ...reply,
+        doctor: doctorData,
+      };
+    });
+
+    // Get total count for pagination
+    const totalReplies = await Comment.countDocuments({
+      parentCommentId: commentId,
+      status: "active",
+    });
+
+    res.json({
+      success: true,
+      replies: enrichedReplies,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages: Math.ceil(totalReplies / parseInt(limit)),
+        totalReplies,
+        hasMore: totalReplies > (parseInt(page) * parseInt(limit)),
+      },
+    });
+  } catch (error) {
+    console.error("Error getting comment replies:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
 // ==================== LIKE OPERATIONS ====================
 
 /**
@@ -1094,7 +1465,9 @@ export {
   getBlogComments,
   editComment,
   deleteComment,
-
+  replyComment,
+  getCommentReplies,
+  getNestedReplies,
   // Likes
   toggleBlogLike,
   toggleCommentLike,

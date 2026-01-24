@@ -12,7 +12,12 @@ import {
   addComment,
   toggleBlogLike,
   checkBlogLikeStatus,
-  getBlogComments
+  getBlogComments,
+  replyComment,
+  getCommentReplies,
+  getNestedReplies,
+  editComment,
+  deleteComment,
   // replyToComment
 } from "../controller/blogController.js";
 const blogRouter=Router();
@@ -28,5 +33,10 @@ blogRouter.route("/comment/:blogId").post(verifyDoctor, addComment);
 blogRouter.route("/like-toggle/:blogId").post(verifyDoctor, toggleBlogLike);
 blogRouter.route("/like-status/:blogId").get(verifyDoctor, checkBlogLikeStatus);
 blogRouter.route("/comments/:blogId").get(getBlogComments);
+blogRouter.route("/reply/:blogId/:commentId").post(verifyDoctor, replyComment);
+blogRouter.route("/replies/:commentId").get(getCommentReplies);
+blogRouter.route("/nested-replies/:parentId").get(getNestedReplies);
+blogRouter.route("/edit-comment/:commentId").patch(verifyDoctor, editComment);
+blogRouter.route("/delete-comment/:commentId").delete(verifyDoctor, deleteComment);
 // blogRouter.route("/reply/:blogId/:commentId").post(verifyDoctor, replyToComment);
 export default blogRouter;
