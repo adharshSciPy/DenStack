@@ -486,8 +486,6 @@ const getClinicDashboardDetails = async (req, res) => {
         const response = await axios.get(
           `${LAB_SERVICE_BASE_URL}/api/v1/lab-orders/clinic-dental-orders/${clinicId}?status=pending`
         );
-        console.log("1212",response);
-
         return {
           count: response.data?.count || 0,
           orders: response.data?.pendingOrders || [],
@@ -499,18 +497,22 @@ const getClinicDashboardDetails = async (req, res) => {
     };
     const fetchTotalRevenue = async () => {
       try {
-        const response = await axios.get(`${CLINIC_SERVICE_BASE_URL}/api/v1/patient-service/consultation/current-month-revenue/${clinicId}`);
+        const response = await axios.get(`${PATIENT_SERVICE_BASE_URL}/consultation/current-month-revenue/${clinicId}`);
+        // console.log("this",response);
+        return response.data?.totalRevenue || 0;
       } catch (error) {
-        
+        console.error("❌ Error fetching total revenue:", error);
+        return 0;
       }
     }
 
     // ✅ Run all 4 external requests in parallel
-    const [ todaysAppointments, activeDoctors, pendingLabOrders] = await Promise.all([
+    const [ todaysAppointments, activeDoctors, pendingLabOrders, totalRevenue] = await Promise.all([
       
       fetchAppointments(),
       fetchActiveDoctors(),
       fetchPendingLabOrders(),
+      fetchTotalRevenue()
     ]);
 
     // ✅ Calculate total staff count
@@ -535,8 +537,9 @@ const getClinicDashboardDetails = async (req, res) => {
      
       todaysAppointments,
       activeDoctors,
-      pendingLabOrders: pendingLabOrders.orders,
+      // pendingLabOrders: pendingLabOrders.orders,
       pendingLabOrdersCount: pendingLabOrders.count,
+      totalRevenue: totalRevenue,
     });
   } catch (error) {
     console.error("getClinicDashboardDetails error:", error);
