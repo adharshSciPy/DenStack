@@ -49,7 +49,7 @@ const EventSchema = new Schema(
 
     // Media
     bannerImage: { type: String },
-    galleryImages: [{ type: String }],
+    // galleryImages: [{ type: String }],
 
     // Highlights
     highlights: [{ type: String }],
