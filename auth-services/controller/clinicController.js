@@ -455,17 +455,7 @@ const getClinicDashboardDetails = async (req, res) => {
     }
 
     // ✅ Define async functions for each external API
-    const fetchPatients = async () => {
-      try {
-        const response = await axios.get(
-          `${PATIENT_SERVICE_BASE_URL}/patient/clinic-patients/${clinicId}`
-        );
-        return response.data?.data || [];
-      } catch (err) {
-        console.error("❌ Error fetching patients:", err.message);
-        return [];
-      }
-    };
+    
 
     const fetchAppointments = async () => {
       try {
@@ -494,9 +484,9 @@ const getClinicDashboardDetails = async (req, res) => {
     const fetchPendingLabOrders = async () => {
       try {
         const response = await axios.get(
-          `${LAB_SERVICE_BASE_URL}/api/v1/lab-order/pending-orders/${clinicId}`
+          `${LAB_SERVICE_BASE_URL}/api/v1/lab-orders/clinic-dental-orders/${clinicId}?status=pending`
         );
-        // console.log("1212",response);
+        console.log("1212",response);
 
         return {
           count: response.data?.count || 0,
@@ -507,11 +497,17 @@ const getClinicDashboardDetails = async (req, res) => {
         return { count: 0, orders: [] };
       }
     };
-
+    const fetchTotalRevenue = async () => {
+      try {
+        const response = await axios.get(`${CLINIC_SERVICE_BASE_URL}/api/v1/patient-service/consultation/current-month-revenue/${clinicId}`);
+      } catch (error) {
+        
+      }
+    }
 
     // ✅ Run all 4 external requests in parallel
-    const [patients, todaysAppointments, activeDoctors, pendingLabOrders] = await Promise.all([
-      fetchPatients(),
+    const [ todaysAppointments, activeDoctors, pendingLabOrders] = await Promise.all([
+      
       fetchAppointments(),
       fetchActiveDoctors(),
       fetchPendingLabOrders(),
@@ -536,7 +532,7 @@ const getClinicDashboardDetails = async (req, res) => {
         subscription: clinic.subscription,
         totalStaffCount,
       },
-      patients,
+     
       todaysAppointments,
       activeDoctors,
       pendingLabOrders: pendingLabOrders.orders,

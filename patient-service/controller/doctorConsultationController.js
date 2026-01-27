@@ -1765,6 +1765,46 @@ const getDoctorAnalytics = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+const getCurrentMonthRevenue = async (req, res) => {
+  try {
+    const { clinicId } = req.params;
+
+    const now = new Date();
+
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+
+    const result = await PatientHistory.aggregate([
+      {
+        $match: {
+          clinicId: new mongoose.Types.ObjectId(clinicId),
+          isPaid: true, // only paid bills
+          status: "completed",
+          createdAt: {   // 🔥 use billing date
+            $gte: start,
+            $lt: end,
+          },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalRevenue: { $sum: "$totalAmount" },
+          totalPatients: { $sum: 1 },
+        },
+      },
+    ]);
+
+    res.json({
+      totalRevenue: result[0]?.totalRevenue || 0,
+      totalPatients: result[0]?.totalPatients || 0,
+    });
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
 export {
   consultPatient,
   startTreatmentPlan,
@@ -1779,4 +1819,5 @@ export {
   getDoctorDashboard,
   getWeeklyStats,
   getDoctorAnalytics,
+  getCurrentMonthRevenue
 };
