@@ -18,7 +18,8 @@ import {
   getMonthlyAppointmentsClinicWise,
   getPatientHistoryById,
   approveRecallAppointment,
-  getPatientTreatmentPlans
+  getPatientTreatmentPlans,
+  getDoctorRevenue
 } from "../controller/patientAppointmentController.js";
 import { authClinicDoctor } from "../middleware/authClinicDoctor.js";
 import { authDoctor } from "../middleware/authDoctor.js";
@@ -49,4 +50,5 @@ patientAppointmentRouter.route("/monthly_appointmnets/:id").get(verifyToken,atta
 patientAppointmentRouter.route("/visit-history/:id").get(getPatientHistoryById);
 patientAppointmentRouter.route("/recall-approval/:id").patch(approveRecallAppointment);
 patientAppointmentRouter.route("/treatment-plans/:id").get(getPatientTreatmentPlans)
+patientAppointmentRouter.route("/doctor-revenue").get(authDoctor,getDoctorRevenue)
 export default patientAppointmentRouter;

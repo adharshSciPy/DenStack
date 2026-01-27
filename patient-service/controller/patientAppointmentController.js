@@ -1673,8 +1673,44 @@ const approveRecallAppointment = async (req, res) => {
     session.endSession();
   }
 };
+const getDoctorRevenue = async (req, res) => {
+  try {
+    const doctorId = new mongoose.Types.ObjectId(req.doctorId);
+
+    const result = await PatientHistory.aggregate([
+      {
+        $match: {
+          doctorId,
+          status: "completed" // optional but recommended
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalRevenue: { $sum: "$consultationFee" },
+          totalPatients: { $addToSet: "$patientId" }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          totalRevenue: 1,
+          totalPatients: { $size: "$totalPatients" }
+        }
+      }
+    ]);
+
+    res.json(result[0] || {
+      totalRevenue: 0,
+      totalPatients: 0
+    });
+
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
 
 export {
   createAppointment, getTodaysAppointments, getAppointmentById, getPatientHistory, addLabOrderToPatientHistory, getAppointmentsByClinic, clearDoctorFromAppointments, appointmentReschedule, cancelAppointment, getPatientTreatmentPlans, getAppointmentsByDate, addReceptionBilling, getUnpaidBillsByClinic
   , getAllAppointments,getMonthlyAppointmentsClinicWise,getPatientHistoryById
-,approveRecallAppointment};
+,approveRecallAppointment,getDoctorRevenue};

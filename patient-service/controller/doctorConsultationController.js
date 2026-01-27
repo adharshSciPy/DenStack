@@ -17,7 +17,9 @@ const consultPatient = async (req, res) => {
     const doctorId = req.doctorId;
 
     if (!mongoose.Types.ObjectId.isValid(appointmentId)) {
-      return res.status(400).json({ success: false, message: "Invalid appointment ID" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid appointment ID" });
     }
 
     if (!doctorId) {
@@ -35,95 +37,111 @@ const consultPatient = async (req, res) => {
     const plannedProcedures = parseJSON(req.body.plannedProcedures, []);
     const performedTeeth = parseJSON(req.body.performedTeeth, []);
     const treatmentPlanInput = parseJSON(req.body.treatmentPlan, null);
-    const treatmentPlanStatusUpdate = parseJSON(req.body.treatmentPlanStatus, null);
+    const treatmentPlanStatusUpdate = parseJSON(
+      req.body.treatmentPlanStatus,
+      null,
+    );
     const recall = parseJSON(req.body.recall, null);
     const notes = req.body.notes || "";
     const softTissueInput = parseJSON(req.body.softTissueExamination, []);
-const tmjInput = parseJSON(req.body.tmjExamination, []);
-
+    const tmjInput = parseJSON(req.body.tmjExamination, []);
 
     console.log("📥 ========== CONSULTATION REQUEST RECEIVED ==========");
-    console.log("📋 Treatment Plan Input:", treatmentPlanInput ? {
-      planName: treatmentPlanInput.planName,
-      teethCount: treatmentPlanInput.teeth?.length || 0,
-      stagesCount: treatmentPlanInput.stages?.length || 0,
-      startToday: treatmentPlanInput.startToday
-    } : "No treatment plan");
-    
+    console.log(
+      "📋 Treatment Plan Input:",
+      treatmentPlanInput
+        ? {
+            planName: treatmentPlanInput.planName,
+            teethCount: treatmentPlanInput.teeth?.length || 0,
+            stagesCount: treatmentPlanInput.stages?.length || 0,
+            startToday: treatmentPlanInput.startToday,
+          }
+        : "No treatment plan",
+    );
+
     // Log detailed stage information from frontend
     if (treatmentPlanInput?.stages) {
       console.log("📊 STAGES RECEIVED FROM FRONTEND:");
       treatmentPlanInput.stages.forEach((stage, index) => {
         console.log(`  Stage ${index + 1}:`);
         console.log(`    Name: ${stage.stageName}`);
-        console.log(`    Status from frontend: ${stage.status || 'pending'}`);
+        console.log(`    Status from frontend: ${stage.status || "pending"}`);
         console.log(`    Scheduled Date: ${stage.scheduledDate}`);
         console.log(`    Procedure Refs: ${stage.procedureRefs?.length || 0}`);
       });
     }
 
     // ---------- normalize prescriptions ----------
-    const prescriptions = prescriptionsRaw.map(p => ({
+    const prescriptions = prescriptionsRaw.map((p) => ({
       medicineName: p.medicineName || p.medicine,
       dosage: p.dosage,
       frequency: p.frequency,
-      duration: p.duration
+      duration: p.duration,
     }));
 
     // ---------- fetch appointment ----------
-    const appointment = await Appointment.findById(appointmentId).session(session);
+    const appointment =
+      await Appointment.findById(appointmentId).session(session);
     if (!appointment || appointment.status === "cancelled") {
-      return res.status(404).json({ success: false, message: "Invalid appointment" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Invalid appointment" });
     }
 
     if (appointment.doctorId.toString() !== doctorId.toString()) {
-      return res.status(403).json({ success: false, message: "Doctor mismatch" });
+      return res
+        .status(403)
+        .json({ success: false, message: "Doctor mismatch" });
     }
 
-    const patient = await Patient.findById(appointment.patientId).session(session);
+    const patient = await Patient.findById(appointment.patientId).session(
+      session,
+    );
     if (!patient) {
-      return res.status(404).json({ success: false, message: "Patient not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Patient not found" });
     }
-// ---------- fetch consultation fee ----------
-let consultationFee = 0;
+    // ---------- fetch consultation fee ----------
+    let consultationFee = 0;
 
-try {
-  const doctorsResp = await axios.get(
-    `${CLINIC_SERVICE_BASE_URL}/active-doctors`,
-    { params: { clinicId: appointment.clinicId } }
-  );
+    try {
+      const doctorsResp = await axios.get(
+        `${CLINIC_SERVICE_BASE_URL}/active-doctors`,
+        { params: { clinicId: appointment.clinicId } },
+      );
 
-  const doctorData = doctorsResp.data?.doctors?.find(
-    d => d.doctorId?.toString() === doctorId.toString()
-  );
+      const doctorData = doctorsResp.data?.doctors?.find(
+        (d) => d.doctorId?.toString() === doctorId.toString(),
+      );
 
-  consultationFee = doctorData?.standardConsultationFee ?? 0;
-} catch (err) {
-  console.error("⚠️ Failed to fetch consultation fee:", err.message);
-}
+      consultationFee = doctorData?.standardConsultationFee ?? 0;
+    } catch (err) {
+      console.error("⚠️ Failed to fetch consultation fee:", err.message);
+    }
 
     // ---------- files ----------
-    const uploadedFiles = (req.files || []).map(f => ({
+    const uploadedFiles = (req.files || []).map((f) => ({
       url: `/uploads/${f.filename}`,
       type: f.mimetype.includes("image")
         ? "image"
         : f.mimetype.includes("pdf")
-        ? "pdf"
-        : "other",
-      uploadedAt: new Date()
+          ? "pdf"
+          : "other",
+      uploadedAt: new Date(),
     }));
 
     const allFiles = [...files, ...uploadedFiles];
-    
+
     // ---------- CREATE VISIT ----------
-    const dentalWork = performedTeeth.map(t => ({
+    const dentalWork = performedTeeth.map((t) => ({
       toothNumber: t.toothNumber,
       conditions: t.conditions || [],
-      surfaceConditions: (t.surfaceConditions || []).map(sc => ({
+      surfaceConditions: (t.surfaceConditions || []).map((sc) => ({
         surface: sc.surface,
-        conditions: sc.conditions || []
+        conditions: sc.conditions || [],
       })),
-      procedures: (t.procedures || []).map(p => ({
+      procedures: (t.procedures || []).map((p) => ({
         name: p.name,
         surface: p.surface,
         status: p.status || "completed",
@@ -131,76 +149,80 @@ try {
         notes: p.notes,
         performedBy: doctorId,
         performedAt: new Date(),
-      }))
+      })),
     }));
 
     console.log("🦷 Performed Teeth Data:", {
       count: performedTeeth.length,
-      proceduresCount: performedTeeth.reduce((sum, t) => sum + (t.procedures?.length || 0), 0)
+      proceduresCount: performedTeeth.reduce(
+        (sum, t) => sum + (t.procedures?.length || 0),
+        0,
+      ),
     });
-const softTissueExamination = softTissueInput.map(st => ({
-  id: st.id,
-  name: st.name,
+    const softTissueExamination = softTissueInput.map((st) => ({
+      id: st.id,
+      name: st.name,
 
-  onExamination: (st.onExamination || []).map(e => ({
-    value: e.value,
-    isCustom: !!e.isCustom
-  })),
+      onExamination: (st.onExamination || []).map((e) => ({
+        value: e.value,
+        isCustom: !!e.isCustom,
+      })),
 
-  diagnosis: (st.diagnosis || []).map(d => ({
-    value: d.value,
-    isCustom: !!d.isCustom
-  })),
+      diagnosis: (st.diagnosis || []).map((d) => ({
+        value: d.value,
+        isCustom: !!d.isCustom,
+      })),
 
-  treatment: (st.treatment || []).map(t => ({
-    value: t.value,
-    isCustom: !!t.isCustom
-  })),
+      treatment: (st.treatment || []).map((t) => ({
+        value: t.value,
+        isCustom: !!t.isCustom,
+      })),
 
-  notes: st.notes || ""
-}));
-const tmjExamination = tmjInput.map(tmj => ({
-  id: tmj.id,
-  name: tmj.name,
+      notes: st.notes || "",
+    }));
+    const tmjExamination = tmjInput.map((tmj) => ({
+      id: tmj.id,
+      name: tmj.name,
 
+      onExamination: (tmj.onExamination || []).map((e) => ({
+        value: e.value,
+        isCustom: !!e.isCustom,
+      })),
 
-  onExamination: (tmj.onExamination || []).map(e => ({
-    value: e.value,
-    isCustom: !!e.isCustom
-  })),
+      diagnosis: (tmj.diagnosis || []).map((d) => ({
+        value: d.value,
+        isCustom: !!d.isCustom,
+      })),
 
-  diagnosis: (tmj.diagnosis || []).map(d => ({
-    value: d.value,
-    isCustom: !!d.isCustom
-  })),
+      treatment: (tmj.treatment || []).map((t) => ({
+        value: t.value,
+        isCustom: !!t.isCustom,
+      })),
 
-  treatment: (tmj.treatment || []).map(t => ({
-    value: t.value,
-    isCustom: !!t.isCustom
-  })),
-
-  notes: tmj.notes || ""
-}));
+      notes: tmj.notes || "",
+    }));
 
     const [visitDoc] = await PatientHistory.create(
-      [{
-        patientId: appointment.patientId,
-        clinicId: appointment.clinicId,
-        doctorId,
-        appointmentId,
-        symptoms,
-        diagnosis,
-        prescriptions,
-        notes,
-        files: allFiles,
-        dentalWork,
-        softTissueExamination,
-        tmjExamination,
-        plannedProcedures,
-        consultationFee,
-        createdBy: doctorId
-      }],
-      { session }
+      [
+        {
+          patientId: appointment.patientId,
+          clinicId: appointment.clinicId,
+          doctorId,
+          appointmentId,
+          symptoms,
+          diagnosis,
+          prescriptions,
+          notes,
+          files: allFiles,
+          dentalWork,
+          softTissueExamination,
+          tmjExamination,
+          plannedProcedures,
+          consultationFee,
+          createdBy: doctorId,
+        },
+      ],
+      { session },
     );
 
     console.log("✅ Visit created:", visitDoc._id);
@@ -211,8 +233,10 @@ const tmjExamination = tmjInput.map(tmj => ({
     // ---------- CHECK FOR EXISTING TREATMENT PLAN TO UPDATE ----------
     if (treatmentPlanStatusUpdate?.planId) {
       console.log("🔄 Updating existing treatment plan status");
-      
-      treatmentPlan = await TreatmentPlan.findById(treatmentPlanStatusUpdate.planId).session(session);
+
+      treatmentPlan = await TreatmentPlan.findById(
+        treatmentPlanStatusUpdate.planId,
+      ).session(session);
       if (!treatmentPlan) {
         throw new Error("Treatment plan not found");
       }
@@ -220,31 +244,43 @@ const tmjExamination = tmjInput.map(tmj => ({
       console.log("📋 Existing plan found:", {
         planName: treatmentPlan.planName,
         currentStatus: treatmentPlan.status,
-        stagesCount: treatmentPlan.stages.length
+        stagesCount: treatmentPlan.stages.length,
       });
 
       // Update stage completion if specified
       if (treatmentPlanStatusUpdate.completedStageNumber) {
         const stageNumber = treatmentPlanStatusUpdate.completedStageNumber;
-        const stage = treatmentPlan.stages.find(s => s.stageNumber == stageNumber);
-        
-        console.log(`🎯 Completing Stage ${stageNumber}:`, stage ? stage.stageName : "Not found");
-        
+        const stage = treatmentPlan.stages.find(
+          (s) => s.stageNumber == stageNumber,
+        );
+
+        console.log(
+          `🎯 Completing Stage ${stageNumber}:`,
+          stage ? stage.stageName : "Not found",
+        );
+
         if (stage && stage.status !== "completed") {
           // Complete all procedures in this stage
-          treatmentPlan.teeth.forEach(tooth => {
-            tooth.procedures.forEach(procedure => {
-              if (procedure.stage == stageNumber && procedure.status !== "completed") {
+          treatmentPlan.teeth.forEach((tooth) => {
+            tooth.procedures.forEach((procedure) => {
+              if (
+                procedure.stage == stageNumber &&
+                procedure.status !== "completed"
+              ) {
                 procedure.status = "completed";
                 procedure.completedAt = new Date();
                 procedure.completedInVisitId = visitDoc._id;
                 procedure.performedBy = doctorId;
-                console.log(`✅ Marked procedure ${procedure.name} as completed`);
+                console.log(
+                  `✅ Marked procedure ${procedure.name} as completed`,
+                );
               }
             });
-            
+
             // Check if all procedures for this tooth are completed
-            const toothProcedures = tooth.procedures.filter(p => p.status === "completed");
+            const toothProcedures = tooth.procedures.filter(
+              (p) => p.status === "completed",
+            );
             if (toothProcedures.length === tooth.procedures.length) {
               tooth.isCompleted = true;
               tooth.completedAt = new Date();
@@ -262,23 +298,31 @@ const tmjExamination = tmjInput.map(tmj => ({
 
       // Update specific procedures if provided
       if (treatmentPlanStatusUpdate.completedProcedures?.length > 0) {
-        console.log("🔧 Updating specific procedures:", treatmentPlanStatusUpdate.completedProcedures);
-        
-        treatmentPlanStatusUpdate.completedProcedures.forEach(procUpdate => {
-          const tooth = treatmentPlan.teeth.find(t => t.toothNumber == procUpdate.toothNumber);
+        console.log(
+          "🔧 Updating specific procedures:",
+          treatmentPlanStatusUpdate.completedProcedures,
+        );
+
+        treatmentPlanStatusUpdate.completedProcedures.forEach((procUpdate) => {
+          const tooth = treatmentPlan.teeth.find(
+            (t) => t.toothNumber == procUpdate.toothNumber,
+          );
           if (tooth) {
-            const procedure = tooth.procedures.find(p => 
-              p.name === procUpdate.procedureName && 
-              p.surface === procUpdate.surface &&
-              p.stage == procUpdate.stageNumber
+            const procedure = tooth.procedures.find(
+              (p) =>
+                p.name === procUpdate.procedureName &&
+                p.surface === procUpdate.surface &&
+                p.stage == procUpdate.stageNumber,
             );
-            
+
             if (procedure && procedure.status !== "completed") {
               procedure.status = "completed";
               procedure.completedAt = new Date();
               procedure.completedInVisitId = visitDoc._id;
               procedure.performedBy = doctorId;
-              console.log(`✅ Marked procedure ${procedure.name} on tooth ${tooth.toothNumber} as completed`);
+              console.log(
+                `✅ Marked procedure ${procedure.name} on tooth ${tooth.toothNumber} as completed`,
+              );
             }
           }
         });
@@ -286,21 +330,25 @@ const tmjExamination = tmjInput.map(tmj => ({
 
       // Update overall plan status
       treatmentPlan.updatePlanStatus();
-      
+
       // Update stage statuses based on completed procedures
       console.log("📊 Updating stage statuses:");
-      treatmentPlan.stages.forEach(stage => {
-        const proceduresInStage = treatmentPlan.teeth.flatMap(tooth =>
-          tooth.procedures.filter(p => p.stage == stage.stageNumber)
+      treatmentPlan.stages.forEach((stage) => {
+        const proceduresInStage = treatmentPlan.teeth.flatMap((tooth) =>
+          tooth.procedures.filter((p) => p.stage == stage.stageNumber),
         );
-        
-        const completedCount = proceduresInStage.filter(p => p.status === "completed").length;
+
+        const completedCount = proceduresInStage.filter(
+          (p) => p.status === "completed",
+        ).length;
         const totalCount = proceduresInStage.length;
-        
+
         console.log(`  Stage ${stage.stageNumber} (${stage.stageName}):`);
-        console.log(`    Procedures: ${completedCount}/${totalCount} completed`);
+        console.log(
+          `    Procedures: ${completedCount}/${totalCount} completed`,
+        );
         console.log(`    Previous status: ${stage.status}`);
-        
+
         if (totalCount === 0) {
           stage.status = "pending";
         } else if (completedCount === totalCount) {
@@ -310,7 +358,7 @@ const tmjExamination = tmjInput.map(tmj => ({
           stage.status = "in-progress";
           stage.startedAt = stage.startedAt || new Date();
         }
-        
+
         console.log(`    New status: ${stage.status}`);
       });
 
@@ -322,151 +370,187 @@ const tmjExamination = tmjInput.map(tmj => ({
     // ---------- CREATE NEW TREATMENT PLAN ----------
     if (!updatedExistingPlan && treatmentPlanInput?.planName) {
       console.log("🆕 Creating new treatment plan");
-      
+
       // Process teeth data
-      const teethData = (treatmentPlanInput.teeth || []).map(toothPlan => ({
+      const teethData = (treatmentPlanInput.teeth || []).map((toothPlan) => ({
         toothNumber: toothPlan.toothNumber,
-        priority: toothPlan.priority || 'medium',
+        priority: toothPlan.priority || "medium",
         isCompleted: false,
-        procedures: toothPlan.procedures.map(proc => ({
+        procedures: toothPlan.procedures.map((proc) => ({
           name: proc.name,
-          surface: proc.surface || 'occlusal',
+          surface: proc.surface || "occlusal",
           stage: proc.stage || 1,
           estimatedCost: proc.estimatedCost || 0,
-          notes: proc.notes || '',
-          status: proc.status || 'planned' // Use status from frontend
-        }))
+          notes: proc.notes || "",
+          status: proc.status || "planned", // Use status from frontend
+        })),
       }));
-      
+
       // Log procedures with statuses
       console.log("🦷 Teeth Data with Procedure Statuses:");
-      teethData.forEach(tooth => {
+      teethData.forEach((tooth) => {
         console.log(`  Tooth ${tooth.toothNumber}:`);
-        tooth.procedures.forEach(proc => {
-          console.log(`    - ${proc.name} (Stage ${proc.stage}): ${proc.status}`);
+        tooth.procedures.forEach((proc) => {
+          console.log(
+            `    - ${proc.name} (Stage ${proc.stage}): ${proc.status}`,
+          );
         });
       });
-      
+
       // Process stages data with toothSurfaceProcedures
-    const stagesData = (treatmentPlanInput.stages || []).map((stageInput, index) => {
-  const stageNumber = index + 1;
-  
-  console.log(`📋 Processing Stage ${stageNumber} from frontend:`);
-  console.log(`  Name: ${stageInput.stageName}`);
-  console.log(`  Status from frontend: ${stageInput.status || 'pending'}`);
-  console.log(`  Scheduled Date: ${stageInput.scheduledDate}`);
-  
-  // Build toothSurfaceProcedures for this stage
-  const toothSurfaceProcedures = [];
-  
-  // Group procedures by tooth and surface for this stage
-  const proceduresByToothAndSurface = {};
-  
-  teethData.forEach(tooth => {
-    // Get procedures for this stage
-    const stageProcedures = tooth.procedures.filter(p => p.stage === stageNumber);
-    
-    if (stageProcedures.length > 0) {
-      const toothKey = tooth.toothNumber;
-      proceduresByToothAndSurface[toothKey] = {};
-      
-      // Group by surface
-      stageProcedures.forEach(proc => {
-        const surfaceKey = proc.surface;
-        if (!proceduresByToothAndSurface[toothKey][surfaceKey]) {
-          proceduresByToothAndSurface[toothKey][surfaceKey] = new Set();
-        }
-        proceduresByToothAndSurface[toothKey][surfaceKey].add(proc.name);
+      const stagesData = (treatmentPlanInput.stages || []).map(
+        (stageInput, index) => {
+          const stageNumber = index + 1;
+
+          console.log(`📋 Processing Stage ${stageNumber} from frontend:`);
+          console.log(`  Name: ${stageInput.stageName}`);
+          console.log(
+            `  Status from frontend: ${stageInput.status || "pending"}`,
+          );
+          console.log(`  Scheduled Date: ${stageInput.scheduledDate}`);
+
+          // Build toothSurfaceProcedures for this stage
+          const toothSurfaceProcedures = [];
+
+          // Group procedures by tooth and surface for this stage
+          const proceduresByToothAndSurface = {};
+
+          teethData.forEach((tooth) => {
+            // Get procedures for this stage
+            const stageProcedures = tooth.procedures.filter(
+              (p) => p.stage === stageNumber,
+            );
+
+            if (stageProcedures.length > 0) {
+              const toothKey = tooth.toothNumber;
+              proceduresByToothAndSurface[toothKey] = {};
+
+              // Group by surface
+              stageProcedures.forEach((proc) => {
+                const surfaceKey = proc.surface;
+                if (!proceduresByToothAndSurface[toothKey][surfaceKey]) {
+                  proceduresByToothAndSurface[toothKey][surfaceKey] = new Set();
+                }
+                proceduresByToothAndSurface[toothKey][surfaceKey].add(
+                  proc.name,
+                );
+              });
+            }
+          });
+
+          // Convert to toothSurfaceProcedures format
+          Object.entries(proceduresByToothAndSurface).forEach(
+            ([toothNumStr, surfaces]) => {
+              const toothNumber = parseInt(toothNumStr);
+              const surfaceProcedures = Object.entries(surfaces).map(
+                ([surface, procedureNamesSet]) => ({
+                  surface: surface,
+                  procedureNames: Array.from(procedureNamesSet),
+                }),
+              );
+
+              toothSurfaceProcedures.push({
+                toothNumber: toothNumber,
+                surfaceProcedures: surfaceProcedures,
+              });
+            },
+          );
+
+          // CRITICAL FIX: Determine stage status correctly
+          const stageStatus = stageInput.status || "pending";
+
+          console.log(`  Using status: ${stageStatus} (from frontend)`);
+          console.log(
+            `  Tooth-Surface Procedures: ${toothSurfaceProcedures.length} entries`,
+          );
+
+          return {
+            stageNumber: stageNumber,
+            stageName: stageInput.stageName || `Stage ${stageNumber}`,
+            description: stageInput.description || "",
+            status: stageStatus,
+            scheduledDate: stageInput.scheduledDate
+              ? new Date(stageInput.scheduledDate)
+              : null,
+            toothSurfaceProcedures: toothSurfaceProcedures,
+            notes: stageInput.notes || "",
+            // Set timestamps based on status
+            ...(stageStatus === "in-progress" && { startedAt: new Date() }),
+            ...(stageStatus === "completed" && { completedAt: new Date() }),
+          };
+        },
+      );
+
+      // FIX: Calculate overall plan status based on stages
+      const hasInProgressStages = stagesData.some(
+        (stage) => stage.status === "in-progress",
+      );
+      const hasCompletedStages = stagesData.some(
+        (stage) => stage.status === "completed",
+      );
+      const allStagesCompleted =
+        stagesData.length > 0 &&
+        stagesData.every((stage) => stage.status === "completed");
+      const allStagesPending =
+        stagesData.length > 0 &&
+        stagesData.every((stage) => stage.status === "pending");
+
+      let planStatus = "draft";
+
+      if (allStagesCompleted) {
+        planStatus = "completed";
+      } else if (hasInProgressStages || hasCompletedStages) {
+        planStatus = "ongoing";
+      } else if (allStagesPending) {
+        planStatus = "draft";
+      }
+
+      console.log(`📊 Calculated plan status: ${planStatus}`);
+      console.log(`  Has in-progress stages: ${hasInProgressStages}`);
+      console.log(`  Has completed stages: ${hasCompletedStages}`);
+      console.log(`  All stages completed: ${allStagesCompleted}`);
+      console.log(`  All stages pending: ${allStagesPending}`);
+
+      // Create treatment plan
+      [treatmentPlan] = await TreatmentPlan.create(
+        [
+          {
+            patientId: appointment.patientId,
+            clinicId: appointment.clinicId,
+            createdByDoctorId: doctorId,
+            planName: treatmentPlanInput.planName.trim(),
+            description: treatmentPlanInput.description?.trim() || "",
+            teeth: teethData,
+            stages: stagesData,
+            status: planStatus, // Use calculated status
+            currentStage: 1,
+            startedAt:
+              planStatus === "ongoing" || planStatus === "completed"
+                ? new Date()
+                : null,
+            completedAt: planStatus === "completed" ? new Date() : null,
+          },
+        ],
+        { session },
+      );
+
+      console.log("✅ Treatment plan created:", {
+        planName: treatmentPlan.planName,
+        teethCount: treatmentPlan.teeth.length,
+        stagesCount: treatmentPlan.stages.length,
+        status: treatmentPlan.status,
+        totalProcedures: treatmentPlan.teeth.reduce(
+          (sum, t) => sum + t.procedures.length,
+          0,
+        ),
       });
-    }
-  });
-  
-  // Convert to toothSurfaceProcedures format
-  Object.entries(proceduresByToothAndSurface).forEach(([toothNumStr, surfaces]) => {
-    const toothNumber = parseInt(toothNumStr);
-    const surfaceProcedures = Object.entries(surfaces).map(([surface, procedureNamesSet]) => ({
-      surface: surface,
-      procedureNames: Array.from(procedureNamesSet)
-    }));
-    
-    toothSurfaceProcedures.push({
-      toothNumber: toothNumber,
-      surfaceProcedures: surfaceProcedures
-    });
-  });
-  
-  // CRITICAL FIX: Determine stage status correctly
-  const stageStatus = stageInput.status || 'pending';
-  
-  console.log(`  Using status: ${stageStatus} (from frontend)`);
-  console.log(`  Tooth-Surface Procedures: ${toothSurfaceProcedures.length} entries`);
-  
-  return {
-    stageNumber: stageNumber,
-    stageName: stageInput.stageName || `Stage ${stageNumber}`,
-    description: stageInput.description || '',
-    status: stageStatus,
-    scheduledDate: stageInput.scheduledDate ? new Date(stageInput.scheduledDate) : null,
-    toothSurfaceProcedures: toothSurfaceProcedures,
-    notes: stageInput.notes || '',
-    // Set timestamps based on status
-    ...(stageStatus === 'in-progress' && { startedAt: new Date() }),
-    ...(stageStatus === 'completed' && { completedAt: new Date() })
-  };
-});
 
-// FIX: Calculate overall plan status based on stages
-const hasInProgressStages = stagesData.some(stage => stage.status === 'in-progress');
-const hasCompletedStages = stagesData.some(stage => stage.status === 'completed');
-const allStagesCompleted = stagesData.length > 0 && stagesData.every(stage => stage.status === 'completed');
-const allStagesPending = stagesData.length > 0 && stagesData.every(stage => stage.status === 'pending');
-
-let planStatus = "draft";
-
-if (allStagesCompleted) {
-  planStatus = "completed";
-} else if (hasInProgressStages || hasCompletedStages) {
-  planStatus = "ongoing";
-} else if (allStagesPending) {
-  planStatus = "draft";
-}
-
-console.log(`📊 Calculated plan status: ${planStatus}`);
-console.log(`  Has in-progress stages: ${hasInProgressStages}`);
-console.log(`  Has completed stages: ${hasCompletedStages}`);
-console.log(`  All stages completed: ${allStagesCompleted}`);
-console.log(`  All stages pending: ${allStagesPending}`);
-
-// Create treatment plan
-[treatmentPlan] = await TreatmentPlan.create(
-  [{
-    patientId: appointment.patientId,
-    clinicId: appointment.clinicId,
-    createdByDoctorId: doctorId,
-    planName: treatmentPlanInput.planName.trim(),
-    description: treatmentPlanInput.description?.trim() || '',
-    teeth: teethData,
-    stages: stagesData,
-    status: planStatus, // Use calculated status
-    currentStage: 1,
-    startedAt: planStatus === "ongoing" || planStatus === "completed" ? new Date() : null,
-    completedAt: planStatus === "completed" ? new Date() : null
-  }],
-  { session }
-);
-
-console.log("✅ Treatment plan created:", {
-  planName: treatmentPlan.planName,
-  teethCount: treatmentPlan.teeth.length,
-  stagesCount: treatmentPlan.stages.length,
-  status: treatmentPlan.status,
-  totalProcedures: treatmentPlan.teeth.reduce((sum, t) => sum + t.procedures.length, 0)
-});
-      
       // Log final stage statuses
       console.log("📊 FINAL STAGE STATUSES SAVED TO DATABASE:");
       treatmentPlan.stages.forEach((stage, index) => {
-        console.log(`  Stage ${index + 1}: ${stage.stageName} - Status: ${stage.status}`);
+        console.log(
+          `  Stage ${index + 1}: ${stage.stageName} - Status: ${stage.status}`,
+        );
       });
 
       // Link to patient
@@ -479,75 +563,87 @@ console.log("✅ Treatment plan created:", {
 
     // ---------- UPDATE NEWLY CREATED TREATMENT PLAN WITH PERFORMED PROCEDURES ----------
     if (treatmentPlan && !updatedExistingPlan && performedTeeth.length > 0) {
-      console.log("🔄 Updating newly created treatment plan with performed procedures");
-      
-      performedTeeth.forEach(toothWork => {
+      console.log(
+        "🔄 Updating newly created treatment plan with performed procedures",
+      );
+
+      performedTeeth.forEach((toothWork) => {
         const toothNumber = toothWork.toothNumber;
-        
-        const toothPlan = treatmentPlan.teeth.find(t => t.toothNumber === toothNumber);
+
+        const toothPlan = treatmentPlan.teeth.find(
+          (t) => t.toothNumber === toothNumber,
+        );
         if (!toothPlan) return;
-        
-        toothPlan.procedures.forEach(procedure => {
-          if (procedure.stage === 1 && procedure.status !== 'completed') {
-            const matchingPerformedProc = toothWork.procedures?.find(p => 
-              p.name === procedure.name && 
-              p.surface === procedure.surface
+
+        toothPlan.procedures.forEach((procedure) => {
+          if (procedure.stage === 1 && procedure.status !== "completed") {
+            const matchingPerformedProc = toothWork.procedures?.find(
+              (p) =>
+                p.name === procedure.name && p.surface === procedure.surface,
             );
-            
+
             if (matchingPerformedProc) {
-              procedure.status = 'completed';
+              procedure.status = "completed";
               procedure.completedAt = new Date();
               procedure.completedInVisitId = visitDoc._id;
               procedure.performedBy = doctorId;
-              console.log(`✅ Procedure ${procedure.name} on tooth ${toothNumber} marked as completed (post-creation)`);
+              console.log(
+                `✅ Procedure ${procedure.name} on tooth ${toothNumber} marked as completed (post-creation)`,
+              );
             }
           }
         });
-        
+
         // Update tooth completion status
-        const allProceduresCompleted = toothPlan.procedures.every(p => p.status === 'completed');
+        const allProceduresCompleted = toothPlan.procedures.every(
+          (p) => p.status === "completed",
+        );
         toothPlan.isCompleted = allProceduresCompleted;
         if (allProceduresCompleted) {
           toothPlan.completedAt = new Date();
         }
       });
-      
+
       // Update stage status
-      const stage = treatmentPlan.stages.find(s => s.stageNumber === 1);
+      const stage = treatmentPlan.stages.find((s) => s.stageNumber === 1);
       if (stage) {
-        const proceduresInStage = treatmentPlan.teeth.flatMap(t => 
-          t.procedures.filter(p => p.stage === 1)
+        const proceduresInStage = treatmentPlan.teeth.flatMap((t) =>
+          t.procedures.filter((p) => p.stage === 1),
         );
-        const completedProcedures = proceduresInStage.filter(p => p.status === 'completed').length;
+        const completedProcedures = proceduresInStage.filter(
+          (p) => p.status === "completed",
+        ).length;
         const totalProcedures = proceduresInStage.length;
-        
-        console.log(`📊 Stage 1 after performed procedures: ${completedProcedures}/${totalProcedures} completed`);
-        
+
+        console.log(
+          `📊 Stage 1 after performed procedures: ${completedProcedures}/${totalProcedures} completed`,
+        );
+
         if (totalProcedures === 0) {
-          stage.status = 'pending';
+          stage.status = "pending";
         } else if (completedProcedures === 0) {
-          stage.status = 'pending';
+          stage.status = "pending";
         } else if (completedProcedures === totalProcedures) {
-          stage.status = 'completed';
+          stage.status = "completed";
           stage.completedAt = new Date();
           stage.completedInVisitId = visitDoc._id;
           console.log(`✅ Stage 1 marked as completed (post-creation)`);
         } else {
-          stage.status = 'in-progress';
+          stage.status = "in-progress";
           stage.startedAt = stage.startedAt || new Date();
           console.log(`✅ Stage 1 marked as in-progress (post-creation)`);
         }
       }
-      
+
       // Update overall plan status if any procedures were completed
       if (treatmentPlan.status === "draft" && performedTeeth.length > 0) {
         treatmentPlan.status = "ongoing";
         treatmentPlan.startedAt = new Date();
         console.log(`📈 Plan status updated from draft to ongoing`);
       }
-      
+
       treatmentPlan.updatePlanStatus();
-      
+
       await treatmentPlan.save({ session });
       console.log("✅ New treatment plan updated after performed procedures");
     }
@@ -561,18 +657,23 @@ console.log("✅ Treatment plan created:", {
 
     // ---------- recall ----------
     if (recall?.appointmentDate && recall?.appointmentTime) {
-      await Appointment.create([{
-        patientId: appointment.patientId,
-        clinicId: appointment.clinicId,
-        doctorId: appointment.doctorId,
-        appointmentDate: recall.appointmentDate,
-        appointmentTime: recall.appointmentTime,
-        status: "recall",
-        createdBy: doctorId,
-        department: appointment.department,
-        rescheduledFromOp: appointment.opNumber,
-        visitId: visitDoc._id
-      }], { session });
+      await Appointment.create(
+        [
+          {
+            patientId: appointment.patientId,
+            clinicId: appointment.clinicId,
+            doctorId: appointment.doctorId,
+            appointmentDate: recall.appointmentDate,
+            appointmentTime: recall.appointmentTime,
+            status: "recall",
+            createdBy: doctorId,
+            department: appointment.department,
+            rescheduledFromOp: appointment.opNumber,
+            visitId: visitDoc._id,
+          },
+        ],
+        { session },
+      );
       console.log("📅 Recall appointment created");
     }
 
@@ -580,7 +681,7 @@ console.log("✅ Treatment plan created:", {
     await Appointment.findByIdAndUpdate(
       appointmentId,
       { status: "completed", visitId: visitDoc._id },
-      { session }
+      { session },
     );
 
     if (!patient.visitHistory) {
@@ -598,7 +699,9 @@ console.log("✅ Treatment plan created:", {
       console.log(`  Status: ${treatmentPlan.status}`);
       console.log(`  Stages:`);
       treatmentPlan.stages.forEach((stage, index) => {
-        console.log(`    Stage ${index + 1}: ${stage.stageName} - ${stage.status}`);
+        console.log(
+          `    Stage ${index + 1}: ${stage.stageName} - ${stage.status}`,
+        );
       });
     }
 
@@ -607,9 +710,8 @@ console.log("✅ Treatment plan created:", {
       message: "Consultation saved successfully",
       visit: visitDoc,
       treatmentPlan: treatmentPlan || null,
-      planUpdated: updatedExistingPlan
+      planUpdated: updatedExistingPlan,
     });
-
   } catch (err) {
     await session.abortTransaction();
     console.error("❌ consultPatient error:", err);
@@ -628,13 +730,13 @@ const startTreatmentPlan = async (req, res) => {
   try {
     const { id: patientId } = req.params; // patient id from URL
     const { clinicId, planName, description, stages } = req.body;
-         const doctorId = req.doctorId; 
-
+    const doctorId = req.doctorId;
 
     if (!clinicId || !planName) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Clinic ID and Plan Name are required" });
+      return res.status(400).json({
+        success: false,
+        message: "Clinic ID and Plan Name are required",
+      });
     }
 
     // 1️⃣ Create the treatment plan
@@ -651,7 +753,7 @@ const startTreatmentPlan = async (req, res) => {
     await Patient.findByIdAndUpdate(
       patientId,
       { $push: { treatmentPlans: newPlan._id } },
-      { new: true }
+      { new: true },
     );
 
     // 3️⃣ Find the latest consultation / patient history for this patient
@@ -681,27 +783,32 @@ const startTreatmentPlan = async (req, res) => {
 const addStageToTreatmentPlan = async (req, res) => {
   try {
     const { id: treatmentPlanId } = req.params;
-    const { stageName, description, scheduledDate, toothSurfaceProcedures = [] } = req.body;
+    const {
+      stageName,
+      description,
+      scheduledDate,
+      toothSurfaceProcedures = [],
+    } = req.body;
     const doctorId = req.doctorId;
 
     if (!doctorId) {
       return res.status(401).json({
         success: false,
-        message: "Unauthorized"
+        message: "Unauthorized",
       });
     }
 
     if (!mongoose.Types.ObjectId.isValid(treatmentPlanId)) {
       return res.status(400).json({
         success: false,
-        message: "Invalid treatment plan ID"
+        message: "Invalid treatment plan ID",
       });
     }
 
     if (!stageName) {
       return res.status(400).json({
         success: false,
-        message: "Stage name is required"
+        message: "Stage name is required",
       });
     }
 
@@ -709,37 +816,38 @@ const addStageToTreatmentPlan = async (req, res) => {
     if (!treatmentPlan) {
       return res.status(404).json({
         success: false,
-        message: "Treatment plan not found"
+        message: "Treatment plan not found",
       });
     }
 
     if (treatmentPlan.status === "completed") {
       return res.status(400).json({
         success: false,
-        message: "Cannot modify a completed treatment plan"
+        message: "Cannot modify a completed treatment plan",
       });
     }
 
     // Calculate next stage number
-    const nextStageNumber = treatmentPlan.stages.length > 0 
-      ? Math.max(...treatmentPlan.stages.map(s => s.stageNumber)) + 1
-      : 1;
+    const nextStageNumber =
+      treatmentPlan.stages.length > 0
+        ? Math.max(...treatmentPlan.stages.map((s) => s.stageNumber)) + 1
+        : 1;
 
     // Create new stage
     const newStage = {
       stageNumber: nextStageNumber,
       stageName,
       description: description || "",
-      toothSurfaceProcedures: toothSurfaceProcedures.map(tsp => ({
+      toothSurfaceProcedures: toothSurfaceProcedures.map((tsp) => ({
         toothNumber: tsp.toothNumber,
-        surfaceProcedures: (tsp.surfaceProcedures || []).map(sp => ({
+        surfaceProcedures: (tsp.surfaceProcedures || []).map((sp) => ({
           surface: sp.surface,
-          procedureNames: sp.procedureNames || []
-        }))
+          procedureNames: sp.procedureNames || [],
+        })),
       })),
       status: "pending",
       scheduledDate: scheduledDate ? new Date(scheduledDate) : null,
-      notes: ""
+      notes: "",
     };
 
     // Add stage to treatment plan
@@ -750,15 +858,14 @@ const addStageToTreatmentPlan = async (req, res) => {
       success: true,
       message: "Stage added successfully",
       stage: newStage,
-      treatmentPlan
+      treatmentPlan,
     });
-
   } catch (error) {
     console.error("addStageToTreatmentPlan error:", error);
     return res.status(500).json({
       success: false,
       message: "Server error while adding stage",
-      error: error.message
+      error: error.message,
     });
   }
 };
@@ -771,7 +878,7 @@ const updateProcedureStatus = async (req, res) => {
     if (!doctorId) {
       return res.status(401).json({
         success: false,
-        message: "Unauthorized"
+        message: "Unauthorized",
       });
     }
 
@@ -779,14 +886,14 @@ const updateProcedureStatus = async (req, res) => {
     if (!treatmentPlan) {
       return res.status(404).json({
         success: false,
-        message: "Treatment plan not found"
+        message: "Treatment plan not found",
       });
     }
 
     if (treatmentPlan.status === "completed") {
       return res.status(400).json({
         success: false,
-        message: "Cannot update a completed treatment plan"
+        message: "Cannot update a completed treatment plan",
       });
     }
 
@@ -795,7 +902,7 @@ const updateProcedureStatus = async (req, res) => {
     if (!stage) {
       return res.status(404).json({
         success: false,
-        message: "Stage not found"
+        message: "Stage not found",
       });
     }
 
@@ -817,15 +924,14 @@ const updateProcedureStatus = async (req, res) => {
       success: true,
       message: "Procedure status updated successfully",
       stage,
-      treatmentPlan
+      treatmentPlan,
     });
-
   } catch (error) {
     console.error("updateProcedureStatus error:", error);
     return res.status(500).json({
       success: false,
       message: "Server error while updating procedure status",
-      error: error.message
+      error: error.message,
     });
   }
 };
@@ -885,7 +991,7 @@ const completeStage = async (req, res) => {
     const completedStage = treatmentPlan.completeStage(
       stageNumber,
       null, // visitId (optional)
-      doctorId
+      doctorId,
     );
 
     await treatmentPlan.save();
@@ -898,7 +1004,6 @@ const completeStage = async (req, res) => {
       stage: completedStage,
       treatmentPlan,
     });
-
   } catch (error) {
     console.error("completeStage error:", error);
     return res.status(500).json({
@@ -917,7 +1022,7 @@ const finishTreatmentPlan = async (req, res) => {
     if (!doctorId) {
       return res.status(401).json({
         success: false,
-        message: "Unauthorized"
+        message: "Unauthorized",
       });
     }
 
@@ -925,36 +1030,36 @@ const finishTreatmentPlan = async (req, res) => {
     if (!treatmentPlan) {
       return res.status(404).json({
         success: false,
-        message: "Treatment plan not found"
+        message: "Treatment plan not found",
       });
     }
 
     if (treatmentPlan.status === "completed") {
       return res.status(400).json({
         success: false,
-        message: "Treatment plan already completed"
+        message: "Treatment plan already completed",
       });
     }
 
     const now = new Date();
 
     // Complete all procedures in all teeth
-    treatmentPlan.teeth.forEach(tooth => {
-      tooth.procedures.forEach(procedure => {
+    treatmentPlan.teeth.forEach((tooth) => {
+      tooth.procedures.forEach((procedure) => {
         if (procedure.status !== "completed") {
           procedure.status = "completed";
           procedure.completedAt = now;
           procedure.performedBy = doctorId;
         }
       });
-      
+
       // Mark tooth as completed
       tooth.isCompleted = true;
       tooth.completedAt = now;
     });
 
     // Complete all stages
-    treatmentPlan.stages.forEach(stage => {
+    treatmentPlan.stages.forEach((stage) => {
       if (stage.status !== "completed") {
         stage.status = "completed";
         stage.completedAt = now;
@@ -971,15 +1076,14 @@ const finishTreatmentPlan = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Treatment plan completed successfully",
-      treatmentPlan
+      treatmentPlan,
     });
-
   } catch (error) {
     console.error("finishTreatmentPlan error:", error);
     return res.status(500).json({
       success: false,
       message: "Server error while completing treatment plan",
-      error: error.message
+      error: error.message,
     });
   }
 };
@@ -992,14 +1096,14 @@ const removeProcedure = async (req, res) => {
     if (!doctorId) {
       return res.status(401).json({
         success: false,
-        message: "Unauthorized"
+        message: "Unauthorized",
       });
     }
 
     if (!procedureName || !surface) {
       return res.status(400).json({
         success: false,
-        message: "Procedure name and surface are required"
+        message: "Procedure name and surface are required",
       });
     }
 
@@ -1007,35 +1111,35 @@ const removeProcedure = async (req, res) => {
     if (!treatmentPlan) {
       return res.status(404).json({
         success: false,
-        message: "Treatment plan not found"
+        message: "Treatment plan not found",
       });
     }
 
     if (treatmentPlan.status === "completed") {
       return res.status(400).json({
         success: false,
-        message: "Cannot modify a completed treatment plan"
+        message: "Cannot modify a completed treatment plan",
       });
     }
 
     // Find the tooth
-    const tooth = treatmentPlan.teeth.find(t => t.toothNumber == toothNumber);
+    const tooth = treatmentPlan.teeth.find((t) => t.toothNumber == toothNumber);
     if (!tooth) {
       return res.status(404).json({
         success: false,
-        message: `Tooth ${toothNumber} not found in treatment plan`
+        message: `Tooth ${toothNumber} not found in treatment plan`,
       });
     }
 
     // Find and remove the procedure
     const procedureIndex = tooth.procedures.findIndex(
-      p => p.name === procedureName && p.surface === surface
+      (p) => p.name === procedureName && p.surface === surface,
     );
 
     if (procedureIndex === -1) {
       return res.status(404).json({
         success: false,
-        message: `Procedure "${procedureName}" on surface "${surface}" not found for tooth ${toothNumber}`
+        message: `Procedure "${procedureName}" on surface "${surface}" not found for tooth ${toothNumber}`,
       });
     }
 
@@ -1046,35 +1150,38 @@ const removeProcedure = async (req, res) => {
     tooth.procedures.splice(procedureIndex, 1);
 
     // Remove the procedure reference from the stage's toothSurfaceProcedures
-    const stage = treatmentPlan.stages.find(s => s.stageNumber == stageNumber);
+    const stage = treatmentPlan.stages.find(
+      (s) => s.stageNumber == stageNumber,
+    );
     if (stage) {
       const toothSurface = stage.toothSurfaceProcedures.find(
-        tsp => tsp.toothNumber == toothNumber
+        (tsp) => tsp.toothNumber == toothNumber,
       );
-      
+
       if (toothSurface) {
         // Find the surface
         const surfaceProc = toothSurface.surfaceProcedures.find(
-          sp => sp.surface === surface
+          (sp) => sp.surface === surface,
         );
-        
+
         if (surfaceProc) {
           // Remove the procedure name from the array
           surfaceProc.procedureNames = surfaceProc.procedureNames.filter(
-            name => name !== procedureName
+            (name) => name !== procedureName,
           );
-          
+
           // If no more procedures on this surface, remove the surface entry
           if (surfaceProc.procedureNames.length === 0) {
-            toothSurface.surfaceProcedures = toothSurface.surfaceProcedures.filter(
-              sp => sp.surface !== surface
-            );
+            toothSurface.surfaceProcedures =
+              toothSurface.surfaceProcedures.filter(
+                (sp) => sp.surface !== surface,
+              );
           }
-          
+
           // If no more surfaces for this tooth, remove the tooth entry
           if (toothSurface.surfaceProcedures.length === 0) {
             stage.toothSurfaceProcedures = stage.toothSurfaceProcedures.filter(
-              tsp => tsp.toothNumber != toothNumber
+              (tsp) => tsp.toothNumber != toothNumber,
             );
           }
         }
@@ -1084,7 +1191,7 @@ const removeProcedure = async (req, res) => {
     // If tooth has no more procedures, remove the tooth
     if (tooth.procedures.length === 0) {
       treatmentPlan.teeth = treatmentPlan.teeth.filter(
-        t => t.toothNumber != toothNumber
+        (t) => t.toothNumber != toothNumber,
       );
     }
 
@@ -1094,15 +1201,14 @@ const removeProcedure = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: `Procedure "${procedureName}" removed from tooth ${toothNumber}`,
-      treatmentPlan
+      treatmentPlan,
     });
-
   } catch (error) {
     console.error("removeProcedure error:", error);
     return res.status(500).json({
       success: false,
       message: "Server error while removing procedure",
-      error: error.message
+      error: error.message,
     });
   }
 };
@@ -1114,7 +1220,7 @@ const removeStage = async (req, res) => {
     if (!doctorId) {
       return res.status(401).json({
         success: false,
-        message: "Unauthorized"
+        message: "Unauthorized",
       });
     }
 
@@ -1122,72 +1228,74 @@ const removeStage = async (req, res) => {
     if (!treatmentPlan) {
       return res.status(404).json({
         success: false,
-        message: "Treatment plan not found"
+        message: "Treatment plan not found",
       });
     }
 
     if (treatmentPlan.status === "completed") {
       return res.status(400).json({
         success: false,
-        message: "Cannot modify a completed treatment plan"
+        message: "Cannot modify a completed treatment plan",
       });
     }
 
-    const stage = treatmentPlan.stages.find(s => s.stageNumber == stageNumber);
+    const stage = treatmentPlan.stages.find(
+      (s) => s.stageNumber == stageNumber,
+    );
     if (!stage) {
       return res.status(404).json({
         success: false,
-        message: `Stage ${stageNumber} not found`
+        message: `Stage ${stageNumber} not found`,
       });
     }
 
     // Check if stage has any completed procedures
-    const hasCompletedProcedures = treatmentPlan.teeth.some(tooth =>
+    const hasCompletedProcedures = treatmentPlan.teeth.some((tooth) =>
       tooth.procedures.some(
-        proc => proc.stage == stageNumber && proc.status === "completed"
-      )
+        (proc) => proc.stage == stageNumber && proc.status === "completed",
+      ),
     );
 
     if (hasCompletedProcedures) {
       return res.status(400).json({
         success: false,
-        message: `Cannot remove stage ${stageNumber} because it has completed procedures`
+        message: `Cannot remove stage ${stageNumber} because it has completed procedures`,
       });
     }
 
     // Remove procedures from this stage from all teeth
-    treatmentPlan.teeth.forEach(tooth => {
+    treatmentPlan.teeth.forEach((tooth) => {
       tooth.procedures = tooth.procedures.filter(
-        proc => proc.stage != stageNumber
+        (proc) => proc.stage != stageNumber,
       );
     });
 
     // Remove empty teeth
     treatmentPlan.teeth = treatmentPlan.teeth.filter(
-      tooth => tooth.procedures.length > 0
+      (tooth) => tooth.procedures.length > 0,
     );
 
     // Remove the stage
     treatmentPlan.stages = treatmentPlan.stages.filter(
-      s => s.stageNumber != stageNumber
+      (s) => s.stageNumber != stageNumber,
     );
 
     // Re-number remaining stages
     treatmentPlan.stages.sort((a, b) => a.stageNumber - b.stageNumber);
     treatmentPlan.stages.forEach((stage, index) => {
       const newStageNumber = index + 1;
-      
+
       // Update stage number
       stage.stageNumber = newStageNumber;
-      
+
       // Update stage name if it follows default pattern
       if (stage.stageName === `Stage ${stageNumber}`) {
         stage.stageName = `Stage ${newStageNumber}`;
       }
-      
+
       // Update procedures in teeth to reflect new stage number
-      treatmentPlan.teeth.forEach(tooth => {
-        tooth.procedures.forEach(proc => {
+      treatmentPlan.teeth.forEach((tooth) => {
+        tooth.procedures.forEach((proc) => {
           if (proc.stage == stageNumber) {
             proc.stage = newStageNumber;
           }
@@ -1210,15 +1318,14 @@ const removeStage = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: `Stage ${stageNumber} removed successfully`,
-      treatmentPlan
+      treatmentPlan,
     });
-
   } catch (error) {
     console.error("removeStage error:", error);
     return res.status(500).json({
       success: false,
       message: "Server error while removing stage",
-      error: error.message
+      error: error.message,
     });
   }
 };
@@ -1230,7 +1337,7 @@ const removeTreatmentPlan = async (req, res) => {
     if (!doctorId) {
       return res.status(401).json({
         success: false,
-        message: "Unauthorized"
+        message: "Unauthorized",
       });
     }
 
@@ -1238,32 +1345,32 @@ const removeTreatmentPlan = async (req, res) => {
     if (!treatmentPlan) {
       return res.status(404).json({
         success: false,
-        message: "Treatment plan not found"
+        message: "Treatment plan not found",
       });
     }
 
     // Check if plan has any completed procedures
-    const hasCompletedProcedures = treatmentPlan.teeth.some(tooth =>
-      tooth.procedures.some(proc => proc.status === "completed")
+    const hasCompletedProcedures = treatmentPlan.teeth.some((tooth) =>
+      tooth.procedures.some((proc) => proc.status === "completed"),
     );
 
     if (hasCompletedProcedures && treatmentPlan.status !== "draft") {
       return res.status(400).json({
         success: false,
-        message: "Cannot delete treatment plan with completed procedures. Mark as cancelled instead."
+        message:
+          "Cannot delete treatment plan with completed procedures. Mark as cancelled instead.",
       });
     }
 
     // Remove plan from patient's treatmentPlans array
-    await Patient.findByIdAndUpdate(
-      treatmentPlan.patientId,
-      { $pull: { treatmentPlans: planId } }
-    );
+    await Patient.findByIdAndUpdate(treatmentPlan.patientId, {
+      $pull: { treatmentPlans: planId },
+    });
 
     // Remove treatmentPlanId from any linked patient history
     await PatientHistory.updateMany(
       { treatmentPlanId: planId },
-      { $unset: { treatmentPlanId: "" } }
+      { $unset: { treatmentPlanId: "" } },
     );
 
     // Delete the treatment plan
@@ -1271,15 +1378,14 @@ const removeTreatmentPlan = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: "Treatment plan removed successfully"
+      message: "Treatment plan removed successfully",
     });
-
   } catch (error) {
     console.error("removeTreatmentPlan error:", error);
     return res.status(500).json({
       success: false,
       message: "Server error while removing treatment plan",
-      error: error.message
+      error: error.message,
     });
   }
 };
@@ -1292,7 +1398,7 @@ const cancelTreatmentPlan = async (req, res) => {
     if (!doctorId) {
       return res.status(401).json({
         success: false,
-        message: "Unauthorized"
+        message: "Unauthorized",
       });
     }
 
@@ -1300,20 +1406,21 @@ const cancelTreatmentPlan = async (req, res) => {
     if (!treatmentPlan) {
       return res.status(404).json({
         success: false,
-        message: "Treatment plan not found"
+        message: "Treatment plan not found",
       });
     }
 
     if (treatmentPlan.status === "completed") {
       return res.status(400).json({
         success: false,
-        message: "Cannot cancel a completed treatment plan"
+        message: "Cannot cancel a completed treatment plan",
       });
     }
 
     // Update status to cancelled
     treatmentPlan.status = "cancelled";
-    treatmentPlan.cancellationReason = cancellationReason || "No reason provided";
+    treatmentPlan.cancellationReason =
+      cancellationReason || "No reason provided";
     treatmentPlan.cancelledAt = new Date();
     treatmentPlan.cancelledBy = doctorId;
 
@@ -1322,17 +1429,354 @@ const cancelTreatmentPlan = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Treatment plan cancelled successfully",
-      treatmentPlan
+      treatmentPlan,
     });
-
   } catch (error) {
     console.error("cancelTreatmentPlan error:", error);
     return res.status(500).json({
       success: false,
       message: "Server error while cancelling treatment plan",
-      error: error.message
+      error: error.message,
     });
   }
 };
+const getDoctorDashboard = async (req, res) => {
+  try {
+    const doctorId = new mongoose.Types.ObjectId(req.doctorId);
 
-export{ consultPatient , startTreatmentPlan,addStageToTreatmentPlan,updateProcedureStatus,completeStage,finishTreatmentPlan,removeProcedure,removeStage,removeTreatmentPlan,cancelTreatmentPlan };
+    const [appointments, completedCount, revenueStats] = await Promise.all([
+      // ✅ all appointments list
+      Appointment.find({ doctorId }).sort({ appointmentDate: -1 }),
+
+      // ✅ completed appointments count
+      Appointment.countDocuments({
+        doctorId,
+        status: "completed",
+      }),
+
+      // ✅ revenue + patient stats
+      PatientHistory.aggregate([
+        {
+          $match: {
+            doctorId,
+            status: "completed",
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            totalRevenue: { $sum: "$consultationFee" },
+            uniquePatients: { $addToSet: "$patientId" },
+            totalVisits: { $sum: 1 },
+          },
+        },
+        {
+          $project: {
+            _id: 0,
+            totalRevenue: 1,
+            totalVisits: 1,
+            totalPatients: { $size: "$uniquePatients" },
+          },
+        },
+      ]),
+    ]);
+
+    const stats = revenueStats[0] || {
+      totalRevenue: 0,
+      totalPatients: 0,
+      totalVisits: 0,
+    };
+
+    res.json({
+      totalAppointments: appointments.length,
+      completedAppointments: completedCount, // 🔥 NEW
+      totalRevenue: stats.totalRevenue,
+      totalPatients: stats.totalPatients,
+      totalVisits: stats.totalVisits,
+      appointments,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+const getWeeklyStats = async (req, res) => {
+  try {
+    const doctorId = new mongoose.Types.ObjectId(req.doctorId);
+
+    // 📅 last 7 days range
+    const today = new Date();
+    const startDate = new Date();
+    startDate.setDate(today.getDate() - 6);
+
+    const start = startDate.toISOString().split("T")[0];
+    const end = today.toISOString().split("T")[0];
+
+    const stats = await Appointment.aggregate([
+      {
+        $match: {
+          doctorId,
+          appointmentDate: { $gte: start, $lte: end }, // string compare works
+        },
+      },
+      {
+        $group: {
+          _id: "$appointmentDate",
+          appointments: { $sum: 1 },
+          patients: { $addToSet: "$patientId" },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          date: "$_id",
+          appointments: 1,
+          patients: { $size: "$patients" },
+        },
+      },
+    ]);
+
+    // 🔥 fill missing days with 0 (important for charts)
+    const map = {};
+    stats.forEach((s) => {
+      map[s.date] = s;
+    });
+
+    const result = [];
+
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(startDate);
+      d.setDate(startDate.getDate() + i);
+
+      const key = d.toISOString().split("T")[0];
+
+      result.push({
+        day: d.toLocaleDateString("en-US", { weekday: "short" }),
+        appointments: map[key]?.appointments || 0,
+        patients: map[key]?.patients || 0,
+      });
+    }
+
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+const getDoctorAnalytics = async (req, res) => {
+  try {
+    const doctorId = new mongoose.Types.ObjectId(req.doctorId);
+
+    const today = new Date();
+
+    /* =================================================
+       📅 DATE CALCULATIONS
+    ================================================= */
+
+    // weekly (last 7 days)
+    const weekStart = new Date();
+    weekStart.setDate(today.getDate() - 6);
+
+    const weekStartStr = weekStart.toISOString().split("T")[0];
+    const todayStr = today.toISOString().split("T")[0];
+
+    // monthly (last 4 months)
+    const fourMonthsAgo = new Date();
+    fourMonthsAgo.setMonth(today.getMonth() - 3);
+
+    /* =================================================
+       ⚡ RUN EVERYTHING IN PARALLEL (FAST)
+    ================================================= */
+
+    const [
+      totalAppointments,
+      completedAppointments,
+      revenueStats,
+      weeklyStatsRaw,
+      monthlyRevenueRaw,
+    ] = await Promise.all([
+      /* ======================
+         TOTAL APPOINTMENTS
+      ====================== */
+      Appointment.countDocuments({ doctorId }),
+
+      /* ======================
+         COMPLETED APPOINTMENTS
+      ====================== */
+      Appointment.countDocuments({
+        doctorId,
+        status: "completed",
+      }),
+
+      /* ======================
+         REVENUE + PATIENTS + VISITS
+      ====================== */
+      PatientHistory.aggregate([
+        {
+          $match: {
+            doctorId,
+            status: "completed",
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            totalRevenue: { $sum: "$consultationFee" },
+            uniquePatients: { $addToSet: "$patientId" },
+            totalVisits: { $sum: 1 },
+          },
+        },
+        {
+          $project: {
+            _id: 0,
+            totalRevenue: 1,
+            totalVisits: 1,
+            totalPatients: { $size: "$uniquePatients" },
+          },
+        },
+      ]),
+
+      /* ======================
+         WEEKLY STATS
+      ====================== */
+      Appointment.aggregate([
+        {
+          $match: {
+            doctorId,
+            appointmentDate: {
+              $gte: weekStartStr,
+              $lte: todayStr,
+            },
+          },
+        },
+        {
+          $group: {
+            _id: "$appointmentDate",
+            appointments: { $sum: 1 },
+            patients: { $addToSet: "$patientId" },
+          },
+        },
+        {
+          $project: {
+            _id: 0,
+            date: "$_id",
+            appointments: 1,
+            patients: { $size: "$patients" },
+          },
+        },
+      ]),
+
+      /* ======================
+         MONTHLY REVENUE (last 4 months only)
+      ====================== */
+      PatientHistory.aggregate([
+        {
+          $match: {
+            doctorId,
+            status: "completed",
+            visitDate: { $gte: fourMonthsAgo },
+          },
+        },
+        {
+          $group: {
+            _id: {
+              year: { $year: "$visitDate" },
+              month: { $month: "$visitDate" },
+            },
+            revenue: { $sum: "$consultationFee" },
+          },
+        },
+        {
+          $sort: { "_id.year": 1, "_id.month": 1 },
+        },
+      ]),
+    ]);
+
+    /* =================================================
+       📊 FORMAT WEEKLY (always 7 days)
+    ================================================= */
+
+    const weeklyMap = {};
+    weeklyStatsRaw.forEach((w) => (weeklyMap[w.date] = w));
+
+    const weeklyStats = [];
+
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(weekStart);
+      d.setDate(weekStart.getDate() + i);
+
+      const key = d.toISOString().split("T")[0];
+
+      weeklyStats.push({
+        day: d.toLocaleDateString("en-US", { weekday: "short" }),
+        appointments: weeklyMap[key]?.appointments || 0,
+        patients: weeklyMap[key]?.patients || 0,
+      });
+    }
+
+    /* =================================================
+       📈 FORMAT MONTHLY (always last 4 months)
+    ================================================= */
+
+    const monthlyMap = {};
+
+    monthlyRevenueRaw.forEach((m) => {
+      const key = `${m._id.year}-${m._id.month}`; // use raw numbers only
+      monthlyMap[key] = m.revenue;
+    });
+
+    const monthlyRevenue = [];
+
+    for (let i = 3; i >= 0; i--) {
+      const d = new Date();
+      d.setMonth(today.getMonth() - i);
+
+      const year = d.getFullYear();
+      const month = d.getMonth() + 1;
+
+      const key = `${year}-${month}`;
+
+      monthlyRevenue.push({
+        month: d.toLocaleString("en-US", { month: "short" }),
+        revenue: monthlyMap[key] || 0,
+      });
+    }
+
+    /* =================================================
+       📦 FINAL DATA
+    ================================================= */
+
+    const revenueData = revenueStats[0] || {
+      totalRevenue: 0,
+      totalPatients: 0,
+      totalVisits: 0,
+    };
+
+    res.json({
+      cards: {
+        totalAppointments,
+        completedAppointments,
+        totalRevenue: revenueData.totalRevenue,
+        totalPatients: revenueData.totalPatients,
+        totalVisits: revenueData.totalVisits,
+      },
+      weeklyStats,
+      monthlyRevenue,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+export {
+  consultPatient,
+  startTreatmentPlan,
+  addStageToTreatmentPlan,
+  updateProcedureStatus,
+  completeStage,
+  finishTreatmentPlan,
+  removeProcedure,
+  removeStage,
+  removeTreatmentPlan,
+  cancelTreatmentPlan,
+  getDoctorDashboard,
+  getWeeklyStats,
+  getDoctorAnalytics,
+};
