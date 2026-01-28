@@ -143,33 +143,6 @@ const registerPatient = async (req, res) => {
     });
   }
 };
-
-
-// export const getPatientById = async (req, res) => {
-//   try {
-//     const { id } = req.params;  // Gets from URL: /patient/68e496a097514f58b13e6112
-    
-//     const patient = await Patient.findById(id);  // Finds by MongoDB _id
-    
-//     if (!patient) {
-//       return res.status(404).json({
-//         success: false,
-//         message: "Patient not found"
-//       });
-//     }
-    
-//     res.status(200).json({
-//       success: true,
-//       patient
-//     });
-//   } catch (error) {
-//     console.error("Error fetching patient:", error);
-//     res.status(500).json({
-//       success: false,
-//       message: error.message
-//     });
-//   }
-// };
 const getPatientWithUniqueId = async (req, res) => {
   const { id: uniqueId, clinicId } = req.query;
 
@@ -190,8 +163,6 @@ const getPatientWithUniqueId = async (req, res) => {
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
-
-
 const getAllPatients = async (req, res) => {
   const { id: clinicId } = req.params;
 
@@ -323,7 +294,6 @@ const patientCheck = async (req, res) => {
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
-
 const getPatientsByClinic = async (req, res) => {
   try {
     const { id: clinicId } = req.params;
@@ -352,7 +322,6 @@ const getPatientsByClinic = async (req, res) => {
     return res.status(500).json({ success: false, message: "Server error" });
   }
 };
-
 const getPatientById = async (req, res) => {
   const { id } = req.params;
 
@@ -374,8 +343,6 @@ const getPatientById = async (req, res) => {
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
-
-
 const sendSMSLink = async (req, res) => {
   try {
     const { phone } = req.body;
@@ -405,7 +372,6 @@ const sendSMSLink = async (req, res) => {
     res.status(500).json({ success: false, message: "Failed to send link" });
   }
 };
-
 const setPassword = async (req, res) => {
   try {
     const { token, password } = req.body;
@@ -437,7 +403,6 @@ const setPassword = async (req, res) => {
     res.status(500).json({ success: false, message: "Error setting password" });
   }
 };
-
 const login = async (req, res) => {
   try {
     const { phone, password } = req.body;
@@ -453,7 +418,6 @@ const login = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
-
 const getPatientByRandomId = async (req, res) => {
   try {
     const { id: randomId } = req.params;
@@ -576,7 +540,6 @@ const getPatientByRandomId = async (req, res) => {
     });
   }
 };
-
 //to patch laborders to patient model
 const addLabOrderToPatient = async (req, res) => {
   try {
@@ -811,8 +774,6 @@ const getPatientFullCRM = async (req, res) => {
     });
   }
 };
-
-
 const updatePatientDetails = async (req, res) => {
   try {
     const { id:patientId } = req.params;
