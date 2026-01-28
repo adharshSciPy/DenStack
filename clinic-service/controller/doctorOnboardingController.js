@@ -59,6 +59,18 @@ const onboardDoctor = async (req, res) => {
 
     await newMapping.save();
 
+    // ✅ NEW: Update doctor status in auth service
+    try {
+      await axios.put(`${AUTH_SERVICE_BASE_URL}/doctor/update-clinic-status`, {
+        doctorId: doctor._id,
+        clinicId,
+        action: 'onboard'
+      });
+    } catch (authError) {
+      console.error("⚠️ Error updating doctor clinic status:", authError.response?.data || authError.message);
+      // Continue even if this fails - the onboarding is still valid
+    }
+
     res.status(201).json({
       success: true,
       message: "Doctor onboarded successfully to clinic",
@@ -861,6 +873,19 @@ const removeDoctorFromClinic = async (req, res) => {
 
     // ✅ Delete doctor-clinic record
     await DoctorClinic.findByIdAndDelete(mapping._id);
+
+    // ✅✅✅ Update doctor status in Auth Service ✅✅✅
+    try {
+      const updateUrl = `${AUTH_SERVICE_BASE_URL}/doctor/update-clinic-status`;
+      await axios.put(updateUrl, {
+        doctorId,
+        clinicId,
+        action: 'remove'
+      });
+      console.log("✅ Doctor status updated in Auth Service");
+    } catch (authError) {
+      console.error("⚠️ Error updating doctor clinic status:", authError.response?.data || authError.message);
+    }
 
     // ✅ Call Appointment Service to clear doctor references
     let updatedAppointments = [];

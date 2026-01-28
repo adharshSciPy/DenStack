@@ -7,7 +7,6 @@ import dotenv from "dotenv";
 import TreatmentPlan from "../model/treatmentPlanSchema.js";
 dotenv.config();
 const CLINIC_SERVICE_BASE_URL = process.env.CLINIC_SERVICE_BASE_URL;
-
 const consultPatient = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
@@ -1013,7 +1012,6 @@ const completeStage = async (req, res) => {
     });
   }
 };
-
 const finishTreatmentPlan = async (req, res) => {
   try {
     const { id: treatmentPlanId } = req.params;

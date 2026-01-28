@@ -3,7 +3,8 @@ import mongoose, { Schema } from "mongoose";
 const topCategorySchema = new Schema({
     categoryId: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: "Category"
+        ref: "Category",
+        required: [true, "Category reference is required"]
     },
     imageUrl: {
         type: String,

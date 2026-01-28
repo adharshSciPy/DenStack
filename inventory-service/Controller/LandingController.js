@@ -8,6 +8,7 @@ import CategorySection from "../Model/CategorySectionSchema.js";
 import Order from "../Model/OrderSchema.js";
 import Product from "../Model/ProductSchema.js";
 import MainCategory from "../Model/MainCategorySchema.js";
+import Category from "../Model/CategorySchema.js";
 import Brand from "../Model/BrandSchema.js";
 import SubCategory from "../Model/SubCategorySchema.js";
 import FeaturedProduct from "../Model/featuredProductSchema.js";
@@ -153,8 +154,8 @@ export const createBrand = async (req, res) => {
   try {
     const { name, description, mainCategoryId, subCategoryId } = req.body;
 
-    // Validate required fields
-    if (!name) {
+    /* ---------------- VALIDATION ---------------- */
+    if (!name?.trim()) {
       return res.status(400).json({ message: "Brand name is required" });
     }
     if (!mainCategoryId) {
@@ -164,7 +165,7 @@ export const createBrand = async (req, res) => {
       return res.status(400).json({ message: "Sub category is required" });
     }
 
-    // Verify main category exists
+    /* ---------------- MAIN CATEGORY ---------------- */
     const mainCategory = await MainCategory.findOne({
       _id: mainCategoryId,
       parentCategory: null,
@@ -172,12 +173,12 @@ export const createBrand = async (req, res) => {
     });
 
     if (!mainCategory) {
-      return res
-        .status(404)
-        .json({ message: "Main category not found or inactive" });
+      return res.status(404).json({
+        message: "Main category not found or inactive",
+      });
     }
 
-    // ✅ USE SubCategory MODEL instead of MainCategory
+    /* ---------------- SUB CATEGORY ---------------- */
     const subCategory = await SubCategory.findOne({
       _id: subCategoryId,
       mainCategory: mainCategoryId,
@@ -187,49 +188,49 @@ export const createBrand = async (req, res) => {
     if (!subCategory) {
       return res.status(404).json({
         message:
-          "Sub category not found, inactive, or doesn't belong to the specified main category",
+          "Sub category not found, inactive, or doesn't belong to the main category",
       });
     }
 
-    // Handle image upload (required)
-    let imageUrl = null;
-    if (req.files) {
-      if (req.files.image && req.files.image.length > 0) {
-        imageUrl = `/uploads/brands/${req.files.image[0].filename}`;
-      } else if (req.files.images && req.files.images.length > 0) {
-        imageUrl = `/uploads/brands/${req.files.images[0].filename}`;
-      }
+    /* ---------------- IMAGE (uploads/landing) ---------------- */
+    let imageUrl;
+
+    if (req.files?.image?.length > 0) {
+      imageUrl = `/uploads/landing/${req.files.image[0].filename}`;
+    } else if (req.files?.images?.length > 0) {
+      imageUrl = `/uploads/landing/${req.files.images[0].filename}`;
     }
 
     if (!imageUrl) {
-      return res.status(400).json({ message: "Image is required" });
+      return res.status(400).json({ message: "Brand image is required" });
     }
 
-    const brand = new Brand({
-      name,
-      description: description || "",
+    /* ---------------- CREATE BRAND ---------------- */
+    const brand = await Brand.create({
+      name: name.trim(),
+      description: description?.trim() || "",
       mainCategory: mainCategoryId,
       subCategory: subCategoryId,
       image: imageUrl,
     });
 
-    await brand.save();
+    /* ---------------- POPULATE ---------------- */
+    const populatedBrand = await Brand.findById(brand._id)
+      .populate("mainCategory", "categoryName")
+      .populate("subCategory", "categoryName");
 
-    // Populate and return
-    await brand.populate([
-      { path: "mainCategory", select: "categoryName mainCategoryId" },
-      { path: "subCategory", select: "categoryName subCategoryId" }, // ✅ Changed to subCategoryId
-    ]);
-
-    res.status(201).json({
+    return res.status(201).json({
       message: "Brand created successfully",
-      data: brand,
+      data: populatedBrand,
     });
   } catch (err) {
-    res.status(500).json({ message: "Server error", error: err.message });
+    console.error("Create Brand Error:", err);
+    return res.status(500).json({
+      message: "Server error",
+      error: err.message,
+    });
   }
 };
-
 export const getAllBrands = async (req, res) => {
   try {
     const { page = 1, limit = 10, mainCategoryId, subCategoryId } = req.query;
@@ -616,7 +617,7 @@ export const getAllTopBrands = async (req, res) => {
     const topBrands = await TopBrand.find(filter)
       .populate({
         path: 'brandId',
-        select: 'brandName description brandLogo status'
+        select: 'name description image isActive' // Populate brand details
       })
       .sort({ order: 1, createdAt: -1 });
 
@@ -713,7 +714,7 @@ export const getTopBrandById = async (req, res) => {
     const topBrand = await TopBrand.findById(id)
       .populate({
         path: 'brandId',
-        select: 'brandName description brandLogo status'
+        select: 'name description image isActive' // Populate brand details
       });
 
     if (!topBrand) {
@@ -723,10 +724,22 @@ export const getTopBrandById = async (req, res) => {
       });
     }
 
+    // Fetch all products for this brand
+    const products = await Product.find({ 
+      brandId: topBrand.brandId._id, // Use the populated brandId's _id
+      status: 'active'
+    })
+    .select('productName price images stock category discount')
+    .sort({ createdAt: -1 });
+
     res.status(200).json({
       success: true,
       message: "Top brand retrieved successfully",
-      data: topBrand
+      data: {
+        brand: topBrand,
+        products: products,
+        productCount: products.length
+      }
     });
   } catch (error) {
     console.error("Get Top Brand Error:", error);
@@ -1164,72 +1177,177 @@ export const getMainCategoryHierarchy = async (req, res) => {
     res.status(500).json({ message: "Server error", error: err.message });
   }
 };
-export const createTopCategory = async (req, res) => {
+// ============= ADD SINGLE CATEGORY TO TOP CATEGORIES =============
+// ============= ADD SINGLE CATEGORY TO TOP CATEGORIES (No Image Upload) =============
+export const addTopCategory = async (req, res) => {
   try {
-    const { displayName, displayNames, order, orders } = req.body;
-    // Remove categoryId and categoryIds from destructuring
+    const { categoryId, displayName, order, imageUrl } = req.body;
 
-    let files = [];
-
-    if (req.files) {
-      if (req.files.image) {
-        files = req.files.image;
-      }
-      if (req.files.images) {
-        files = req.files.images;
-      }
-    }
-
-    if (!files || files.length === 0) {
-      return res
-        .status(400)
-        .json({ message: "At least one image is required" });
-    }
-
-    // MULTIPLE UPLOAD
-    if (files.length > 1) {
-      const displayNameArray =
-        typeof displayNames === "string"
-          ? JSON.parse(displayNames)
-          : displayNames;
-      const orderArray =
-        typeof orders === "string" ? JSON.parse(orders) : orders;
-
-      const topCategories = files.map((file, index) => ({
-        // categoryId will be auto-generated by MongoDB
-        displayName: displayNameArray[index],
-        imageUrl: `/uploads/landing/${file.filename}`,
-        order: orderArray?.[index] || index,
-      }));
-
-      const savedCategories = await TopCategory.insertMany(topCategories);
-
-      return res.status(201).json({
-        message: "Multiple top categories created successfully",
-        count: savedCategories.length,
-        data: savedCategories,
+    // Validate category exists
+    const category = await MainCategory.findById(categoryId);
+    if (!category) {
+      return res.status(404).json({
+        success: false,
+        message: "Category not found"
       });
     }
 
-    // SINGLE UPLOAD
+    // Check if category is already in top categories
+    const existingTopCategory = await TopCategory.findOne({ categoryId });
+    if (existingTopCategory) {
+      return res.status(400).json({
+        success: false,
+        message: "Category is already in top categories"
+      });
+    }
+
+    // Use provided imageUrl or category's existing image, or handle optional upload
+    let finalImageUrl = imageUrl || category.image;
+
+    // Optional: Allow image override via upload
+    if (req.file) {
+      finalImageUrl = `/uploads/landing/${req.file.filename}`;
+    }
+
+    if (!finalImageUrl) {
+      return res.status(400).json({
+        success: false,
+        message: "No image available. Category must have an image or provide imageUrl"
+      });
+    }
+
+    // Create top category entry
     const topCategory = new TopCategory({
-      // categoryId will be auto-generated by MongoDB
-      displayName,
-      imageUrl: `/uploads/landing/${files[0].filename}`,
+      categoryId,
+      displayName: displayName || category.categoryName,
+      imageUrl: finalImageUrl,
       order: order || 0,
     });
 
     await topCategory.save();
 
-    res.status(201).json({
-      message: "Top category created successfully",
-      data: topCategory,
+    // Populate before sending response
+    await topCategory.populate({
+      path: 'categoryId',
+      select: 'categoryName description image'
     });
-  } catch (err) {
-    console.error("TopCategory Error:", err);
-    res.status(500).json({ message: "Server error", error: err.message });
+
+    res.status(201).json({
+      success: true,
+      message: "Category added to top categories successfully",
+      data: topCategory
+    });
+  } catch (error) {
+    console.error("Add Top Category Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to add top category",
+      error: error.message
+    });
   }
 };
+
+// ============= ADD MULTIPLE CATEGORIES TO TOP CATEGORIES (No Image Upload) =============
+export const addMultipleTopCategories = async (req, res) => {
+  try {
+    const { categories } = req.body; // Array of { categoryId, displayName?, order?, imageUrl? }
+
+    if (!categories || !Array.isArray(categories) || categories.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide an array of categories"
+      });
+    }
+
+    const results = {
+      success: [],
+      failed: []
+    };
+
+    for (const item of categories) {
+      try {
+        const { categoryId, displayName, order, imageUrl } = item;
+
+        // Validate category exists
+        const category = await MainCategory.findById(categoryId);
+        if (!category) {
+          results.failed.push({
+            categoryId,
+            reason: "Category not found"
+          });
+          continue;
+        }
+
+        // Check if already in top categories
+        const existingTopCategory = await TopCategory.findOne({ categoryId });
+        if (existingTopCategory) {
+          results.failed.push({
+            categoryId,
+            reason: "Category is already in top categories"
+          });
+          continue;
+        }
+
+        // Use provided imageUrl or category's existing image
+        const finalImageUrl = imageUrl || category.image;
+
+        if (!finalImageUrl) {
+          results.failed.push({
+            categoryId,
+            reason: "No image available for this category"
+          });
+          continue;
+        }
+
+        // Create top category entry
+        const topCategory = new TopCategory({
+          categoryId,
+          displayName: displayName || category.categoryName,
+          imageUrl: finalImageUrl,
+          order: order || 0
+        });
+
+        await topCategory.save();
+
+        // Populate before adding to success list
+        await topCategory.populate({
+          path: 'categoryId',
+          select: 'categoryName description image'
+        });
+
+        results.success.push(topCategory);
+      } catch (error) {
+        results.failed.push({
+          categoryId: item.categoryId,
+          reason: error.message
+        });
+      }
+    }
+
+    res.status(201).json({
+      success: true,
+      message: `Added ${results.success.length} categories to top categories. ${results.failed.length} failed.`,
+      data: {
+        added: results.success,
+        failed: results.failed,
+        summary: {
+          total: categories.length,
+          successful: results.success.length,
+          failed: results.failed.length
+        }
+      }
+    });
+  } catch (error) {
+    console.error("Add Multiple Top Categories Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to add top categories",
+      error: error.message
+    });
+  }
+};
+
+// ============= GET ALL TOP CATEGORIES =============
 export const getAllTopCategories = async (req, res) => {
   try {
     const { page = 1, limit = 10 } = req.query;
@@ -1244,6 +1362,7 @@ export const getAllTopCategories = async (req, res) => {
     const total = await TopCategory.countDocuments({ isActive: true });
 
     res.status(200).json({
+      success: true,
       message: "Top categories fetched successfully",
       data: topCategories,
       pagination: {
@@ -1254,9 +1373,15 @@ export const getAllTopCategories = async (req, res) => {
       },
     });
   } catch (err) {
-    res.status(500).json({ message: "Server error", error: err.message });
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: err.message
+    });
   }
 };
+
+// ============= DELETE TOP CATEGORY =============
 export const deleteTopCategory = async (req, res) => {
   try {
     const { id } = req.params;
@@ -1264,12 +1389,75 @@ export const deleteTopCategory = async (req, res) => {
     const topCategory = await TopCategory.findByIdAndDelete(id);
 
     if (!topCategory) {
-      return res.status(404).json({ message: "Top category not found" });
+      return res.status(404).json({
+        success: false,
+        message: "Top category not found"
+      });
     }
 
-    res.status(200).json({ message: "Top category deleted successfully" });
+    res.status(200).json({
+      success: true,
+      message: "Top category removed successfully"
+    });
   } catch (err) {
-    res.status(500).json({ message: "Server error", error: err.message });
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: err.message
+    });
+  }
+};
+// ============= UPDATE TOP CATEGORY =============
+export const updateTopCategory = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { categoryId, displayName, order, isActive } = req.body;
+
+    const updateData = {};
+
+    if (categoryId) {
+      // Validate new category exists
+      const category = await Category.findById(categoryId);
+      if (!category) {
+        return res.status(404).json({
+          success: false,
+          message: "Category not found"
+        });
+      }
+      updateData.categoryId = categoryId;
+    }
+
+    if (displayName !== undefined) updateData.displayName = displayName;
+    if (order !== undefined) updateData.order = order;
+    if (isActive !== undefined) updateData.isActive = isActive;
+
+    if (req.file) {
+      updateData.imageUrl = req.file.path || `/uploads/landing/${req.file.filename}`;
+    }
+
+    const topCategory = await TopCategory.findByIdAndUpdate(id, updateData, {
+      new: true,
+      runValidators: true,
+    }).populate("categoryId", "categoryName description");
+
+    if (!topCategory) {
+      return res.status(404).json({
+        success: false,
+        message: "Top category not found"
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Top category updated successfully",
+      data: topCategory,
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: err.message
+    });
   }
 };
 // ============= FEATURED CATEGORIES =============
@@ -1608,34 +1796,6 @@ export const deleteFeaturedCategory = async (req, res) => {
 //     }
 // };
 // ============= UPDATE TOP CATEGORY =============
-export const updateTopCategory = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { categoryId, displayName, order, isActive } = req.body;
-
-    const updateData = { categoryId, displayName, order, isActive };
-
-    if (req.file) {
-      updateData.imageUrl = req.file.path || `/uploads/${req.file.filename}`;
-    }
-
-    const topCategory = await TopCategory.findByIdAndUpdate(id, updateData, {
-      new: true,
-      runValidators: true,
-    }).populate("categoryId", "categoryName description");
-
-    if (!topCategory) {
-      return res.status(404).json({ message: "Top category not found" });
-    }
-
-    res.status(200).json({
-      message: "Top category updated successfully",
-      data: topCategory,
-    });
-  } catch (err) {
-    res.status(500).json({ message: "Server error", error: err.message });
-  }
-};
 // ============= UPDATE FEATURED CATEGORY =============
 export const updateFeaturedCategory = async (req, res) => {
   try {
