@@ -19,7 +19,8 @@ import {
   getPatientHistoryById,
   approveRecallAppointment,
   getPatientTreatmentPlans,
-  getDoctorRevenue
+  getDoctorRevenue,
+  getPatientsIncomeSummary
 } from "../controller/patientAppointmentController.js";
 import { authClinicDoctor } from "../middleware/authClinicDoctor.js";
 import { authDoctor } from "../middleware/authDoctor.js";
@@ -51,4 +52,5 @@ patientAppointmentRouter.route("/visit-history/:id").get(getPatientHistoryById);
 patientAppointmentRouter.route("/recall-approval/:id").patch(approveRecallAppointment);
 patientAppointmentRouter.route("/treatment-plans/:id").get(getPatientTreatmentPlans)
 patientAppointmentRouter.route("/doctor-revenue").get(authDoctor,getDoctorRevenue)
+patientAppointmentRouter.route("/income-summary").get(getPatientsIncomeSummary);
 export default patientAppointmentRouter;
