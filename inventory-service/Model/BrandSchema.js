@@ -26,7 +26,8 @@ const brandSchema = new Schema({
     },
     image: { 
         type: String,
-        default: null  // Optional now
+        default: null , // Optional now
+        required: true
     },
     isActive: {
         type: Boolean,

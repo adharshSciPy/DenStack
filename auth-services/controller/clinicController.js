@@ -455,17 +455,7 @@ const getClinicDashboardDetails = async (req, res) => {
     }
 
     // ✅ Define async functions for each external API
-    const fetchPatients = async () => {
-      try {
-        const response = await axios.get(
-          `${PATIENT_SERVICE_BASE_URL}/patient/clinic-patients/${clinicId}`
-        );
-        return response.data?.data || [];
-      } catch (err) {
-        console.error("❌ Error fetching patients:", err.message);
-        return [];
-      }
-    };
+    
 
     const fetchAppointments = async () => {
       try {
@@ -494,10 +484,8 @@ const getClinicDashboardDetails = async (req, res) => {
     const fetchPendingLabOrders = async () => {
       try {
         const response = await axios.get(
-          `${LAB_SERVICE_BASE_URL}/api/v1/lab-order/pending-orders/${clinicId}`
+          `${LAB_SERVICE_BASE_URL}/api/v1/lab-orders/clinic-dental-orders/${clinicId}?status=pending`
         );
-        // console.log("1212",response);
-
         return {
           count: response.data?.count || 0,
           orders: response.data?.pendingOrders || [],
@@ -507,14 +495,24 @@ const getClinicDashboardDetails = async (req, res) => {
         return { count: 0, orders: [] };
       }
     };
-
+    const fetchTotalRevenue = async () => {
+      try {
+        const response = await axios.get(`${PATIENT_SERVICE_BASE_URL}/consultation/current-month-revenue/${clinicId}`);
+        // console.log("this",response);
+        return response.data?.totalRevenue || 0;
+      } catch (error) {
+        console.error("❌ Error fetching total revenue:", error);
+        return 0;
+      }
+    }
 
     // ✅ Run all 4 external requests in parallel
-    const [patients, todaysAppointments, activeDoctors, pendingLabOrders] = await Promise.all([
-      fetchPatients(),
+    const [ todaysAppointments, activeDoctors, pendingLabOrders, totalRevenue] = await Promise.all([
+      
       fetchAppointments(),
       fetchActiveDoctors(),
       fetchPendingLabOrders(),
+      fetchTotalRevenue()
     ]);
 
     // ✅ Calculate total staff count
@@ -536,11 +534,12 @@ const getClinicDashboardDetails = async (req, res) => {
         subscription: clinic.subscription,
         totalStaffCount,
       },
-      patients,
+     
       todaysAppointments,
       activeDoctors,
-      pendingLabOrders: pendingLabOrders.orders,
+      // pendingLabOrders: pendingLabOrders.orders,
       pendingLabOrdersCount: pendingLabOrders.count,
+      totalRevenue: totalRevenue,
     });
   } catch (error) {
     console.error("getClinicDashboardDetails error:", error);

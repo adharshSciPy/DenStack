@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { addStageToTreatmentPlan, completeStage, consultPatient, finishTreatmentPlan, startTreatmentPlan, updateProcedureStatus,removeProcedure,removeStage,removeTreatmentPlan, cancelTreatmentPlan,} from "../controller/doctorConsultationController.js";
+import { addStageToTreatmentPlan, completeStage, consultPatient, finishTreatmentPlan, startTreatmentPlan, updateProcedureStatus,removeProcedure,removeStage,removeTreatmentPlan, cancelTreatmentPlan,getDoctorDashboard,getWeeklyStats,getDoctorAnalytics,getCurrentMonthRevenue} from "../controller/doctorConsultationController.js";
 import { authClinicDoctor } from "../middleware/authClinicDoctor.js";
 import { authDoctor } from "../middleware/authDoctor.js";
 import { uploadFiles } from "../middleware/multer.js";
@@ -16,4 +16,8 @@ doctorConsultationRouter.delete("/remove-procedure/:id/:toothNumber", authDoctor
 doctorConsultationRouter.delete("/remove-stage/:id/:stageNumber", authDoctor, removeStage);
 doctorConsultationRouter.delete("/remove-plan/:id", authDoctor, removeTreatmentPlan);
 doctorConsultationRouter.patch("/cancel-plan/:id", authDoctor, cancelTreatmentPlan);
+doctorConsultationRouter.get("/doctor-dashboard", authDoctor, getDoctorDashboard);
+doctorConsultationRouter.get("/weekly-stats", authDoctor, getWeeklyStats);
+doctorConsultationRouter.get("/analytics", authDoctor, getDoctorAnalytics);
+doctorConsultationRouter.get("/current-month-revenue/:clinicId", getCurrentMonthRevenue);
 export default doctorConsultationRouter;

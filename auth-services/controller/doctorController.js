@@ -12,7 +12,8 @@ const generateDoctorId = () => {
 };
 // ====== Register Doctor ======
 const registerDoctor = async (req, res) => {
-  const { name, email, phoneNumber, password, specialization, licenseNumber } = req.body;
+  const { name, email, phoneNumber, password, specialization, licenseNumber } =
+    req.body;
 
   try {
     if (!name || !nameValidator(name)) {
@@ -101,7 +102,6 @@ const registerDoctor = async (req, res) => {
   }
 };
 
-
 // ====== Login Doctor ======
 const loginDoctor = async (req, res) => {
   const { email, password } = req.body;
@@ -122,7 +122,11 @@ const loginDoctor = async (req, res) => {
 
     // ✅ Check approval status
     if (!doctor.approve) {
-      return res.status(403).json({ message: "Your account is not approved yet. Please contact admin." });
+      return res
+        .status(403)
+        .json({
+          message: "Your account is not approved yet. Please contact admin.",
+        });
     }
 
     const isMatch = await doctor.isPasswordCorrect(password);
@@ -155,7 +159,6 @@ const loginDoctor = async (req, res) => {
   }
 };
 
-
 // unckecked api
 const allDoctors = async (req, res) => {
   try {
@@ -169,7 +172,7 @@ const allDoctors = async (req, res) => {
     if (search) {
       query.$or = [
         { name: { $regex: search, $options: "i" } }, // case-insensitive search
-        { phoneNumber: { $regex: search, $options: "i" } }
+        { phoneNumber: { $regex: search, $options: "i" } },
       ];
     }
 
@@ -187,7 +190,7 @@ const allDoctors = async (req, res) => {
       total,
       page,
       totalPages: Math.ceil(total / limit),
-      doctors
+      doctors,
     });
   } catch (error) {
     console.error("Error fetching doctors:", error);
@@ -268,9 +271,13 @@ const doctorStats = async (req, res) => {
 
     const pendingDoctors = await Doctor.countDocuments({ status: "Pending" });
 
-    const independentDoctors = await Doctor.countDocuments({ isIndependent: true });
+    const independentDoctors = await Doctor.countDocuments({
+      isIndependent: true,
+    });
 
-    const clinicDoctors = await Doctor.countDocuments({ isClinicOnboard: true });
+    const clinicDoctors = await Doctor.countDocuments({
+      isClinicOnboard: true,
+    });
 
     res.status(200).json({
       success: true,
@@ -280,14 +287,62 @@ const doctorStats = async (req, res) => {
         inactiveDoctors,
         pendingDoctors,
         independentDoctors,
-        clinicDoctors
-      }
+        clinicDoctors,
+      },
     });
-
   } catch (error) {
     console.error("Doctor stats error:", error);
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
-export { registerDoctor, loginDoctor, allDoctors, fetchDoctorById, fetchDoctorByUniqueId, doctorStats };
+const getDoctorsBatch = async (req, res) => {
+  try {
+    const { doctorIds } = req.body;
+
+    if (!doctorIds || !Array.isArray(doctorIds)) {
+      return res.status(400).json({
+        success: false,
+        message: "doctorIds array is required",
+      });
+    }
+
+    // Limit the number of IDs to prevent abuse
+    const limitedIds = doctorIds.slice(0, 100);
+    const objectIds = limitedIds.map((id) => new mongoose.Types.ObjectId(id));
+
+    const doctors = await Doctor.find({
+      _id: { $in: objectIds },
+    })
+      .select("name email  specialization")
+      .lean();
+
+    // Convert to map for easy lookup
+    const doctorsMap = {};
+    doctors.forEach((doctor) => {
+      doctorsMap[doctor._id] = doctor;
+    });
+
+    res.json({
+      success: true,
+      doctors: doctorsMap,
+      count: doctors.length,
+    });
+  } catch (error) {
+    console.error("Error in getDoctorsBatch:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
+export {
+  registerDoctor,
+  loginDoctor,
+  allDoctors,
+  fetchDoctorById,
+  fetchDoctorByUniqueId,
+  doctorStats,
+  getDoctorsBatch,
+};
