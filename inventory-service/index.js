@@ -15,6 +15,7 @@ import ecomOrderRouter from "./Routes/E-OrderRouter.js";
 import cartRouter from "./Routes/cartRouter.js";
 import buyingGuideRouter from "./Routes/buyingGuideRouter.js";
 import eventRouter from "./Routes/eventRouter.js";
+import userAccountRouter from "./Routes/userAccountRouter.js";
 
 
 import lowStockAlertsCron from "./middlewares/lowStockCron.js";
@@ -66,6 +67,7 @@ app.use("/api/v1/landing", landingRouter);
 app.use("/api/v1/ecom-order", ecomOrderRouter);
 app.use("/api/v1/cart", cartRouter);
 app.use("/api/v1/event", eventRouter);
+app.use("/api/v1/userAccount", userAccountRouter);
 
 const PORT = process.env.PORT || 8004;
 app.listen(PORT, () => {
