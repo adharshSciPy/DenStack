@@ -57,12 +57,31 @@ const doctorSchema = new Schema(
       type: String,
       default: DOCTOR_ROLE,
     },
-    // ACTIVE STATUS
     status: {
       type: String,
       enum: ["Active", "Inactive", "Pending"],
       default: "Pending",
     },
+    // ✅ NEW FIELDS ADDED BELOW
+    isClinicDoctor: {
+      type: Boolean,
+      default: false,
+    },
+    clinicOnboardingDetails: [{
+      clinicId: {
+        type: Schema.Types.ObjectId,
+        ref: 'Clinic'
+      },
+      onboardedAt: {
+        type: Date,
+        default: Date.now
+      },
+      status: {
+        type: String,
+        enum: ['active', 'inactive'],
+        default: 'active'
+      }
+    }]
   },
   { timestamps: true }
 );
