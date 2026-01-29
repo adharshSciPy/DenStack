@@ -63,7 +63,6 @@ import {
 
 } from "../Controller/LandingController.js";
 import landingUpload from "../middlewares/landingUpload.js";
-
 const landingRouter = express.Router();
 
 // Flexible middleware - accepts both single and multiple files

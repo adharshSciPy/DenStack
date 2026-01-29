@@ -233,35 +233,46 @@ export const createBrand = async (req, res) => {
 };
 export const getAllBrands = async (req, res) => {
   try {
-    const { page = 1, limit = 10, mainCategoryId, subCategoryId } = req.query;
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const { includeInactive = false } = req.query;
 
-    // Build filter
-    const filter = { isActive: true };
-    if (mainCategoryId) filter.mainCategory = mainCategoryId;
-    if (subCategoryId) filter.subCategory = subCategoryId;
+    let filter = {};
+    if (includeInactive !== 'true') {
+      filter.isActive = true;
+    }
 
     const brands = await Brand.find(filter)
-      .populate("mainCategory", "categoryName mainCategoryId description")
-      .populate("subCategory", "categoryName mainCategoryId description")
-      .sort({ name: 1 })
-      .skip(skip)
-      .limit(parseInt(limit));
+      .populate('mainCategory', 'categoryName')
+      .populate('subCategory', 'categoryName')
+      .sort({ createdAt: -1 });
 
-    const total = await Brand.countDocuments(filter);
+    // Fetch products for each brand
+    const brandsWithProducts = await Promise.all(
+      brands.map(async (brand) => {
+        const products = await Product.find({
+          brand: brand._id
+        }).sort({ createdAt: -1 });
+
+        return {
+          ...brand.toObject(),
+          products: products,
+          productCount: products.length
+        };
+      })
+    );
 
     res.status(200).json({
-      message: "Brands fetched successfully",
-      data: brands,
-      pagination: {
-        currentPage: parseInt(page),
-        totalPages: Math.ceil(total / parseInt(limit)),
-        totalItems: total,
-        itemsPerPage: parseInt(limit),
-      },
+      success: true,
+      message: "Brands retrieved successfully",
+      count: brandsWithProducts.length,
+      data: brandsWithProducts
     });
-  } catch (err) {
-    res.status(500).json({ message: "Server error", error: err.message });
+  } catch (error) {
+    console.error("Get All Brands Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch brands",
+      error: error.message
+    });
   }
 };
 // Get Brand by ID
@@ -269,26 +280,41 @@ export const getBrandById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const query = mongoose.Types.ObjectId.isValid(id)
-      ? { _id: id }
-      : { brandId: id };
-
-    const brand = await Brand.findOne(query)
-      .populate("mainCategory", "categoryName mainCategoryId description")
-      .populate("subCategory", "categoryName mainCategoryId description");
+    const brand = await Brand.findById(id)
+      .populate('mainCategory', 'categoryName')
+      .populate('subCategory', 'categoryName');
 
     if (!brand) {
-      return res.status(404).json({ message: "Brand not found" });
+      return res.status(404).json({
+        success: false,
+        message: "Brand not found"
+      });
     }
 
+    // Fetch all products for this brand
+    const products = await Product.find({
+      brand: brand._id
+    }).sort({ createdAt: -1 });
+
     res.status(200).json({
-      message: "Brand fetched successfully",
-      data: brand,
+      success: true,
+      message: "Brand retrieved successfully",
+      data: {
+        brand: brand,
+        products: products,
+        productCount: products.length
+      }
     });
-  } catch (err) {
-    res.status(500).json({ message: "Server error", error: err.message });
+  } catch (error) {
+    console.error("Get Brand Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch brand",
+      error: error.message
+    });
   }
 };
+
 // Get Brands by Main Category
 export const getBrandsByMainCategory = async (req, res) => {
   try {
@@ -617,15 +643,42 @@ export const getAllTopBrands = async (req, res) => {
     const topBrands = await TopBrand.find(filter)
       .populate({
         path: 'brandId',
-        select: 'name description image isActive' // Populate brand details
+        select: 'name description image isActive mainCategory subCategory',
+        populate: [
+          { path: 'mainCategory', select: 'categoryName' },
+          { path: 'subCategory', select: 'categoryName' }
+        ]
       })
       .sort({ order: 1, createdAt: -1 });
+
+    // Fetch products for each top brand
+    const topBrandsWithProducts = await Promise.all(
+      topBrands.map(async (topBrand) => {
+        if (!topBrand.brandId) {
+          return {
+            ...topBrand.toObject(),
+            products: [],
+            productCount: 0
+          };
+        }
+
+        const products = await Product.find({
+          brand: topBrand.brandId._id
+        }).sort({ createdAt: -1 });
+
+        return {
+          ...topBrand.toObject(),
+          products: products,
+          productCount: products.length
+        };
+      })
+    );
 
     res.status(200).json({
       success: true,
       message: "Top brands retrieved successfully",
-      count: topBrands.length,
-      data: topBrands
+      count: topBrandsWithProducts.length,
+      data: topBrandsWithProducts
     });
   } catch (error) {
     console.error("Get Top Brands Error:", error);
@@ -636,6 +689,7 @@ export const getAllTopBrands = async (req, res) => {
     });
   }
 };
+
 
 // ============= UPDATE TOP BRAND =============
 export const updateTopBrand = async (req, res) => {
@@ -714,7 +768,11 @@ export const getTopBrandById = async (req, res) => {
     const topBrand = await TopBrand.findById(id)
       .populate({
         path: 'brandId',
-        select: 'name description image isActive' // Populate brand details
+        select: 'name description image isActive mainCategory subCategory',
+        populate: [
+          { path: 'mainCategory', select: 'categoryName' },
+          { path: 'subCategory', select: 'categoryName' }
+        ]
       });
 
     if (!topBrand) {
@@ -724,19 +782,23 @@ export const getTopBrandById = async (req, res) => {
       });
     }
 
+    if (!topBrand.brandId) {
+      return res.status(404).json({
+        success: false,
+        message: "Associated brand not found"
+      });
+    }
+
     // Fetch all products for this brand
-    const products = await Product.find({ 
-      brandId: topBrand.brandId._id, // Use the populated brandId's _id
-      status: 'active'
-    })
-    .select('productName price images stock category discount')
-    .sort({ createdAt: -1 });
+    const products = await Product.find({
+      brand: topBrand.brandId._id
+    }).sort({ createdAt: -1 });
 
     res.status(200).json({
       success: true,
       message: "Top brand retrieved successfully",
       data: {
-        brand: topBrand,
+        topBrand: topBrand,
         products: products,
         productCount: products.length
       }
@@ -750,6 +812,7 @@ export const getTopBrandById = async (req, res) => {
     });
   }
 };
+
 // ============= TOP CATEGORIES,MAIN CATEGORY,SUB CATEGORY =============
 
 export const createMainCategory = async (req, res) => {
@@ -2013,7 +2076,7 @@ export const addProduct = async (req, res) => {
       brandId,
 
       // Variants (Array of objects with size, color, material, pricing)
-      variants, // [{ size, color, material, originalPrice, discountPrice1, discountPrice2, stock }]
+      variants, // [{ size, color, material, originalPrice, clinicDiscountPrice, doctorDiscountPrice, stock }]
 
       // Stock (if single variant)
       stock,
@@ -2021,8 +2084,8 @@ export const addProduct = async (req, res) => {
 
       // Single pricing (if no variants)
       originalPrice,
-      discountPrice1,
-      discountPrice2,
+      clinicDiscountPrice,
+      doctorDiscountPrice,
 
       // Optional: if you want to add existing product by ID
       productId,
@@ -2137,19 +2200,19 @@ export const addProduct = async (req, res) => {
         // Multiple variants
         processedVariants = variants.map((variant) => {
           const original = parseFloat(variant.originalPrice);
-          const discount1 = variant.discountPrice1
-            ? parseFloat(variant.discountPrice1)
+          const clinicDiscount = variant.clinicDiscountPrice
+            ? parseFloat(variant.clinicDiscountPrice)
             : null;
-          const discount2 = variant.discountPrice2
-            ? parseFloat(variant.discountPrice2)
+          const doctorDiscount = variant.doctorDiscountPrice
+            ? parseFloat(variant.doctorDiscountPrice)
             : null;
 
           // Calculate discount percentages
-          const discountPercentage1 = discount1
-            ? (((original - discount1) / original) * 100).toFixed(2)
+          const clinicDiscountPercentage = clinicDiscount
+            ? (((original - clinicDiscount) / original) * 100).toFixed(2)
             : null;
-          const discountPercentage2 = discount2
-            ? (((original - discount2) / original) * 100).toFixed(2)
+          const doctorDiscountPercentage = doctorDiscount
+            ? (((original - doctorDiscount) / original) * 100).toFixed(2)
             : null;
 
           return {
@@ -2157,13 +2220,13 @@ export const addProduct = async (req, res) => {
             color: variant.color || null,
             material: variant.material || null,
             originalPrice: original,
-            discountPrice1: discount1,
-            discountPrice2: discount2,
-            discountPercentage1: discountPercentage1
-              ? parseFloat(discountPercentage1)
+            clinicDiscountPrice: clinicDiscount,
+            doctorDiscountPrice: doctorDiscount,
+            clinicDiscountPercentage: clinicDiscountPercentage
+              ? parseFloat(clinicDiscountPercentage)
               : null,
-            discountPercentage2: discountPercentage2
-              ? parseFloat(discountPercentage2)
+            doctorDiscountPercentage: doctorDiscountPercentage
+              ? parseFloat(doctorDiscountPercentage)
               : null,
             stock: variant.stock ? parseInt(variant.stock) : 0,
           };
@@ -2171,14 +2234,14 @@ export const addProduct = async (req, res) => {
       } else {
         // Single variant (backward compatibility)
         const original = parseFloat(originalPrice);
-        const discount1 = discountPrice1 ? parseFloat(discountPrice1) : null;
-        const discount2 = discountPrice2 ? parseFloat(discountPrice2) : null;
+        const clinicDiscount = clinicDiscountPrice ? parseFloat(clinicDiscountPrice) : null;
+        const doctorDiscount = doctorDiscountPrice ? parseFloat(doctorDiscountPrice) : null;
 
-        const discountPercentage1 = discount1
-          ? (((original - discount1) / original) * 100).toFixed(2)
+        const clinicDiscountPercentage = clinicDiscount
+          ? (((original - clinicDiscount) / original) * 100).toFixed(2)
           : null;
-        const discountPercentage2 = discount2
-          ? (((original - discount2) / original) * 100).toFixed(2)
+        const doctorDiscountPercentage = doctorDiscount
+          ? (((original - doctorDiscount) / original) * 100).toFixed(2)
           : null;
 
         processedVariants = [
@@ -2187,13 +2250,13 @@ export const addProduct = async (req, res) => {
             color: null,
             material: null,
             originalPrice: original,
-            discountPrice1: discount1,
-            discountPrice2: discount2,
-            discountPercentage1: discountPercentage1
-              ? parseFloat(discountPercentage1)
+            clinicDiscountPrice: clinicDiscount,
+            doctorDiscountPrice: doctorDiscount,
+            clinicDiscountPercentage: clinicDiscountPercentage
+              ? parseFloat(clinicDiscountPercentage)
               : null,
-            discountPercentage2: discountPercentage2
-              ? parseFloat(discountPercentage2)
+            doctorDiscountPercentage: doctorDiscountPercentage
+              ? parseFloat(doctorDiscountPercentage)
               : null,
             stock: stock ? parseInt(stock) : 0,
           },
@@ -2397,30 +2460,30 @@ export const updateProduct = async (req, res) => {
     if (updateData.variants && Array.isArray(updateData.variants)) {
       updateData.variants = updateData.variants.map((variant) => {
         const original = parseFloat(variant.originalPrice);
-        const discount1 = variant.discountPrice1
-          ? parseFloat(variant.discountPrice1)
+        const clinicDiscount = variant.clinicDiscountPrice
+          ? parseFloat(variant.clinicDiscountPrice)
           : null;
-        const discount2 = variant.discountPrice2
-          ? parseFloat(variant.discountPrice2)
+        const doctorDiscount = variant.doctorDiscountPrice
+          ? parseFloat(variant.doctorDiscountPrice)
           : null;
 
-        const discountPercentage1 = discount1
-          ? (((original - discount1) / original) * 100).toFixed(2)
+        const clinicDiscountPercentage = clinicDiscount
+          ? (((original - clinicDiscount) / original) * 100).toFixed(2)
           : null;
-        const discountPercentage2 = discount2
-          ? (((original - discount2) / original) * 100).toFixed(2)
+        const doctorDiscountPercentage = doctorDiscount
+          ? (((original - doctorDiscount) / original) * 100).toFixed(2)
           : null;
 
         return {
           ...variant,
           originalPrice: original,
-          discountPrice1: discount1,
-          discountPrice2: discount2,
-          discountPercentage1: discountPercentage1
-            ? parseFloat(discountPercentage1)
+          clinicDiscountPrice: clinicDiscount,
+          doctorDiscountPrice: doctorDiscount,
+          clinicDiscountPercentage: clinicDiscountPercentage
+            ? parseFloat(clinicDiscountPercentage)
             : null,
-          discountPercentage2: discountPercentage2
-            ? parseFloat(discountPercentage2)
+          doctorDiscountPercentage: doctorDiscountPercentage
+            ? parseFloat(doctorDiscountPercentage)
             : null,
           stock: variant.stock ? parseInt(variant.stock) : 0,
         };
@@ -2448,7 +2511,6 @@ export const updateProduct = async (req, res) => {
     res.status(500).json({ message: "Server error", error: err.message });
   }
 };
-
 // ============= DELETE PRODUCT =============
 export const deleteProduct = async (req, res) => {
   try {

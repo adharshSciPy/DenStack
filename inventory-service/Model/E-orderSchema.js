@@ -12,11 +12,14 @@ const orderItemSchema = new Schema({
         required: true
     },
     variant: {
-        variantId: mongoose.Schema.Types.ObjectId,
-        size: String,
-        color: String,
-        material: String
+    variantId: {
+        type: mongoose.Schema.Types.ObjectId,  // ✅ Add 'type:' wrapper
+        required: true
     },
+    size: String,
+    color: String,
+    material: String
+},
     quantity: {
         type: Number,
         required: true,
@@ -27,10 +30,27 @@ const orderItemSchema = new Schema({
         required: true,
         min: 0
     },
+    originalPrice: {  // ✅ ADDED: Original price before any discount
+        type: Number,
+        min: 0
+    },
     totalCost: {
         type: Number,
         required: true,
         min: 0
+    },
+    discount: {  // ✅ ADDED: Discount amount applied to this item
+        type: Number,
+        default: 0,
+        min: 0
+    },
+    priceType: {  // ✅ ADDED: Type of pricing applied ('clinic' or 'doctor')
+        type: String,
+        enum: ['clinic', 'doctor', 'original'],
+        default: 'original'
+    },
+    appliedDiscount: {  // ✅ ADDED: Description of discount applied
+        type: String
     },
     image: {
         type: String
@@ -99,12 +119,12 @@ const orderSchema = new Schema(
             type: String,
             unique: true
         },
-        clinic: {  // ✅ Changed from 'user' to 'clinic'
+        clinic: {
             type: mongoose.Schema.Types.ObjectId,
             required: true,
             // This will be the clinic ID from auth microservice
         },
-        clinicDetails: {  // ✅ Added to store fetched clinic info
+        clinicDetails: {
             name: String,
             email: String,
             phone: String,
@@ -153,10 +173,22 @@ const orderSchema = new Schema(
             default: 0,
             min: 0
         },
+        discountPercentage: {  // ✅ ADDED: Overall discount percentage for the order
+            type: Number,
+            default: 0,
+            min: 0
+        },
         totalAmount: {
             type: Number,
             required: true,
             min: 0
+        },
+        userRole: {  // ✅ ADDED: Role of user who placed the order (for pricing audit)
+            type: String
+        },
+        isClinicDoctor: {  // ✅ ADDED: Whether user was a clinic doctor (for pricing audit)
+            type: Boolean,
+            default: false
         },
         orderNotes: {
             type: String
@@ -184,7 +216,7 @@ const orderSchema = new Schema(
 orderSchema.pre("save", async function (next) {
     if (!this.orderId) {
         const last = await mongoose.model("EcomOrder").findOne({}, {}, { sort: { createdAt: -1 } });
-        let newId = "EORD#0001";  // ✅ Changed to EORD for E-commerce Order
+        let newId = "EORD#0001";
         if (last && last.orderId) {
             const num = parseInt(last.orderId.split("#")[1]);
             newId = `EORD#${(num + 1).toString().padStart(4, "0")}`;
@@ -208,9 +240,10 @@ orderSchema.pre("save", function (next) {
 });
 
 // Index for faster queries
-orderSchema.index({ clinic: 1, createdAt: -1 });  // ✅ Changed from 'user' to 'clinic'
+orderSchema.index({ clinic: 1, createdAt: -1 });
 orderSchema.index({ orderStatus: 1 });
 orderSchema.index({ 'paymentDetails.status': 1 });
+orderSchema.index({ userRole: 1 });  // ✅ ADDED: Index for role-based queries
 
 const EcomOrder = mongoose.model("EcomOrder", orderSchema);
 export default EcomOrder;

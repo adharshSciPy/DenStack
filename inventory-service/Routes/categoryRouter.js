@@ -1,6 +1,6 @@
 import { Router } from "express"
 import { createCategory, getmainCategory, getSubCategory, getAllCategory, deleteCategory, categoryProducts, getCategoryDashboard } from "../Controller/categoryController.js"
-import { verifyAuthToken, authorizeRoles } from "../middlewares/authmiddleware.js"
+import { verifyAuthToken, authorizeRoles } from "../middlewares/authMiddleware.js"
 const SUPER_ADMIN = process.env.SUPERADMIN_ROLE
 const CLINIC_ROLE = process.env.CLINIC_ROLE
 

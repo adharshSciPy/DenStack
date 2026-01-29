@@ -19,23 +19,25 @@ const variantSchema = new Schema({
         required: true,
         min: 0
     },
-    discountPrice1: {
+    // ✅ Clinic Discount (for clinics purchasing)
+    clinicDiscountPrice: {
         type: Number,
         default: null,
         min: 0
     },
-    discountPrice2: {
-        type: Number,
-        default: null,
-        min: 0
-    },
-    discountPercentage1: {
+    clinicDiscountPercentage: {
         type: Number,
         default: null,
         min: 0,
         max: 100
     },
-    discountPercentage2: {
+    // ✅ Doctor/User Discount (for doctors onboarded in clinic or other users)
+    doctorDiscountPrice: {
+        type: Number,
+        default: null,
+        min: 0
+    },
+    doctorDiscountPercentage: {
         type: Number,
         default: null,
         min: 0,
