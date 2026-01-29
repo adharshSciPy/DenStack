@@ -1,71 +1,91 @@
 import mongoose from "mongoose";
 import axios from "axios";
 import dotenv from "dotenv";
+// import { TOOTH_CONDITIONS } from "../middleware/toothSurfaceAndConditions";
+import { Schema } from "mongoose";
+import { TOOTH_CONDITIONS, TOOTH_SURFACES} from "../middleware/toothSurfaceAndConditions.js";
+
 dotenv.config();
 const AUTH_SERVICE_BASE_URL = process.env.AUTH_SERVICE_BASE_URL;
 const PATIENT_ROLE = process.env.PATIENT_ROLE;
+
 const dentalChartEntrySchema = new mongoose.Schema({
   toothNumber: { 
     type: Number, 
-    required: true, 
-    min: 1, 
-    max: 32 
-  },
-  quadrant: {
-    type: String,
-    enum: ['upper-right', 'upper-left', 'lower-left', 'lower-right'],
-    required: true
-  },
-  surface: {
-    type: String,
-    enum: ['occlusal', 'mesial', 'distal', 'buccal', 'lingual', 'full'],
-    default: 'full'
-  },
-  procedureType: {
-    type: String,
-    enum: [
-      'filling', 
-      'root-canal', 
-      'crown', 
-      'extraction', 
-      'cleaning', 
-      'implant',
-      'bridge',
-      'veneer',
-      'other'
-    ],
-    required: true
-  },
-  status: {
-    type: String,
-    enum: ['healthy', 'treated', 'in-progress', 'requires-attention', 'missing'],
-    default: 'treated'
-  },
-  notes: { 
-    type: String, 
-    maxlength: 500 
-  },
-  performedBy: { 
-    type: mongoose.Schema.Types.ObjectId, 
-    ref: "Doctor",
     required: true 
   },
-  performedAt: { 
-    type: Date, 
-    default: Date.now 
+  
+  // Keep conditions for general tooth conditions
+  conditions: [{ 
+    type: String, 
+    enum: TOOTH_CONDITIONS 
+  }],
+  
+  // Unified procedures array - all dental work goes here
+  procedures: [{
+    type: {
+      type: String,
+      enum: ["condition", "treatment"],
+      default: "treatment"
+    },
+    name: { type: String, required: true },
+    surface: { 
+      type: String, 
+      enum: [...TOOTH_SURFACES, "entire"],  // Add 'entire' for full tooth procedures
+      required: true 
+    },
+    status: {
+      type: String,
+      enum: ["planned", "in-progress", "completed"],
+      default: "completed"
+    },
+    
+    // For conditions
+    conditionType: {
+      type: String,
+      enum: TOOTH_CONDITIONS
+    },
+    
+    // For treatments
+    procedureType: {
+      type: String,
+      enum: ["filling", "extraction", "root-canal", "crown", "denture", "cleaning", "other"]
+    },
+    
+    // Cost information
+    cost: Number,
+    estimatedCost: Number,
+    
+    // Metadata
+    notes: String,
+    date: { type: Date, default: Date.now },
+    performedBy: { type: Schema.Types.ObjectId, ref: "Doctor" },
+    
+    // References
+    treatmentPlanId: {
+      type: Schema.Types.ObjectId,
+      ref: "TreatmentPlan"
+    },
+    visitIds: [{  
+      type: Schema.Types.ObjectId,
+      ref: "PatientHistory"
+    }],
+    
+    // For tracking
+    _id: false  
+  }],
+  
+  lastVisitId: {
+    type: Schema.Types.ObjectId,
+    ref: "PatientHistory"
   },
-  visitId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "PatientHistory",
-    required: true
-  },
-  treatmentPlanId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "TreatmentPlan"
-  },
-  materials: [String], // e.g., ['composite', 'amalgam']
-  cost: { type: Number, min: 0 }
+  
+  // Timestamps
+  lastUpdated: { type: Date, default: Date.now },
+  lastUpdatedBy: { type: Schema.Types.ObjectId, ref: "Doctor" }
 }, { timestamps: true });
+
+// Remove surfaceConditions array since everything goes to procedures
 
 
 const patientSchema = new mongoose.Schema({

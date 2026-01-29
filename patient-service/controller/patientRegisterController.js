@@ -835,5 +835,178 @@ const updatePatientDetails = async (req, res) => {
     });
   }
 };
-
-export { registerPatient, getPatientWithUniqueId, getAllPatients, patientCheck, getPatientsByClinic, getPatientById, sendSMSLink, setPassword, login,getPatientByRandomId ,addLabOrderToPatient,getPatientFullCRM,updatePatientDetails,getAllPatientsWithBirthdays}
+const getPatientDentalChart = async (req, res) => {
+  try {
+    const { patientId } = req.params;
+    
+    if (!mongoose.Types.ObjectId.isValid(patientId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid patient ID"
+      });
+    }
+    
+    // Get patient with dental chart only
+    const patient = await Patient.findById(patientId)
+      .select('name age gender dateOfBirth dentalChart patientUniqueId')
+      .lean();
+    
+    if (!patient) {
+      return res.status(404).json({
+        success: false,
+        message: "Patient not found"
+      });
+    }
+    
+    // Determine age group based on age or dateOfBirth
+    let ageGroup = 'adult'; // Default
+    let calculatedAge = patient.age;
+    
+    // If no age but has dateOfBirth, calculate age
+    if (!patient.age && patient.dateOfBirth) {
+      const birthDate = new Date(patient.dateOfBirth);
+      const today = new Date();
+      let age = today.getFullYear() - birthDate.getFullYear();
+      const monthDiff = today.getMonth() - birthDate.getMonth();
+      
+      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+        age--;
+      }
+      calculatedAge = age;
+    }
+    
+    // Pediatric typically up to 18 years
+    if (calculatedAge !== undefined && calculatedAge <= 18) {
+      ageGroup = 'pediatric';
+    }
+    
+    // Determine tooth type based on age group
+    const toothType = ageGroup === 'pediatric' ? 'primary' : 'permanent';
+    
+    // Filter and process dental chart
+    const dentalChart = [];
+    const seenTeeth = new Set(); // To avoid duplicates
+    
+    if (patient.dentalChart && Array.isArray(patient.dentalChart)) {
+      // Process each tooth entry
+      patient.dentalChart.forEach(tooth => {
+        const toothNum = tooth.toothNumber;
+        
+        // Skip if we've already processed this tooth (safety check)
+        if (seenTeeth.has(toothNum)) {
+          console.log(`⚠️ Skipping duplicate tooth ${toothNum} for patient ${patientId}`);
+          return;
+        }
+        
+        seenTeeth.add(toothNum);
+        
+        // Format the tooth data
+        const toothData = {
+          toothNumber: toothNum,
+          toothType: toothType,
+          ageGroup: ageGroup,
+          conditions: tooth.conditions || [],
+          surfaceConditions: tooth.surfaceConditions || [],
+          procedures: tooth.procedures || [],
+          lastUpdated: tooth.lastUpdated || tooth.updatedAt || tooth.createdAt,
+          lastUpdatedBy: tooth.lastUpdatedBy,
+          lastVisitId: tooth.lastVisitId
+        };
+        
+        dentalChart.push(toothData);
+      });
+    }
+    
+    // Sort by tooth number
+    dentalChart.sort((a, b) => a.toothNumber - b.toothNumber);
+    
+    // Calculate summary statistics
+    const teethWithConditions = dentalChart.filter(tooth => 
+      tooth.conditions.length > 0 || 
+      tooth.surfaceConditions.length > 0
+    ).length;
+    
+    const teethWithProcedures = dentalChart.filter(tooth => 
+      tooth.procedures.length > 0
+    ).length;
+    
+    const totalProcedures = dentalChart.reduce((sum, tooth) => 
+      sum + tooth.procedures.length, 0
+    );
+    
+    const plannedProcedures = dentalChart.reduce((sum, tooth) => 
+      sum + tooth.procedures.filter(p => p.status === 'planned').length, 0
+    );
+    
+    const completedProcedures = dentalChart.reduce((sum, tooth) => 
+      sum + tooth.procedures.filter(p => p.status === 'completed').length, 0
+    );
+    
+    // Get all unique conditions for quick overview
+    const allConditions = new Set();
+    const allProcedureTypes = new Set();
+    
+    dentalChart.forEach(tooth => {
+      tooth.conditions.forEach(cond => allConditions.add(cond));
+      tooth.surfaceConditions.forEach(sc => 
+        sc.conditions.forEach(cond => allConditions.add(cond))
+      );
+      tooth.procedures.forEach(proc => allProcedureTypes.add(proc.name));
+    });
+    
+    // Format last updated date
+    const lastUpdated = dentalChart.length > 0 
+      ? dentalChart.reduce((latest, tooth) => {
+          const toothDate = new Date(tooth.lastUpdated);
+          return toothDate > latest ? toothDate : latest;
+        }, new Date(0))
+      : null;
+    
+    return res.status(200).json({
+      success: true,
+      data: {
+        patient: {
+          id: patientId,
+          name: patient.name,
+          age: calculatedAge,
+          ageGroup: ageGroup,
+          gender: patient.gender,
+          patientUniqueId: patient.patientUniqueId
+        },
+        dentalChart: dentalChart,
+        summary: {
+          totalTeeth: dentalChart.length,
+          teethWithConditions,
+          teethWithProcedures,
+          totalProcedures,
+          plannedProcedures,
+          completedProcedures,
+          uniqueConditions: Array.from(allConditions),
+          uniqueProcedureTypes: Array.from(allProcedureTypes),
+          lastUpdated: lastUpdated,
+          chartAgeGroup: ageGroup,
+          toothType: toothType
+        },
+        metadata: {
+          source: 'patient_document',
+          toothMapping: toothType === 'primary' ? 'primary_teeth' : 'permanent_teeth',
+          note: 'Dental chart fetched directly from patient document. No duplicates allowed.',
+          validation: {
+            duplicateTeethChecked: true,
+            ageGroupValidated: true,
+            toothTypeAssigned: true
+          }
+        }
+      }
+    });
+    
+  } catch (error) {
+    console.error("getPatientDentalChart error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error while fetching dental chart",
+      error: error.message
+    });
+  }
+};
+export { registerPatient, getPatientWithUniqueId, getAllPatients, patientCheck, getPatientsByClinic, getPatientById, sendSMSLink, setPassword, login,getPatientByRandomId ,addLabOrderToPatient,getPatientFullCRM,updatePatientDetails,getAllPatientsWithBirthdays,getPatientDentalChart }
