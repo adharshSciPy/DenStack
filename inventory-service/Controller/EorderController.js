@@ -2,6 +2,7 @@ import EcomOrder from "../Model/E-orderSchema.js";
 import Product from "../Model/ProductSchema.js";
 import mongoose from "mongoose";
 import axios from "axios";
+import { getPriceForUser, calculateOrderTotal } from "../utils/pricingHelper.js";
 
 const AUTH_BASE = process.env.AUTH_SERVICE_BASE_URL;
 
@@ -26,11 +27,40 @@ const fetchClinicDetails = async (clinicId) => {
     }
 };
 
+// Helper function to get user role and clinic-doctor status
+const getUserRoleInfo = async (userId) => {
+    try {
+        // Try multiple possible endpoints
+        let response;
+        try {
+            response = await axios.get(`${AUTH_BASE}/user/${userId}`);
+        } catch (err) {
+            // Try alternate endpoint if first one fails
+            response = await axios.get(`${AUTH_BASE}/doctor/details/${userId}`);
+        }
+
+        const userData = response.data?.data || response.data;
+        
+        return {
+            role: userData.role || userData.roleId || "600",
+            isClinicDoctor: userData.isClinicDoctor || false
+        };
+    } catch (error) {
+        console.error("Error fetching user role:", error.message);
+        // Default to a standard user role if fetch fails
+        return {
+            role: "600", // Default to doctor role
+            isClinicDoctor: false
+        };
+    }
+};
+
 // ============= CREATE ECOM ORDER =============
 export const createEcomOrder = async (req, res) => {
     try {
         const {
             clinicId,
+            userId, // User placing the order (to determine pricing)
             items, // [{ productId, variantId, quantity }]
             shippingAddress,
             paymentMethod,
@@ -56,9 +86,19 @@ export const createEcomOrder = async (req, res) => {
             });
         }
 
-        // Process items and calculate totals
+        // Get user role information for pricing
+        let userRole = "600"; // Default to doctor role
+        let isClinicDoctor = false;
+        
+        if (userId) {
+            const roleInfo = await getUserRoleInfo(userId);
+            userRole = roleInfo.role;
+            isClinicDoctor = roleInfo.isClinicDoctor;
+        }
+
+        // Process items and calculate totals with role-based pricing
         let orderItems = [];
-        let subtotal = 0;
+        let cartItems = [];
 
         for (const item of items) {
             const product = await Product.findById(item.productId);
@@ -86,37 +126,52 @@ export const createEcomOrder = async (req, res) => {
                 });
             }
 
-            // Use best available price (discountPrice2 > discountPrice1 > originalPrice)
-            const price = variant.discountPrice2 || variant.discountPrice1 || variant.originalPrice;
-            const totalCost = price * item.quantity;
-
-            orderItems.push({
-                product: new mongoose.Types.ObjectId(product._id),
-                productName: product.name,
-                variant: {
-                    variantId: variant._id,
-                    size: variant.size,
-                    color: variant.color,
-                    material: variant.material
-                },
+            // Add to cart items for pricing calculation
+            cartItems.push({
+                variant: variant,
                 quantity: item.quantity,
-                price: price,
-                totalCost: totalCost,
-                image: product.image[0] || null
+                product: product
             });
-
-            subtotal += totalCost;
 
             // Reduce stock
             variant.stock -= item.quantity;
             await product.save();
         }
 
-        // Calculate charges
+        // Calculate order total with role-based pricing
+        const orderTotals = calculateOrderTotal(cartItems, userRole, isClinicDoctor);
+
+        // Build order items with pricing details
+        for (let i = 0; i < cartItems.length; i++) {
+            const item = cartItems[i];
+            const pricedItem = orderTotals.items[i];
+
+            orderItems.push({
+                product: new mongoose.Types.ObjectId(item.product._id),
+                productName: item.product.name,
+                variant: {
+                    variantId: item.variant._id,
+                    size: item.variant.size,
+                    color: item.variant.color,
+                    material: item.variant.material
+                },
+                quantity: item.quantity,
+                price: pricedItem.unitPrice,
+                originalPrice: pricedItem.originalUnitPrice,
+                totalCost: pricedItem.itemTotal,
+                discount: pricedItem.itemDiscount,
+                priceType: pricedItem.priceType,
+                appliedDiscount: pricedItem.appliedDiscount,
+                image: item.product.image[0] || null
+            });
+        }
+
+        // Calculate additional charges
+        const subtotal = orderTotals.finalTotal; // Use discounted total as subtotal
         const shippingCharge = subtotal > 500 ? 0 : 50; // Free shipping above 500
         const tax = parseFloat((subtotal * 0.18).toFixed(2)); // 18% GST
-        const discount = 0; // Can be calculated based on coupon codes
-        const totalAmount = subtotal + shippingCharge + tax - discount;
+        const discount = orderTotals.totalDiscount; // Total discount from role-based pricing
+        const totalAmount = subtotal + shippingCharge + tax;
 
         // Create order
         const newOrder = new EcomOrder({
@@ -128,13 +183,16 @@ export const createEcomOrder = async (req, res) => {
                 method: paymentMethod,
                 status: paymentMethod === "COD" ? "PENDING" : "PENDING"
             },
-            subtotal,
+            subtotal: orderTotals.subtotal, // Original subtotal before discount
             shippingCharge,
             tax,
             discount,
             totalAmount,
             orderNotes: orderNotes || "",
-            estimatedDelivery: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days from now
+            estimatedDelivery: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
+            userRole: userRole,
+            isClinicDoctor: isClinicDoctor,
+            discountPercentage: orderTotals.discountPercentage
         });
 
         await newOrder.save();
@@ -142,7 +200,16 @@ export const createEcomOrder = async (req, res) => {
         res.status(201).json({
             success: true,
             message: "Order created successfully",
-            data: newOrder
+            data: newOrder,
+            pricing: {
+                originalSubtotal: orderTotals.subtotal,
+                totalDiscount: orderTotals.totalDiscount,
+                discountPercentage: orderTotals.discountPercentage,
+                discountedSubtotal: orderTotals.finalTotal,
+                shippingCharge,
+                tax,
+                finalTotal: totalAmount
+            }
         });
     } catch (error) {
         console.error("Create Ecom Order Error:", error);

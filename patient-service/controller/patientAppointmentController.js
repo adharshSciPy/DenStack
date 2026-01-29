@@ -1710,7 +1710,88 @@ const getDoctorRevenue = async (req, res) => {
   }
 };
 
+const getPatientsIncomeSummary = async (req, res) => {
+  try {
+    const { paymentStatus, month, year } = req.query;
+
+    const filter = {};
+
+    // existing payment filter
+    if (paymentStatus === "paid") filter.isPaid = true;
+    if (paymentStatus === "unpaid") filter.isPaid = false;
+
+    // 🆕 month filter (based on PatientHistory.createdAt)
+    if (month && year) {
+      let monthNumber = month;
+
+      // support month names
+      if (isNaN(month)) {
+        monthNumber = MONTH_MAP[month.toLowerCase()];
+      }
+
+      if (!monthNumber || monthNumber < 1 || monthNumber > 12) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid month value",
+        });
+      }
+
+      const startDate = new Date(year, monthNumber - 1, 1);
+      const endDate = new Date(year, monthNumber, 1);
+
+      filter.createdAt = {
+        $gte: startDate,
+        $lt: endDate,
+      };
+    }
+
+    const history = await PatientHistory.find(
+      filter,
+      { totalAmount: 1, isPaid: 1 }
+    ).lean();
+
+    if (!history.length) {
+      return res.status(200).json({
+        success: true,
+        totalUsers: 0,
+        totalIncome: 0,
+      });
+    }
+
+    let totalIncome = 0;
+    let paidIncome = 0;
+    let unpaidIncome = 0;
+    let paidUsers = 0;
+    let unpaidUsers = 0;
+
+    history.forEach(h => {
+      const amount = h.totalAmount || 0;
+      totalIncome += amount;
+
+      if (h.isPaid) {
+        paidIncome += amount;
+        paidUsers++;
+      } else {
+        unpaidIncome += amount;
+        unpaidUsers++;
+      }
+    });
+
+    return res.status(200).json({
+      success: true,
+      totalUsers: history.length,
+      totalIncome,
+    });
+
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Server error while fetching income summary",
+      error: error.message,
+    });
+  }
+};
 export {
   createAppointment, getTodaysAppointments, getAppointmentById, getPatientHistory, addLabOrderToPatientHistory, getAppointmentsByClinic, clearDoctorFromAppointments, appointmentReschedule, cancelAppointment, getPatientTreatmentPlans, getAppointmentsByDate, addReceptionBilling, getUnpaidBillsByClinic
   , getAllAppointments,getMonthlyAppointmentsClinicWise,getPatientHistoryById
-,approveRecallAppointment,getDoctorRevenue};
+,approveRecallAppointment,getDoctorRevenue, getPatientsIncomeSummary};

@@ -29,7 +29,8 @@ import {
   updateSubCategory,
   deleteSubCategory,
   getMainCategoryHierarchy,
-  createTopCategory,
+  addTopCategory,
+  addMultipleTopCategories,
   getAllTopCategories,
   updateTopCategory,
   deleteTopCategory,
@@ -62,7 +63,6 @@ import {
 
 } from "../Controller/LandingController.js";
 import landingUpload from "../middlewares/landingUpload.js";
-
 const landingRouter = express.Router();
 
 // Flexible middleware - accepts both single and multiple files
@@ -94,7 +94,12 @@ landingRouter.delete("/top-brands/delete/:id", deleteTopBrand);
 landingRouter.get("/top-brands/:id", getTopBrandById);
 
 // ============= TOP CATEGORIES ROUTES =============
-landingRouter.post("/topCategories/create", flexibleUpload, createTopCategory);
+landingRouter.post("/topCategories/create", flexibleUpload, addTopCategory);
+landingRouter.post(
+  "/topCategories/add-multiple",
+  flexibleUpload,
+  addMultipleTopCategories
+);
 landingRouter.get("/-/getAll", getAllTopCategories);
 landingRouter.put(
   "/topCategories/update/:id",

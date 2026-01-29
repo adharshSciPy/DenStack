@@ -6,7 +6,6 @@ import {
     removeCartItem,
     clearCart
 } from "../Controller/cartController.js";
-
 const cartRouter = express.Router();
 
 // ============= CART ROUTES =============
@@ -18,7 +17,7 @@ cartRouter.post("/add", addToCart);
 cartRouter.get("/:clinicId", getCart);
 
 // Update cart item quantity
-cartRouter.put("/:clinicId/item/:itemId", updateCartItemQuantity);
+cartRouter.put("/:clinicId/item/:itemId",updateCartItemQuantity);
 
 // Remove item from cart
 cartRouter.delete("/:clinicId/item/:itemId", removeCartItem);

@@ -1,4 +1,6 @@
 import BuyingGuide from "../Model/BuyingGuideSchema.js";
+import Product from "../Model/ProductSchema.js";
+import mongoose from "mongoose";
 
 const getImageUrl = (req, filename) => {
   if (!filename) return null;
@@ -7,12 +9,7 @@ const getImageUrl = (req, filename) => {
 
 const createBuyingGuide = async (req, res) => {
   try {
-    const {
-      title,
-      subtitle,
-      description,
-      steps
-    } = req.body;
+    const { title, subtitle, description, steps } = req.body;
 
     if (!title || !steps) {
       return res.status(400).json({
@@ -21,20 +18,23 @@ const createBuyingGuide = async (req, res) => {
       });
     }
 
-    // Parse steps JSON (multipart form-data)
+    // Parse steps JSON
     const parsedSteps = JSON.parse(steps);
 
-    // 🖼️ Map uploaded files
+    // Map uploaded files
     const filesMap = {};
-    req.files.forEach(file => {
-      filesMap[file.fieldname] = file.filename;
-    });
+    if (req.files && req.files.length > 0) {
+      req.files.forEach(file => {
+        filesMap[file.fieldname] = file.filename;
+      });
+    }
 
-    // Main Image URL
+    // Main Image
     const mainImage = getImageUrl(req, filesMap["mainImage"]);
 
-    // Attach image URLs to steps & products
-    parsedSteps.forEach((step, stepIndex) => {
+    // 🔍 Validate steps & products
+    for (let stepIndex = 0; stepIndex < parsedSteps.length; stepIndex++) {
+      const step = parsedSteps[stepIndex];
 
       // Step image
       const stepImageKey = `stepImage_${stepIndex}`;
@@ -42,21 +42,45 @@ const createBuyingGuide = async (req, res) => {
         step.image = getImageUrl(req, filesMap[stepImageKey]);
       }
 
-      // Product images
+      // Validate products
       if (step.products && step.products.length > 0) {
-        step.products.forEach((product, productIndex) => {
+        for (let productIndex = 0; productIndex < step.products.length; productIndex++) {
+          const stepProduct = step.products[productIndex];
+
+          if (!mongoose.Types.ObjectId.isValid(stepProduct.productId)) {
+            return res.status(400).json({
+              success: false,
+              message: `Invalid productId at step ${stepIndex + 1}`
+            });
+          }
+
+          const product = await Product.findById(stepProduct.productId);
+
+          if (!product) {
+            return res.status(404).json({
+              success: false,
+              message: `Product not found at step ${stepIndex + 1}`
+            });
+          }
+
+          // Product image override (if uploaded)
           const productImageKey = `step_${stepIndex}_product_${productIndex}`;
           if (filesMap[productImageKey]) {
-            product.image = getImageUrl(
+            stepProduct.image = getImageUrl(
               req,
               filesMap[productImageKey]
             );
+          } else {
+            stepProduct.image = product.image;
           }
-        });
-      }
-    });
 
-    // Save buying guide
+          // Sync product name
+          stepProduct.name = product.name;
+        }
+      }
+    }
+
+    // Save
     const buyingGuide = await BuyingGuide.create({
       title,
       subtitle,

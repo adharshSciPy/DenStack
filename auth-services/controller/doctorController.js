@@ -336,6 +336,101 @@ const getDoctorsBatch = async (req, res) => {
     });
   }
 };
+const updateDoctorClinicStatus = async (req, res) => {
+  try {
+    const { doctorId, clinicId, action } = req.body;
+
+    // Validate inputs
+    if (!doctorId || !mongoose.Types.ObjectId.isValid(doctorId)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Invalid doctorId" 
+      });
+    }
+
+    if (!clinicId || !mongoose.Types.ObjectId.isValid(clinicId)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Invalid clinicId" 
+      });
+    }
+
+    if (!['onboard', 'remove'].includes(action)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Action must be 'onboard' or 'remove'" 
+      });
+    }
+
+    const doctor = await Doctor.findById(doctorId);
+
+    if (!doctor) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "Doctor not found" 
+      });
+    }
+
+    if (action === 'onboard') {
+      // Check if already onboarded to this clinic
+      const existingClinic = doctor.clinicOnboardingDetails.find(
+        detail => detail.clinicId.toString() === clinicId
+      );
+
+      if (existingClinic) {
+        // Reactivate if previously inactive
+        existingClinic.status = 'active';
+        existingClinic.onboardedAt = new Date();
+      } else {
+        // Add new clinic
+        doctor.clinicOnboardingDetails.push({
+          clinicId,
+          status: 'active',
+          onboardedAt: new Date()
+        });
+      }
+
+      doctor.isClinicDoctor = true;
+
+    } else if (action === 'remove') {
+      // Find and update status to inactive
+      const clinicDetail = doctor.clinicOnboardingDetails.find(
+        detail => detail.clinicId.toString() === clinicId
+      );
+
+      if (clinicDetail) {
+        clinicDetail.status = 'inactive';
+      }
+
+      // Check if doctor has any active clinics
+      const hasActiveClinics = doctor.clinicOnboardingDetails.some(
+        detail => detail.status === 'active'
+      );
+
+      doctor.isClinicDoctor = hasActiveClinics;
+    }
+
+    await doctor.save();
+
+    return res.status(200).json({
+      success: true,
+      message: `Doctor ${action === 'onboard' ? 'onboarded to' : 'removed from'} clinic successfully`,
+      data: {
+        doctorId: doctor._id,
+        isClinicDoctor: doctor.isClinicDoctor,
+        clinicOnboardingDetails: doctor.clinicOnboardingDetails
+      }
+    });
+
+  } catch (error) {
+    console.error("❌ Error updating doctor clinic status:", error);
+    return res.status(500).json({ 
+      success: false, 
+      message: "Server error",
+      details: error.message 
+    });
+  }
+};
 
 export {
   registerDoctor,
@@ -345,4 +440,5 @@ export {
   fetchDoctorByUniqueId,
   doctorStats,
   getDoctorsBatch,
+  updateDoctorClinicStatus
 };
