@@ -116,7 +116,7 @@ landingRouter.delete("/main/delete/:id", deleteMainCategory);
 
 // ============= SUB CATEGORY ROUTES =============
 landingRouter.post("/sub/create", createSubCategory);
-landingRouter.get("/sub/getByParent/:parentId", getSubCategories);
+landingRouter.get("/sub/getByParent/:mainCategoryId", getSubCategories);
 landingRouter.get("/sub/getAll", getAllSubCategories);
 landingRouter.get("/sub/getById/:id", getSubCategoryById);
 landingRouter.put("/sub/update/:id", updateSubCategory);
