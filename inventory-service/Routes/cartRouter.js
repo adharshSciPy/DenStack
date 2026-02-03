@@ -1,4 +1,9 @@
+// ============================================
+// routes/cartRoutes.js
+// ============================================
+
 import express from "express";
+import { verifyAuthToken, canPlaceOrder } from "../middlewares/authMiddleware.js";
 import {
     addToCart,
     getCart,
@@ -6,23 +11,14 @@ import {
     removeCartItem,
     clearCart
 } from "../Controller/cartController.js";
+
 const cartRouter = express.Router();
 
-// ============= CART ROUTES =============
-
-// Add item to cart
-cartRouter.post("/add", addToCart);
-
-// Get cart by clinic ID
-cartRouter.get("/:clinicId", getCart);
-
-// Update cart item quantity
-cartRouter.put("/:clinicId/item/:itemId",updateCartItemQuantity);
-
-// Remove item from cart
-cartRouter.delete("/:clinicId/item/:itemId", removeCartItem);
-
-// Clear entire cart
-cartRouter.delete("/:clinicId/clear", clearCart);
+// ✅ All routes protected - only clinics & clinic-doctors
+cartRouter.post("/add", verifyAuthToken, canPlaceOrder, addToCart);
+cartRouter.get("/", verifyAuthToken, canPlaceOrder, getCart);
+cartRouter.put("/item/:itemId", verifyAuthToken, canPlaceOrder, updateCartItemQuantity);
+cartRouter.delete("/item/:itemId", verifyAuthToken, canPlaceOrder, removeCartItem);
+cartRouter.delete("/clear", verifyAuthToken, canPlaceOrder, clearCart);
 
 export default cartRouter;
