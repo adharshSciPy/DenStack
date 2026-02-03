@@ -16,6 +16,7 @@ import assistantRouter from "./routes/assistantRouter.js";
 import clinicSubscriptionCron from "./utils/clinicSubscriptionCron.js";
 import staffShiftCron from "./utils/staffShiftCron.js";
 import permissionRoutes from "./routes/permissionRoutes.js";
+import EcommerceUserRoutes from "./routes/ecommerceuserRouter.js";
 
 dotenv.config();
 connectDB();
@@ -45,6 +46,7 @@ app.use("/api/v1/auth/PRO", PRORouter)
 app.use("/api/v1/auth/assistant", assistantRouter)
 app.use("/api/v1/auth/roles", permissionRoutes);
 app.use("/api/v1/super-admin", superAdminDashboardRouter);
+app.use("/api/v1/ecommerceuser", EcommerceUserRoutes)
 
 
 const PORT = process.env.PORT || 8001;
