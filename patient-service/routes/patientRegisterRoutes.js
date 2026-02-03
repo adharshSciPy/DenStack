@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getAllPatients,getPatientById, getPatientsByClinic, getPatientWithUniqueId, patientCheck, registerPatient, sendSMSLink, setPassword, login,getPatientByRandomId, addLabOrderToPatient, getPatientFullCRM, updatePatientDetails,getAllPatientsWithBirthdays } from "../controller/patientRegisterController.js";
+import { getAllPatients,getPatientById, getPatientsByClinic, getPatientWithUniqueId, patientCheck, registerPatient, sendSMSLink, setPassword, login,getPatientByRandomId, addLabOrderToPatient, getPatientFullCRM, updatePatientDetails,getAllPatientsWithBirthdays, getPatientDentalChart, getVisitHistory } from "../controller/patientRegisterController.js";
 const patientRegisterRouter = Router();
 
 patientRegisterRouter.route("/register/:id").post(registerPatient)//{id:clinicId}
@@ -17,5 +17,7 @@ patientRegisterRouter.route("/full-crm").get(getPatientFullCRM);
 patientRegisterRouter.route("/add/patient_details/:id").patch(updatePatientDetails)
 patientRegisterRouter.route('/all-with-birthdays').get(getAllPatientsWithBirthdays);
 // patientRegisterRouter.route("/:id").get(getPatientById);
+patientRegisterRouter.route('/dental-chart/:patientId').get(getPatientDentalChart);
+patientRegisterRouter.route('/visit-history/:id').get(getVisitHistory);
 
 export default patientRegisterRouter;
