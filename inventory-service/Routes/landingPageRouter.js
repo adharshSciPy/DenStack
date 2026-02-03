@@ -60,9 +60,12 @@ import {
   deleteFeaturedProduct,
   toggleFeaturedProductStatus,
   getActiveFeaturedProducts,
+  createClinicSetup,
+  getClinicSetup
 
 } from "../Controller/LandingController.js";
 import landingUpload from "../middlewares/landingUpload.js";
+import ClinicSetup from "../Model/ClinicSetupSchema.js";
 const landingRouter = express.Router();
 
 // Flexible middleware - accepts both single and multiple files
@@ -194,5 +197,10 @@ landingRouter.put("/featured-products/toggle/:id", toggleFeaturedProductStatus);
 
 // Delete featured product
 landingRouter.delete("/featured-products/delete/:id", deleteFeaturedProduct);
+
+// ClinicSetup
+
+landingRouter.post("/clinic-setup/create", createClinicSetup);
+landingRouter.get("/clinic-setup/get", getClinicSetup);
 
 export default landingRouter;
