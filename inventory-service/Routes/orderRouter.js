@@ -1,23 +1,36 @@
-import { Router } from "express"
-import { createOrder, getAllOrders, getUserOrders, cancelOrder, getOrdersByClinicId, getOrderStats, getRecentOrders, getAllOrdersAnalytics, PaymentSummary, dashboardAnalytics, getTopSoldProducts, getClinicAnalytics } from "../Controller/orderController.js"
-import { verifyAuthToken, authorizeRoles } from "../middlewares/authmiddleware.js";
-const CLINIC_ROLE = process.env.CLINIC_ROLE
-const SUPERADMIN_ROLE = process.env.SUPERADMIN_ROLE
+// ============================================
+// routes/ecomOrderRoutes.js
+// ============================================
 
-const orderRouter = Router();
+import express from "express";
+import { verifyAuthToken, authorizeRoles, canPlaceOrder } from "../middlewares/authMiddleware.js";
+import {
+    createEcomOrder,
+    getAllEcomOrders,
+    getEcomOrderById,
+    getClinicEcomOrders,
+    updateEcomOrderStatus,
+    updateEcomPaymentStatus,
+    cancelEcomOrder,
+    getRecentEcomOrders,
+    getEcomOrderAnalytics
+} from "../Controller/EorderController.js";
 
-orderRouter.post("/createOrder", verifyAuthToken, authorizeRoles(CLINIC_ROLE, SUPERADMIN_ROLE), createOrder)
-orderRouter.get("/allOrders", verifyAuthToken, authorizeRoles(CLINIC_ROLE), getAllOrders);
-orderRouter.get("/user/:userId", verifyAuthToken, authorizeRoles(CLINIC_ROLE), getUserOrders);
-orderRouter.patch("/cancelOrder/:orderId", verifyAuthToken, authorizeRoles(CLINIC_ROLE), cancelOrder);
-orderRouter.get("/clinic/:clinicId", verifyAuthToken, authorizeRoles(CLINIC_ROLE), getOrdersByClinicId);
+const ecomOrderRouter = express.Router();
 
-orderRouter.get("/orderStats", verifyAuthToken, authorizeRoles(SUPERADMIN_ROLE), getOrderStats);
-orderRouter.get("/recentOrders", verifyAuthToken, authorizeRoles(SUPERADMIN_ROLE), getRecentOrders);
+// ============= ECOM ORDER ROUTES =============
 
-orderRouter.get("/analytics/all", getAllOrdersAnalytics);
-orderRouter.get("/payment-summary", PaymentSummary);
-orderRouter.get("/dashboard-analytics", verifyAuthToken, authorizeRoles(SUPERADMIN_ROLE), dashboardAnalytics);
-orderRouter.get("/top-sold-products", verifyAuthToken, authorizeRoles(SUPERADMIN_ROLE), getTopSoldProducts);
-orderRouter.get("/clinic-analytics", verifyAuthToken, authorizeRoles(SUPERADMIN_ROLE), getClinicAnalytics);
-export default orderRouter;
+// ✅ USER ROUTES (Clinics and Clinic-Doctors)
+ecomOrderRouter.post("/create", verifyAuthToken, canPlaceOrder, createEcomOrder);
+ecomOrderRouter.get("/getById/:orderId", verifyAuthToken, getEcomOrderById);
+ecomOrderRouter.get("/clinic/:clinicId", verifyAuthToken, getClinicEcomOrders);
+ecomOrderRouter.put("/cancel/:orderId", verifyAuthToken, cancelEcomOrder);
+
+// ✅ ADMIN ROUTES (Roles: 789, 999)
+ecomOrderRouter.get("/getAll", verifyAuthToken, authorizeRoles('789', '999'), getAllEcomOrders);
+ecomOrderRouter.get("/recent", verifyAuthToken, authorizeRoles('789', '999'), getRecentEcomOrders);
+ecomOrderRouter.get("/analytics", verifyAuthToken, authorizeRoles('789', '999'), getEcomOrderAnalytics);
+ecomOrderRouter.put("/updateStatus/:orderId", verifyAuthToken, authorizeRoles('789', '999'), updateEcomOrderStatus);
+ecomOrderRouter.put("/updatePayment/:orderId", verifyAuthToken, authorizeRoles('789', '999'), updateEcomPaymentStatus);
+
+export default ecomOrderRouter;

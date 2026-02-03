@@ -1,4 +1,9 @@
+// ============================================
+// routes/ecomOrderRoutes.js
+// ============================================
+
 import express from "express";
+import { verifyAuthToken, canPlaceOrder } from "../middlewares/authMiddleware.js";
 import {
     createEcomOrder,
     getAllEcomOrders,
@@ -15,31 +20,19 @@ const ecomOrderRouter = express.Router();
 
 // ============= ECOM ORDER ROUTES =============
 
-// Create new ecom order
-ecomOrderRouter.post("/create", createEcomOrder);
+// ✅ Create order - only clinics & clinic-doctors
+ecomOrderRouter.post("/create", verifyAuthToken, canPlaceOrder, createEcomOrder);
 
-// Get all ecom orders (with filters and pagination)
-ecomOrderRouter.get("/getAll", getAllEcomOrders);
+// ✅ View orders - any authenticated user
+ecomOrderRouter.get("/getAll", verifyAuthToken, getAllEcomOrders);
+ecomOrderRouter.get("/recent", verifyAuthToken, getRecentEcomOrders);
+ecomOrderRouter.get("/analytics", verifyAuthToken, getEcomOrderAnalytics);
+ecomOrderRouter.get("/getById/:orderId", verifyAuthToken, getEcomOrderById);
+ecomOrderRouter.get("/clinic/:clinicId", verifyAuthToken, getClinicEcomOrders);
 
-// Get recent ecom orders
-ecomOrderRouter.get("/recent", getRecentEcomOrders);
-
-// Get ecom order analytics
-ecomOrderRouter.get("/analytics", getEcomOrderAnalytics);
-
-// Get ecom order by ID
-ecomOrderRouter.get("/getById/:orderId", getEcomOrderById);
-
-// Get user's ecom orders
-ecomOrderRouter.get("/clinic/:clinicId", getClinicEcomOrders);
-
-// Update ecom order status
-ecomOrderRouter.put("/updateStatus/:orderId", updateEcomOrderStatus);
-
-// Update ecom payment status
-ecomOrderRouter.put("/updatePayment/:orderId", updateEcomPaymentStatus);
-
-// Cancel ecom order
-ecomOrderRouter.put("/cancel/:orderId", cancelEcomOrder);
+// ✅ Manage orders - any authenticated user (for now)
+ecomOrderRouter.put("/updateStatus/:orderId", verifyAuthToken, updateEcomOrderStatus);
+ecomOrderRouter.put("/updatePayment/:orderId", verifyAuthToken, updateEcomPaymentStatus);
+ecomOrderRouter.put("/cancel/:orderId", verifyAuthToken, cancelEcomOrder);
 
 export default ecomOrderRouter;

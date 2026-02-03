@@ -1,4 +1,5 @@
 import Event from "../Model/EventSchema.js";
+import EventRegisteration from "../Model/EventRegisteration.js";
 
 const createEvent = async (req, res) => {
     try {
@@ -137,5 +138,84 @@ const deleteEvent = async (req, res) => {
     }
 }
 
+// eventRegisteration
 
-export { createEvent, allEvents, eventsById, deleteEvent };
+const eventRegisteration = async (req, res) => {
+    const { eventId, firstName, lastName, email, phoneNumber, organization, jobTitle, address, city, state, zipCode, attendees, dietaryRestrictions, specialQuestions } = req.body;
+    try {
+        const event = await Event.findById(eventId);
+
+        if (!event) {
+            return res.status(404).json({ message: "Event not found" });
+        }
+
+        // Seat check
+        if (event.registeredCount + attendees > event.totalSeats) {
+            return res.status(400).json({
+                message: "Event is full"
+            });
+        }
+
+        // Deadline check
+        if (
+            event.registrationDeadline &&
+            new Date() > event.registrationDeadline
+        ) {
+            return res.status(400).json({
+                message: "Registration closed"
+            });
+        }
+
+        const eventRegistration = await EventRegisteration.create({
+            eventId,
+            firstName,
+            lastName,
+            email,
+            phoneNumber,
+            organization,
+            jobTitle,
+            address,
+            city,
+            state,
+            zipCode,
+            attendees,
+            dietaryRestrictions,
+            specialQuestions
+        });
+
+        // Update count
+        event.registeredCount += attendees;
+        await event.save();
+
+        res.status(200).json({
+            success: true,
+            message: "Event registration created successfully",
+            data: eventRegistration
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: "Failed to register for event",
+            error: error.message
+        });
+    }
+}
+
+const getEventRegistrations = async (req, res) => {
+    try {
+        const registrations = await EventRegisteration.find();
+        res.status(200).json({
+            success: true,
+            data: registrations
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: "Failed to fetch event registrations",
+            error: error.message
+        });
+    }
+}
+
+
+export { createEvent, allEvents, eventsById, deleteEvent, eventRegisteration, getEventRegistrations };
