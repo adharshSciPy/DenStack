@@ -6,6 +6,7 @@ import axios from "axios";
 import dotenv from "dotenv";
 import TreatmentPlan from "../model/treatmentPlanSchema.js";
 import{ updatePatientDentalChart} from "../helper/updatePatientDentalChart.js";
+import authBaseUrl from "../authServiceBaseUrl.js";
 
 dotenv.config();
 const CLINIC_SERVICE_BASE_URL = process.env.CLINIC_SERVICE_BASE_URL;
@@ -1828,6 +1829,127 @@ const getCurrentMonthRevenue = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+const getAllConsultedPatients = async (req, res) => {
+  const { id } = req.params;
+  
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ 
+      success: false, 
+      message: "Invalid Doctor ID format" 
+    });
+  }
+
+  const doctorId = new mongoose.Types.ObjectId(id);
+
+  try {
+    const matchCount = await PatientHistory.countDocuments({ doctorId });
+    
+    if (matchCount === 0) {
+      return res.status(200).json({
+        success: true,
+        count: 0,
+        data: [],
+        message: "No patient history found for this doctor"
+      });
+    }
+
+    // First, get the aggregated data without clinic details
+    const data = await PatientHistory.aggregate([
+      {
+        $match: {
+          doctorId: doctorId
+        }
+      },
+      { $sort: { visitDate: -1 } },
+      {
+        $group: {
+          _id: {
+            patientId: "$patientId",
+            clinicId: "$clinicId",
+          },
+          lastVisitDate: { $first: "$visitDate" },
+        },
+      },
+      {
+        $lookup: {
+          from: "patients",
+          localField: "_id.patientId",
+          foreignField: "_id",
+          as: "patient",
+        },
+      },
+      { 
+        $unwind: {
+          path: "$patient",
+          preserveNullAndEmptyArrays: true 
+        } 
+      },
+      {
+        $project: {
+          _id: 0,
+          patientId: "$_id.patientId",
+          patientName: "$patient.name",
+          clinicId: "$_id.clinicId",
+          lastVisitDate: 1,
+        },
+      },
+      { $sort: { lastVisitDate: -1 } },
+    ]);
+
+    const clinicIds = [...new Set(data.map(item => item.clinicId?.toString()).filter(Boolean))];
+    const clinicMap = new Map();
+    const clinicPromises = clinicIds.map(async (clinicId) => {
+      try {
+        const response = await axios.get(
+          `${authBaseUrl}/api/v1/auth/clinic/view-clinic/${clinicId}`,
+          { timeout: 5000 } 
+        );
+        
+        if (response.data.success && response.data.data) {
+          clinicMap.set(clinicId, {
+            name: response.data.data.name,
+            email: response.data.data.email,
+            phoneNumber: response.data.data.phoneNumber
+          });
+        }
+      } catch (error) {
+        console.error(`Failed to fetch clinic ${clinicId}:`, error.message);
+        clinicMap.set(clinicId, {
+          name: 'Unknown Clinic',
+          email: '',
+          phoneNumber: ''
+        });
+      }
+    });
+
+    // Wait for all clinic fetches to complete
+    await Promise.all(clinicPromises);
+
+    // Enrich the data with clinic details
+    const enrichedData = data.map(item => ({
+      patientId: item.patientId,
+      patientName: item.patientName,
+      clinicId: item.clinicId,
+      clinicName: item.clinicId ? (clinicMap.get(item.clinicId.toString())?.name || 'Unknown Clinic') : 'No Clinic',
+      clinicEmail: item.clinicId ? (clinicMap.get(item.clinicId.toString())?.email || '') : '',
+      clinicPhone: item.clinicId ? (clinicMap.get(item.clinicId.toString())?.phoneNumber || '') : '',
+      lastVisitDate: item.lastVisitDate
+    }));
+
+    return res.status(200).json({
+      success: true,
+      count: enrichedData.length,
+      data: enrichedData,
+    });
+  } catch (error) {
+    console.error("❌ getAllConsultedPatients error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch consulted patients",
+      error: error.message
+    });
+  }
+};
 
 export {
   consultPatient,
@@ -1843,5 +1965,6 @@ export {
   getDoctorDashboard,
   getWeeklyStats,
   getDoctorAnalytics,
-  getCurrentMonthRevenue
+  getCurrentMonthRevenue,
+  getAllConsultedPatients
 };
