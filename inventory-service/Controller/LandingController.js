@@ -12,6 +12,7 @@ import Category from "../Model/CategorySchema.js";
 import Brand from "../Model/BrandSchema.js";
 import SubCategory from "../Model/SubCategorySchema.js";
 import FeaturedProduct from "../Model/featuredProductSchema.js";
+import ClinicSetup from "../Model/ClinicSetupSchema.js";
 
 // ============= CAROUSEL SLIDES =============
 export const createCarouselSlide = async (req, res) => {
@@ -2534,121 +2535,121 @@ export const deleteProduct = async (req, res) => {
 
 // ============= GET TOP SELLING PRODUCTS =============
 export const getTopSellingProducts = async (req, res) => {
-    try {
-        const { limit = 10, mainCategoryId, subCategoryId, brandId } = req.query;
-        
-        // Build match conditions
-        let matchConditions = {};
-        if (mainCategoryId) matchConditions.mainCategory = new mongoose.Types.ObjectId(mainCategoryId);
-        if (subCategoryId) matchConditions.subCategory = new mongoose.Types.ObjectId(subCategoryId);
-        if (brandId) matchConditions.brand = new mongoose.Types.ObjectId(brandId);
-        
-        // Aggregate pipeline to get top selling products
-        const topProducts = await Product.aggregate([
-            // Match filters if provided
-            ...(Object.keys(matchConditions).length > 0 ? [{ $match: matchConditions }] : []),
-            
-            // Lookup orders to get sales data
-            {
-                $lookup: {
-                    from: "ecomorders", // IMPORTANT: Change this to your actual collection name
-                    localField: "_id",
-                    foreignField: "items.product",
-                    as: "orderData"
-                }
-            },
-            
-            // Unwind order data
-            { $unwind: { path: "$orderData", preserveNullAndEmptyArrays: true } },
-            
-            // Unwind order items to get individual product quantities
-            { $unwind: { path: "$orderData.items", preserveNullAndEmptyArrays: true } },
-            
-            // Match only items that belong to this product
-            {
-                $match: {
-                    $expr: { $eq: ["$_id", "$orderData.items.product"] }
-                }
-            },
-            
-            // Group by product and calculate total quantity sold
-            {
-                $group: {
-                    _id: "$_id",
-                    product: { $first: "$$ROOT" }, // Fixed: Double dollar sign
-                    totalQuantitySold: { $sum: "$orderData.items.quantity" },
-                    totalRevenue: { 
-                        $sum: { 
-                            $multiply: ["$orderData.items.quantity", "$orderData.items.price"] 
-                        } 
-                    },
-                    totalOrders: { $sum: 1 }
-                }
-            },
-            
-            // Sort by total quantity sold (descending)
-            { $sort: { totalQuantitySold: -1 } },
-            
-            // Limit results
-            { $limit: parseInt(limit) },
-            
-            // Lookup populated data
-            {
-                $lookup: {
-                    from: "maincategories",
-                    localField: "product.mainCategory",
-                    foreignField: "_id",
-                    as: "mainCategoryData"
-                }
-            },
-            {
-                $lookup: {
-                    from: "subcategories",
-                    localField: "product.subCategory",
-                    foreignField: "_id",
-                    as: "subCategoryData"
-                }
-            },
-            {
-                $lookup: {
-                    from: "brands",
-                    localField: "product.brand",
-                    foreignField: "_id",
-                    as: "brandData"
-                }
-            },
-            
-            // Project final structure
-            {
-                $project: {
-                    _id: 1,
-                    productId: "$product.productId",
-                    name: "$product.name",
-                    description: "$product.description",
-                    variants: "$product.variants",
-                    image: "$product.image",
-                    status: "$product.status",
-                    mainCategory: { $arrayElemAt: ["$mainCategoryData", 0] },
-                    subCategory: { $arrayElemAt: ["$subCategoryData", 0] },
-                    brand: { $arrayElemAt: ["$brandData", 0] },
-                    totalQuantitySold: 1,
-                    totalRevenue: 1,
-                    totalOrders: 1,
-                    createdAt: "$product.createdAt",
-                    updatedAt: "$product.updatedAt"
-                }
+  try {
+    const { limit = 10, mainCategoryId, subCategoryId, brandId } = req.query;
+
+    // Build match conditions
+    let matchConditions = {};
+    if (mainCategoryId) matchConditions.mainCategory = new mongoose.Types.ObjectId(mainCategoryId);
+    if (subCategoryId) matchConditions.subCategory = new mongoose.Types.ObjectId(subCategoryId);
+    if (brandId) matchConditions.brand = new mongoose.Types.ObjectId(brandId);
+
+    // Aggregate pipeline to get top selling products
+    const topProducts = await Product.aggregate([
+      // Match filters if provided
+      ...(Object.keys(matchConditions).length > 0 ? [{ $match: matchConditions }] : []),
+
+      // Lookup orders to get sales data
+      {
+        $lookup: {
+          from: "ecomorders", // IMPORTANT: Change this to your actual collection name
+          localField: "_id",
+          foreignField: "items.product",
+          as: "orderData"
+        }
+      },
+
+      // Unwind order data
+      { $unwind: { path: "$orderData", preserveNullAndEmptyArrays: true } },
+
+      // Unwind order items to get individual product quantities
+      { $unwind: { path: "$orderData.items", preserveNullAndEmptyArrays: true } },
+
+      // Match only items that belong to this product
+      {
+        $match: {
+          $expr: { $eq: ["$_id", "$orderData.items.product"] }
+        }
+      },
+
+      // Group by product and calculate total quantity sold
+      {
+        $group: {
+          _id: "$_id",
+          product: { $first: "$$ROOT" }, // Fixed: Double dollar sign
+          totalQuantitySold: { $sum: "$orderData.items.quantity" },
+          totalRevenue: {
+            $sum: {
+              $multiply: ["$orderData.items.quantity", "$orderData.items.price"]
             }
-        ]);
-        
-        res.status(200).json({
-            message: "Top selling products retrieved successfully",
-            count: topProducts.length,
-            data: topProducts
-        });
-    } catch (err) {
-        console.error("Get Top Selling Products Error:", err);
-        res.status(500).json({ message: "Server error", error: err.message });
-    }
+          },
+          totalOrders: { $sum: 1 }
+        }
+      },
+
+      // Sort by total quantity sold (descending)
+      { $sort: { totalQuantitySold: -1 } },
+
+      // Limit results
+      { $limit: parseInt(limit) },
+
+      // Lookup populated data
+      {
+        $lookup: {
+          from: "maincategories",
+          localField: "product.mainCategory",
+          foreignField: "_id",
+          as: "mainCategoryData"
+        }
+      },
+      {
+        $lookup: {
+          from: "subcategories",
+          localField: "product.subCategory",
+          foreignField: "_id",
+          as: "subCategoryData"
+        }
+      },
+      {
+        $lookup: {
+          from: "brands",
+          localField: "product.brand",
+          foreignField: "_id",
+          as: "brandData"
+        }
+      },
+
+      // Project final structure
+      {
+        $project: {
+          _id: 1,
+          productId: "$product.productId",
+          name: "$product.name",
+          description: "$product.description",
+          variants: "$product.variants",
+          image: "$product.image",
+          status: "$product.status",
+          mainCategory: { $arrayElemAt: ["$mainCategoryData", 0] },
+          subCategory: { $arrayElemAt: ["$subCategoryData", 0] },
+          brand: { $arrayElemAt: ["$brandData", 0] },
+          totalQuantitySold: 1,
+          totalRevenue: 1,
+          totalOrders: 1,
+          createdAt: "$product.createdAt",
+          updatedAt: "$product.updatedAt"
+        }
+      }
+    ]);
+
+    res.status(200).json({
+      message: "Top selling products retrieved successfully",
+      count: topProducts.length,
+      data: topProducts
+    });
+  } catch (err) {
+    console.error("Get Top Selling Products Error:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
 };
 
 // ============= GET TOP SELLING PRODUCTS (SIMPLE VERSION - without orders) =============
@@ -2683,411 +2684,455 @@ export const getTopSellingProductsSimple = async (req, res) => {
 };
 // ============= ADD PRODUCT TO FEATURED =============
 export const addFeaturedProduct = async (req, res) => {
-    try {
-        const { 
-            productId, 
-            title, 
-            description, 
-            badge, 
-            order, 
-            startDate, 
-            endDate 
-        } = req.body;
+  try {
+    const {
+      productId,
+      title,
+      description,
+      badge,
+      order,
+      startDate,
+      endDate
+    } = req.body;
+
+    // Validate product exists
+    const product = await Product.findById(productId);
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: "Product not found"
+      });
+    }
+
+    // Check if product is already featured
+    const existingFeatured = await FeaturedProduct.findOne({ product: productId });
+    if (existingFeatured) {
+      return res.status(400).json({
+        success: false,
+        message: "Product is already featured"
+      });
+    }
+
+    // Create featured product
+    const featuredProduct = new FeaturedProduct({
+      product: productId,
+      title: title || product.name,
+      description: description || product.description,
+      badge: badge || null,
+      order: order || 0,
+      startDate: startDate || Date.now(),
+      endDate: endDate || null
+    });
+
+    await featuredProduct.save();
+
+    // Populate before sending response
+    await featuredProduct.populate({
+      path: 'product',
+      select: 'name description image variants brand mainCategory subCategory',
+      populate: [
+        { path: 'brand', select: 'name' },
+        { path: 'mainCategory', select: 'categoryName' },
+        { path: 'subCategory', select: 'categoryName' }
+      ]
+    });
+
+    res.status(201).json({
+      success: true,
+      message: "Product added to featured successfully",
+      data: featuredProduct
+    });
+  } catch (error) {
+    console.error("Add Featured Product Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to add featured product",
+      error: error.message
+    });
+  }
+};
+
+// ============= ADD MULTIPLE PRODUCTS TO FEATURED =============
+export const addMultipleFeaturedProducts = async (req, res) => {
+  try {
+    const { products } = req.body; // Array of product objects
+
+    if (!products || !Array.isArray(products) || products.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide an array of products"
+      });
+    }
+
+    const results = {
+      success: [],
+      failed: []
+    };
+
+    for (const item of products) {
+      try {
+        const { productId, title, description, badge, order, startDate, endDate } = item;
 
         // Validate product exists
         const product = await Product.findById(productId);
         if (!product) {
-            return res.status(404).json({
-                success: false,
-                message: "Product not found"
-            });
+          results.failed.push({
+            productId,
+            reason: "Product not found"
+          });
+          continue;
         }
 
         // Check if product is already featured
         const existingFeatured = await FeaturedProduct.findOne({ product: productId });
         if (existingFeatured) {
-            return res.status(400).json({
-                success: false,
-                message: "Product is already featured"
-            });
+          results.failed.push({
+            productId,
+            reason: "Product is already featured"
+          });
+          continue;
         }
 
         // Create featured product
         const featuredProduct = new FeaturedProduct({
-            product: productId,
-            title: title || product.name,
-            description: description || product.description,
-            badge: badge || null,
-            order: order || 0,
-            startDate: startDate || Date.now(),
-            endDate: endDate || null
+          product: productId,
+          title: title || product.name,
+          description: description || product.description,
+          badge: badge || null,
+          order: order || 0,
+          startDate: startDate || Date.now(),
+          endDate: endDate || null
         });
 
         await featuredProduct.save();
 
-        // Populate before sending response
+        // Populate before adding to success list
         await featuredProduct.populate({
-            path: 'product',
-            select: 'name description image variants brand mainCategory subCategory',
-            populate: [
-                { path: 'brand', select: 'name' },
-                { path: 'mainCategory', select: 'categoryName' },
-                { path: 'subCategory', select: 'categoryName' }
-            ]
+          path: 'product',
+          select: 'name description image variants brand mainCategory subCategory',
+          populate: [
+            { path: 'brand', select: 'name' },
+            { path: 'mainCategory', select: 'categoryName' },
+            { path: 'subCategory', select: 'categoryName' }
+          ]
         });
 
-        res.status(201).json({
-            success: true,
-            message: "Product added to featured successfully",
-            data: featuredProduct
+        results.success.push(featuredProduct);
+      } catch (error) {
+        results.failed.push({
+          productId: item.productId,
+          reason: error.message
         });
-    } catch (error) {
-        console.error("Add Featured Product Error:", error);
-        res.status(500).json({
-            success: false,
-            message: "Failed to add featured product",
-            error: error.message
-        });
+      }
     }
-};
 
-// ============= ADD MULTIPLE PRODUCTS TO FEATURED =============
-export const addMultipleFeaturedProducts = async (req, res) => {
-    try {
-        const { products } = req.body; // Array of product objects
-
-        if (!products || !Array.isArray(products) || products.length === 0) {
-            return res.status(400).json({
-                success: false,
-                message: "Please provide an array of products"
-            });
+    res.status(201).json({
+      success: true,
+      message: `Added ${results.success.length} products to featured. ${results.failed.length} failed.`,
+      data: {
+        added: results.success,
+        failed: results.failed,
+        summary: {
+          total: products.length,
+          successful: results.success.length,
+          failed: results.failed.length
         }
-
-        const results = {
-            success: [],
-            failed: []
-        };
-
-        for (const item of products) {
-            try {
-                const { productId, title, description, badge, order, startDate, endDate } = item;
-
-                // Validate product exists
-                const product = await Product.findById(productId);
-                if (!product) {
-                    results.failed.push({
-                        productId,
-                        reason: "Product not found"
-                    });
-                    continue;
-                }
-
-                // Check if product is already featured
-                const existingFeatured = await FeaturedProduct.findOne({ product: productId });
-                if (existingFeatured) {
-                    results.failed.push({
-                        productId,
-                        reason: "Product is already featured"
-                    });
-                    continue;
-                }
-
-                // Create featured product
-                const featuredProduct = new FeaturedProduct({
-                    product: productId,
-                    title: title || product.name,
-                    description: description || product.description,
-                    badge: badge || null,
-                    order: order || 0,
-                    startDate: startDate || Date.now(),
-                    endDate: endDate || null
-                });
-
-                await featuredProduct.save();
-
-                // Populate before adding to success list
-                await featuredProduct.populate({
-                    path: 'product',
-                    select: 'name description image variants brand mainCategory subCategory',
-                    populate: [
-                        { path: 'brand', select: 'name' },
-                        { path: 'mainCategory', select: 'categoryName' },
-                        { path: 'subCategory', select: 'categoryName' }
-                    ]
-                });
-
-                results.success.push(featuredProduct);
-            } catch (error) {
-                results.failed.push({
-                    productId: item.productId,
-                    reason: error.message
-                });
-            }
-        }
-
-        res.status(201).json({
-            success: true,
-            message: `Added ${results.success.length} products to featured. ${results.failed.length} failed.`,
-            data: {
-                added: results.success,
-                failed: results.failed,
-                summary: {
-                    total: products.length,
-                    successful: results.success.length,
-                    failed: results.failed.length
-                }
-            }
-        });
-    } catch (error) {
-        console.error("Add Multiple Featured Products Error:", error);
-        res.status(500).json({
-            success: false,
-            message: "Failed to add featured products",
-            error: error.message
-        });
-    }
+      }
+    });
+  } catch (error) {
+    console.error("Add Multiple Featured Products Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to add featured products",
+      error: error.message
+    });
+  }
 };
 
 // ============= GET ALL FEATURED PRODUCTS =============
 export const getAllFeaturedProducts = async (req, res) => {
-    try {
-        const { includeInactive = false } = req.query;
+  try {
+    const { includeInactive = false } = req.query;
 
-        let filter = {};
-        if (includeInactive !== 'true') {
-            filter.isActive = true;
-            // Also filter by date
-            filter.$or = [
-                { endDate: null },
-                { endDate: { $gte: new Date() } }
-            ];
-        }
-
-        const featuredProducts = await FeaturedProduct.find(filter)
-            .populate({
-                path: 'product',
-                select: 'name description image variants brand mainCategory subCategory status',
-                populate: [
-                    { path: 'brand', select: 'name brandId' },
-                    { path: 'mainCategory', select: 'categoryName mainCategoryId' },
-                    { path: 'subCategory', select: 'categoryName subCategoryId' }
-                ]
-            })
-            .sort({ order: 1, createdAt: -1 });
-
-        res.status(200).json({
-            success: true,
-            message: "Featured products retrieved successfully",
-            count: featuredProducts.length,
-            data: featuredProducts
-        });
-    } catch (error) {
-        console.error("Get Featured Products Error:", error);
-        res.status(500).json({
-            success: false,
-            message: "Failed to fetch featured products",
-            error: error.message
-        });
+    let filter = {};
+    if (includeInactive !== 'true') {
+      filter.isActive = true;
+      // Also filter by date
+      filter.$or = [
+        { endDate: null },
+        { endDate: { $gte: new Date() } }
+      ];
     }
+
+    const featuredProducts = await FeaturedProduct.find(filter)
+      .populate({
+        path: 'product',
+        select: 'name description image variants brand mainCategory subCategory status',
+        populate: [
+          { path: 'brand', select: 'name brandId' },
+          { path: 'mainCategory', select: 'categoryName mainCategoryId' },
+          { path: 'subCategory', select: 'categoryName subCategoryId' }
+        ]
+      })
+      .sort({ order: 1, createdAt: -1 });
+
+    res.status(200).json({
+      success: true,
+      message: "Featured products retrieved successfully",
+      count: featuredProducts.length,
+      data: featuredProducts
+    });
+  } catch (error) {
+    console.error("Get Featured Products Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch featured products",
+      error: error.message
+    });
+  }
 };
 
 // ============= GET FEATURED PRODUCT BY ID =============
 export const getFeaturedProductById = async (req, res) => {
-    try {
-        const { id } = req.params;
+  try {
+    const { id } = req.params;
 
-        const featuredProduct = await FeaturedProduct.findById(id)
-            .populate({
-                path: 'product',
-                select: 'name description image variants brand mainCategory subCategory',
-                populate: [
-                    { path: 'brand', select: 'name' },
-                    { path: 'mainCategory', select: 'categoryName' },
-                    { path: 'subCategory', select: 'categoryName' }
-                ]
-            });
+    const featuredProduct = await FeaturedProduct.findById(id)
+      .populate({
+        path: 'product',
+        select: 'name description image variants brand mainCategory subCategory',
+        populate: [
+          { path: 'brand', select: 'name' },
+          { path: 'mainCategory', select: 'categoryName' },
+          { path: 'subCategory', select: 'categoryName' }
+        ]
+      });
 
-        if (!featuredProduct) {
-            return res.status(404).json({
-                success: false,
-                message: "Featured product not found"
-            });
-        }
-
-        res.status(200).json({
-            success: true,
-            message: "Featured product retrieved successfully",
-            data: featuredProduct
-        });
-    } catch (error) {
-        console.error("Get Featured Product Error:", error);
-        res.status(500).json({
-            success: false,
-            message: "Failed to fetch featured product",
-            error: error.message
-        });
+    if (!featuredProduct) {
+      return res.status(404).json({
+        success: false,
+        message: "Featured product not found"
+      });
     }
+
+    res.status(200).json({
+      success: true,
+      message: "Featured product retrieved successfully",
+      data: featuredProduct
+    });
+  } catch (error) {
+    console.error("Get Featured Product Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch featured product",
+      error: error.message
+    });
+  }
 };
 
 // ============= UPDATE FEATURED PRODUCT =============
 export const updateFeaturedProduct = async (req, res) => {
-    try {
-        const { id } = req.params;
-        const { title, description, badge, order, isActive, startDate, endDate } = req.body;
+  try {
+    const { id } = req.params;
+    const { title, description, badge, order, isActive, startDate, endDate } = req.body;
 
-        const updateData = {};
-        if (title !== undefined) updateData.title = title;
-        if (description !== undefined) updateData.description = description;
-        if (badge !== undefined) updateData.badge = badge;
-        if (order !== undefined) updateData.order = order;
-        if (isActive !== undefined) updateData.isActive = isActive;
-        if (startDate !== undefined) updateData.startDate = startDate;
-        if (endDate !== undefined) updateData.endDate = endDate;
+    const updateData = {};
+    if (title !== undefined) updateData.title = title;
+    if (description !== undefined) updateData.description = description;
+    if (badge !== undefined) updateData.badge = badge;
+    if (order !== undefined) updateData.order = order;
+    if (isActive !== undefined) updateData.isActive = isActive;
+    if (startDate !== undefined) updateData.startDate = startDate;
+    if (endDate !== undefined) updateData.endDate = endDate;
 
-        const featuredProduct = await FeaturedProduct.findByIdAndUpdate(
-            id,
-            updateData,
-            { new: true, runValidators: true }
-        ).populate({
-            path: 'product',
-            select: 'name description image variants brand mainCategory subCategory',
-            populate: [
-                { path: 'brand', select: 'name' },
-                { path: 'mainCategory', select: 'categoryName' },
-                { path: 'subCategory', select: 'categoryName' }
-            ]
-        });
+    const featuredProduct = await FeaturedProduct.findByIdAndUpdate(
+      id,
+      updateData,
+      { new: true, runValidators: true }
+    ).populate({
+      path: 'product',
+      select: 'name description image variants brand mainCategory subCategory',
+      populate: [
+        { path: 'brand', select: 'name' },
+        { path: 'mainCategory', select: 'categoryName' },
+        { path: 'subCategory', select: 'categoryName' }
+      ]
+    });
 
-        if (!featuredProduct) {
-            return res.status(404).json({
-                success: false,
-                message: "Featured product not found"
-            });
-        }
-
-        res.status(200).json({
-            success: true,
-            message: "Featured product updated successfully",
-            data: featuredProduct
-        });
-    } catch (error) {
-        console.error("Update Featured Product Error:", error);
-        res.status(500).json({
-            success: false,
-            message: "Failed to update featured product",
-            error: error.message
-        });
+    if (!featuredProduct) {
+      return res.status(404).json({
+        success: false,
+        message: "Featured product not found"
+      });
     }
+
+    res.status(200).json({
+      success: true,
+      message: "Featured product updated successfully",
+      data: featuredProduct
+    });
+  } catch (error) {
+    console.error("Update Featured Product Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to update featured product",
+      error: error.message
+    });
+  }
 };
 
 // ============= DELETE FEATURED PRODUCT =============
 export const deleteFeaturedProduct = async (req, res) => {
-    try {
-        const { id } = req.params;
+  try {
+    const { id } = req.params;
 
-        const featuredProduct = await FeaturedProduct.findByIdAndDelete(id);
+    const featuredProduct = await FeaturedProduct.findByIdAndDelete(id);
 
-        if (!featuredProduct) {
-            return res.status(404).json({
-                success: false,
-                message: "Featured product not found"
-            });
-        }
-
-        res.status(200).json({
-            success: true,
-            message: "Featured product deleted successfully",
-            data: featuredProduct
-        });
-    } catch (error) {
-        console.error("Delete Featured Product Error:", error);
-        res.status(500).json({
-            success: false,
-            message: "Failed to delete featured product",
-            error: error.message
-        });
+    if (!featuredProduct) {
+      return res.status(404).json({
+        success: false,
+        message: "Featured product not found"
+      });
     }
+
+    res.status(200).json({
+      success: true,
+      message: "Featured product deleted successfully",
+      data: featuredProduct
+    });
+  } catch (error) {
+    console.error("Delete Featured Product Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to delete featured product",
+      error: error.message
+    });
+  }
 };
 
 // ============= TOGGLE FEATURED PRODUCT STATUS =============
 export const toggleFeaturedProductStatus = async (req, res) => {
-    try {
-        const { id } = req.params;
+  try {
+    const { id } = req.params;
 
-        const featuredProduct = await FeaturedProduct.findById(id);
+    const featuredProduct = await FeaturedProduct.findById(id);
 
-        if (!featuredProduct) {
-            return res.status(404).json({
-                success: false,
-                message: "Featured product not found"
-            });
-        }
-
-        featuredProduct.isActive = !featuredProduct.isActive;
-        await featuredProduct.save();
-
-        await featuredProduct.populate({
-            path: 'product',
-            select: 'name description image'
-        });
-
-        res.status(200).json({
-            success: true,
-            message: `Featured product ${featuredProduct.isActive ? 'activated' : 'deactivated'} successfully`,
-            data: featuredProduct
-        });
-    } catch (error) {
-        console.error("Toggle Featured Product Error:", error);
-        res.status(500).json({
-            success: false,
-            message: "Failed to toggle featured product status",
-            error: error.message
-        });
+    if (!featuredProduct) {
+      return res.status(404).json({
+        success: false,
+        message: "Featured product not found"
+      });
     }
+
+    featuredProduct.isActive = !featuredProduct.isActive;
+    await featuredProduct.save();
+
+    await featuredProduct.populate({
+      path: 'product',
+      select: 'name description image'
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Featured product ${featuredProduct.isActive ? 'activated' : 'deactivated'} successfully`,
+      data: featuredProduct
+    });
+  } catch (error) {
+    console.error("Toggle Featured Product Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to toggle featured product status",
+      error: error.message
+    });
+  }
 };
 
 // ============= GET ACTIVE FEATURED PRODUCTS (FOR LANDING PAGE) =============
 export const getActiveFeaturedProducts = async (req, res) => {
-    try {
-        const { limit = 10 } = req.query;
+  try {
+    const { limit = 10 } = req.query;
 
-        const now = new Date();
+    const now = new Date();
 
-        const featuredProducts = await FeaturedProduct.find({
-            isActive: true,
-            $or: [
-                { endDate: null },
-                { endDate: { $gte: now } }
-            ]
-        })
-            .populate({
-                path: 'product',
-                match: { status: 'Available' }, // Only show available products
-                select: 'name description image variants brand mainCategory subCategory',
-                populate: [
-                    { path: 'brand', select: 'name' },
-                    { path: 'mainCategory', select: 'categoryName' },
-                    { path: 'subCategory', select: 'categoryName' }
-                ]
-            })
-            .sort({ order: 1, createdAt: -1 })
-            .limit(parseInt(limit));
+    const featuredProducts = await FeaturedProduct.find({
+      isActive: true,
+      $or: [
+        { endDate: null },
+        { endDate: { $gte: now } }
+      ]
+    })
+      .populate({
+        path: 'product',
+        match: { status: 'Available' }, // Only show available products
+        select: 'name description image variants brand mainCategory subCategory',
+        populate: [
+          { path: 'brand', select: 'name' },
+          { path: 'mainCategory', select: 'categoryName' },
+          { path: 'subCategory', select: 'categoryName' }
+        ]
+      })
+      .sort({ order: 1, createdAt: -1 })
+      .limit(parseInt(limit));
 
-        // Filter out featured products where the product is null (out of stock or deleted)
-        const validFeaturedProducts = featuredProducts.filter(fp => fp.product !== null);
+    // Filter out featured products where the product is null (out of stock or deleted)
+    const validFeaturedProducts = featuredProducts.filter(fp => fp.product !== null);
 
-        res.status(200).json({
-            success: true,
-            message: "Active featured products retrieved successfully",
-            count: validFeaturedProducts.length,
-            data: validFeaturedProducts
-        });
-    } catch (error) {
-        console.error("Get Active Featured Products Error:", error);
-        res.status(500).json({
-            success: false,
-            message: "Failed to fetch active featured products",
-            error: error.message
-        });
-    }
+    res.status(200).json({
+      success: true,
+      message: "Active featured products retrieved successfully",
+      count: validFeaturedProducts.length,
+      data: validFeaturedProducts
+    });
+  } catch (error) {
+    console.error("Get Active Featured Products Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch active featured products",
+      error: error.message
+    });
+  }
 };
+
+export const createClinicSetup = async (req, res) => {
+  try {
+    const { name, contact, email, city, address, specialization } = req.body;
+
+    const newClinicSetup = new ClinicSetup({
+      name,
+      contact,
+      email,
+      city,
+      address,
+      specialization
+    });
+    await newClinicSetup.save();
+
+    res.status(200).json({
+      message: "Clinic setup created successfully",
+      data: newClinicSetup
+    });
+  } catch (error) {
+    console.error("Create Clinic Setup Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to create clinic setup",
+      error: error.message
+    });
+  }
+
+}
+
+export const getClinicSetup = async (req, res) => {
+  try {
+    const clinicSetups = await ClinicSetup.find();
+    res.status(200).json({
+      message: "Clinic setups retrieved successfully",
+      data: clinicSetups
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: "Failed to fetch clinic setups",
+      error: error.message
+    });
+  }
+}

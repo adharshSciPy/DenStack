@@ -64,8 +64,11 @@ import {
   deleteFeaturedProduct,
   toggleFeaturedProductStatus,
   getActiveFeaturedProducts,
+  createClinicSetup,
+  getClinicSetup
 } from "../Controller/LandingController.js";
 import landingUpload from "../middlewares/landingUpload.js";
+import ClinicSetup from "../Model/ClinicSetupSchema.js";
 
 const landingRouter = express.Router();
 
@@ -164,6 +167,11 @@ landingRouter.get("/featured-products/getById/:id", getFeaturedProductById);
 landingRouter.put("/featured-products/update/:id", updateFeaturedProduct);
 landingRouter.put("/featured-products/toggle/:id", toggleFeaturedProductStatus);
 landingRouter.delete("/featured-products/delete/:id", deleteFeaturedProduct);
+
+// ClinicSetup
+
+landingRouter.post("/clinic-setup/create", createClinicSetup);
+landingRouter.get("/clinic-setup/get", getClinicSetup);
 
 // ============= TOP SELLING PRODUCTS ROUTES =============
 landingRouter.get("/topSelling/getAll", getTopSellingProducts);
