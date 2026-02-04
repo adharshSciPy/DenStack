@@ -1,6 +1,7 @@
 import mongoose, { Schema } from "mongoose";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
+import { type } from "os";
 
 const EcommerceUserSchema = new Schema({
   name: {
@@ -19,8 +20,19 @@ const EcommerceUserSchema = new Schema({
   password: {
     type: String,
     required: true,
+  },
+  DOB: {
+    type: String,
+  },
+  specialization: {
+    type: String,
+  },
+  clinicName: {
+    type: String,
+  },
+  licenseNumber: {
+    type: String
   }
-  
 });
 
 EcommerceUserSchema.pre("save", async function (next) {
@@ -41,7 +53,7 @@ EcommerceUserSchema.methods.generateAccessToken = function () {
       email: this.email,
     },
     process.env.ACCESS_TOKEN_SECRET,
-    { expiresIn: process.env.ACCESS_TOKEN_EXPIRY }
+    { expiresIn: process.env.ACCESS_TOKEN_EXPIRY },
   );
 };
 EcommerceUserSchema.methods.generateRefreshToken = function () {
@@ -52,10 +64,9 @@ EcommerceUserSchema.methods.generateRefreshToken = function () {
       email: this.email,
     },
     process.env.REFRESH_TOKEN_SECRET,
-    { expiresIn: process.env.REFRESH_TOKEN_EXPIRY }
+    { expiresIn: process.env.REFRESH_TOKEN_EXPIRY },
   );
 };
-
 
 EcommerceUserSchema.methods.isPasswordCorrect = async function (password) {
   return await bcrypt.compare(password, this.password);

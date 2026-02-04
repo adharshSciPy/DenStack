@@ -6,7 +6,6 @@ import {
   phoneValidator,
 } from "../utils/validators.js";
 
-
 const registerEcommerceUser = async (req, res) => {
   try {
     const { name, email, password, phoneNumber } = req.body;
@@ -19,8 +18,9 @@ const registerEcommerceUser = async (req, res) => {
     if (!phoneValidator(phoneNumber))
       return res.status(400).json({ message: "Invalid phone number" });
 
-
-    const existingUser = await EcommerceUser.findOne({ $or: [{ email }, { phoneNumber }] });
+    const existingUser = await EcommerceUser.findOne({
+      $or: [{ email }, { phoneNumber }],
+    });
     if (existingUser) {
       if (existingUser.email === email)
         return res.status(400).json({ message: "Email already exists" });
@@ -29,7 +29,12 @@ const registerEcommerceUser = async (req, res) => {
     }
 
     // Create user
-    const newSuperAdmin = new EcommerceUser({ name, email, password, phoneNumber });
+    const newSuperAdmin = new EcommerceUser({
+      name,
+      email,
+      password,
+      phoneNumber,
+    });
     await newSuperAdmin.save();
 
     const accessToken = newSuperAdmin.generateAccessToken();
@@ -41,7 +46,7 @@ const registerEcommerceUser = async (req, res) => {
         id: newSuperAdmin._id,
         name: newSuperAdmin.name,
         email: newSuperAdmin.email,
-        phoneNumber: newSuperAdmin.phoneNumber
+        phoneNumber: newSuperAdmin.phoneNumber,
       },
       accessToken,
       refreshToken,
@@ -49,7 +54,9 @@ const registerEcommerceUser = async (req, res) => {
   } catch (error) {
     if (error.code === 11000) {
       const duplicateField = Object.keys(error.keyPattern)[0];
-      return res.status(400).json({ message: `${duplicateField} already exists` });
+      return res
+        .status(400)
+        .json({ message: `${duplicateField} already exists` });
     }
     console.error(error);
     res.status(500).json({ message: "Server error" });
@@ -60,41 +67,153 @@ const loginEcommerceUser = async (req, res) => {
   const { email, password } = req.body;
 
   try {
-
     if (!emailValidator(email))
       return res.status(400).json({ message: "Invalid email" });
     if (!passwordValidator(password))
       return res.status(400).json({ message: "Invalid password" });
 
-
     const superAdmin = await EcommerceUser.findOne({ email });
     if (!superAdmin)
-      return res.status(401).json({ message: "Email or password is incorrect" });
-
+      return res
+        .status(401)
+        .json({ message: "Email or password is incorrect" });
 
     const isMatch = await superAdmin.isPasswordCorrect(password);
     if (!isMatch)
-      return res.status(401).json({ message: "Email or password is incorrect" });
-
+      return res
+        .status(401)
+        .json({ message: "Email or password is incorrect" });
 
     const accessToken = superAdmin.generateAccessToken();
     const refreshToken = superAdmin.generateRefreshToken();
+
+    // 🔐 ACCESS TOKEN COOKIE
+    res.cookie("accessToken", accessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 25 * 60 * 1000, // 25 minutes
+    });
+
+    // 🔁 REFRESH TOKEN COOKIE
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    });
+
     res.status(200).json({
       message: "Login successful",
       superAdmin: {
         id: superAdmin._id,
         name: superAdmin.name,
         email: superAdmin.email,
-        phoneNumber: superAdmin.phoneNumber
+        phoneNumber: superAdmin.phoneNumber,
       },
-      accessToken,
-      refreshToken,
     });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Server error" });
   }
-}
+};
+
+const getProfile = async (req, res) => {
+  try {
+    const id = req.user.id; // from JWT
+
+    const user = await EcommerceUser.findById(id).select(
+      "-password -refreshToken",
+    );
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    return res.status(200).json({
+      message: "Fetched Profile Details",
+      data: user,
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({
+      message: "Internal Server Error",
+      error: error.message,
+    });
+  }
+};
+
+ const editUserProfile = async (req, res) => {
+  try {
+    const userId = req.user.id; // ✅ from auth middleware
+
+    const {
+      name,
+      phoneNumber,
+      DOB,
+      specialization,
+      clinicName,
+      licenseNumber,
+    } = req.body;
+
+    const updateData = {};
+
+    if (name) updateData.name = name;
+    if (phoneNumber) updateData.phoneNumber = phoneNumber;
+    if (DOB) updateData.DOB = DOB;
+    if (specialization) updateData.specialization = specialization;
+    if (clinicName) updateData.clinicName = clinicName;
+    if (licenseNumber) updateData.licenseNumber = licenseNumber;
+
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({
+        message: "No fields provided to update",
+      });
+    }
+
+    const updatedUser = await EcommerceUser.findByIdAndUpdate(
+      userId,
+      updateData,
+      {
+        new: true,
+        runValidators: true,
+      }
+    ).select("-password");
+
+    if (!updatedUser) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
+
+    res.status(200).json({
+      message: "Profile updated successfully",
+      data: updatedUser,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Internal Server Error",
+      error: error.message,
+    });
+  }
+};
 
 
-export { registerEcommerceUser, loginEcommerceUser }
+const logoutUser = (req, res) => {
+  res.clearCookie("accessToken", {
+    httpOnly: true,
+    sameSite: "strict",
+    secure: process.env.NODE_ENV === "production",
+  });
+
+  res.clearCookie("refreshToken", {
+    httpOnly: true,
+    sameSite: "strict",
+    secure: process.env.NODE_ENV === "production",
+  });
+
+  res.json({ message: "Logged out successfully" });
+};
+
+export { registerEcommerceUser, loginEcommerceUser, getProfile,editUserProfile, logoutUser };
