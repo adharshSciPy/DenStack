@@ -6,6 +6,7 @@ import axios from "axios";
 import dotenv from "dotenv";
 import TreatmentPlan from "../model/treatmentPlanSchema.js";
 import{ updatePatientDentalChart} from "../helper/updatePatientDentalChart.js";
+import { findOrCreateMedicine, cleanMedicineName } from '../utils/medicineUtils.js';
 
 dotenv.config();
 const CLINIC_SERVICE_BASE_URL = process.env.CLINIC_SERVICE_BASE_URL;
@@ -72,13 +73,37 @@ const consultPatient = async (req, res) => {
       });
     }
 
-    // ---------- normalize prescriptions ----------
-    const prescriptions = prescriptionsRaw.map((p) => ({
-      medicineName: p.medicineName || p.medicine,
-      dosage: p.dosage,
-      frequency: p.frequency,
-      duration: p.duration,
-    }));
+    // ---------- MEDICINE AUTO-SUGGESTION & AUTO-CREATION ----------
+    const processPrescriptions = async (prescriptionsRaw) => {
+      const processedPrescriptions = [];
+      
+      for (const prescription of prescriptionsRaw) {
+        const medicineName = prescription.medicineName || prescription.medicine;
+        
+        if (medicineName && medicineName.trim().length >= 3) {
+          // Find or create medicine in master database
+          const medicineData = await findOrCreateMedicine(medicineName, doctorId, appointment.clinicId);
+          
+          // Add medicine data to prescription
+          processedPrescriptions.push({
+            medicineName: medicineData?.name || medicineName,
+            dosage: prescription.dosage,
+            frequency: prescription.frequency,
+            duration: prescription.duration,
+            medicineId: medicineData?._id
+          });
+        } else {
+          processedPrescriptions.push({
+            medicineName: medicineName,
+            dosage: prescription.dosage,
+            frequency: prescription.frequency,
+            duration: prescription.duration
+          });
+        }
+      }
+      
+      return processedPrescriptions;
+    };
 
     // ---------- fetch appointment ----------
     const appointment =
@@ -111,6 +136,9 @@ const consultPatient = async (req, res) => {
         .status(404)
         .json({ success: false, message: "Patient not found" });
     }
+
+    // ---------- Process prescriptions with auto-creation ----------
+    const prescriptions = await processPrescriptions(prescriptionsRaw);
 
     // ---------- fetch consultation fee ----------
     let consultationFee = 0;

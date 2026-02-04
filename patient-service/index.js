@@ -8,6 +8,7 @@ import doctorConsultationRouter from "./routes/doctorConsultationRoute.js";
 import path from "path";
 import fs from "fs"
 import dentalRouter from "./routes/dentalChartRoute.js";
+import medicineRouter from "./routes/medicineRoute.js";
 
 
 dotenv.config();
@@ -29,6 +30,7 @@ app.use("/api/v1/patient-service/patient",patientRegisterRouter)
 app.use("/api/v1/patient-service/appointment",patientAppointmentRouter)
 app.use("/api/v1/patient-service/consultation",doctorConsultationRouter)
 app.use("/api/v1/patient-service/dental",dentalRouter)
+app.use("/api/v1/patient-service/medicine",medicineRouter)
 
 
 
