@@ -6,6 +6,7 @@ import axios from "axios";
 import dotenv from "dotenv";
 import TreatmentPlan from "../model/treatmentPlanSchema.js";
 import{ updatePatientDentalChart} from "../helper/updatePatientDentalChart.js";
+import authBaseUrl from "../authServiceBaseUrl.js";
 import { findOrCreateMedicine, cleanMedicineName } from '../utils/medicineUtils.js';
 
 dotenv.config();
@@ -1856,6 +1857,217 @@ const getCurrentMonthRevenue = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+const getAllConsultedPatients = async (req, res) => {
+  const { id } = req.params;
+  const { cursorDate, cursorId, limit = 10 } = req.query; 
+  
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ 
+      success: false, 
+      message: "Invalid Doctor ID format" 
+    });
+  }
+
+  const doctorId = new mongoose.Types.ObjectId(id);
+  const pageLimit = parseInt(limit) > 50 ? 50 : parseInt(limit);
+
+  try {
+    // Build the initial match condition
+    const matchCondition = { doctorId: doctorId };
+    
+    // Add cursor condition if cursor exists
+    if (cursorDate && cursorId) {
+      matchCondition.$or = [
+        { 
+          visitDate: { $lt: new Date(cursorDate) }
+        },
+        {
+          visitDate: new Date(cursorDate),
+          _id: { $lt: new mongoose.Types.ObjectId(cursorId) }
+        }
+      ];
+    }
+
+    // First, get the aggregated data without clinic details
+    const data = await PatientHistory.aggregate([
+      {
+        $match: matchCondition
+      },
+      { $sort: { visitDate: -1, _id: -1 } },
+      {
+        $group: {
+          _id: "$patientId",  // Group by patientId only
+          lastVisitDate: { $first: "$visitDate" },
+          lastVisitId: { $first: "$_id" },
+          clinicId: { $first: "$clinicId" },
+        },
+      },
+      { $sort: { lastVisitDate: -1, lastVisitId: -1 } },
+      { $limit: pageLimit },
+      {
+        $lookup: {
+          from: "patients",
+          localField: "_id",
+          foreignField: "_id",
+          as: "patient",
+        },
+      },
+      { 
+        $unwind: {
+          path: "$patient",
+          preserveNullAndEmptyArrays: true 
+        } 
+      },
+      {
+        $project: {
+          _id: 0,
+          patientId: "$_id",
+          patientName: "$patient.name",
+          clinicId: 1,
+          lastVisitDate: 1,
+          lastVisitId: 1,
+        },
+      },
+    ]);
+
+    // Get total unique patients count (not total visits)
+    const totalPatientsResult = await PatientHistory.aggregate([
+      {
+        $match: { doctorId: doctorId }
+      },
+      {
+        $group: {
+          _id: "$patientId"  // Group by patientId to get unique patients
+        }
+      },
+      {
+        $count: "totalPatients"
+      }
+    ]);
+
+    const totalPatients = totalPatientsResult[0]?.totalPatients || 0;
+
+    if (totalPatients === 0) {
+      return res.status(200).json({
+        success: true,
+        count: 0,
+        data: [],
+        message: "No patient history found for this doctor",
+        nextCursor: null,
+        hasNextPage: false,
+        totalPatients: 0
+      });
+    }
+
+    // Get clinic details only if we have data
+    if (data.length === 0) {
+      return res.status(200).json({
+        success: true,
+        count: 0,
+        data: [],
+        nextCursor: null,
+        hasNextPage: false,
+        totalPatients
+      });
+    }
+
+    const clinicIds = [...new Set(data.map(item => item.clinicId?.toString()).filter(Boolean))];
+    const clinicMap = new Map();
+    const clinicPromises = clinicIds.map(async (clinicId) => {
+      try {
+        const response = await axios.get(
+          `${authBaseUrl}/api/v1/auth/clinic/view-clinic/${clinicId}`,
+          { timeout: 5000 } 
+        );
+        
+        if (response.data.success && response.data.data) {
+          clinicMap.set(clinicId, {
+            name: response.data.data.name,
+            email: response.data.data.email,
+            phoneNumber: response.data.data.phoneNumber
+          });
+        }
+      } catch (error) {
+        console.error(`Failed to fetch clinic ${clinicId}:`, error.message);
+        clinicMap.set(clinicId, {
+          name: 'Unknown Clinic',
+          email: '',
+          phoneNumber: ''
+        });
+      }
+    });
+
+    // Wait for all clinic fetches to complete
+    await Promise.all(clinicPromises);
+
+    // Enrich the data with clinic details
+    const enrichedData = data.map(item => ({
+      patientId: item.patientId,
+      patientName: item.patientName,
+      clinicId: item.clinicId,
+      clinicName: item.clinicId ? (clinicMap.get(item.clinicId.toString())?.name || 'Unknown Clinic') : 'No Clinic',
+      clinicEmail: item.clinicId ? (clinicMap.get(item.clinicId.toString())?.email || '') : '',
+      clinicPhone: item.clinicId ? (clinicMap.get(item.clinicId.toString())?.phoneNumber || '') : '',
+      lastVisitDate: item.lastVisitDate,
+      recordType: "Patient Record"
+    }));
+
+    // Check if there are more unique patients after our current batch
+    let hasNextPage = false;
+    const lastItem = data[data.length - 1];
+    
+    if (data.length === pageLimit) {
+      // Check if there are more unique patients
+      const nextPatientsCheck = await PatientHistory.aggregate([
+        {
+          $match: {
+            doctorId: doctorId,
+            $or: [
+              { 
+                visitDate: { $lt: lastItem.lastVisitDate }
+              },
+              {
+                visitDate: lastItem.lastVisitDate,
+                _id: { $lt: new mongoose.Types.ObjectId(lastItem.lastVisitId) }
+              }
+            ]
+          }
+        },
+        {
+          $group: {
+            _id: "$patientId"  // Check for more unique patients
+          }
+        },
+        { $limit: 1 }
+      ]);
+
+      hasNextPage = nextPatientsCheck.length > 0;
+    }
+
+    // Prepare next cursor
+    const nextCursor = hasNextPage ? {
+      visitDate: lastItem.lastVisitDate,
+      _id: lastItem.lastVisitId
+    } : null;
+
+    return res.status(200).json({
+      success: true,
+      count: enrichedData.length,
+      data: enrichedData,
+      nextCursor,
+      hasNextPage,
+      totalPatients,  // Return total unique patients
+      currentPageCount: enrichedData.length
+    });
+  } catch (error) {
+    console.error("❌ getAllConsultedPatients error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch consulted patients",
+      error: error.message
+    });
+  }
+};
 
 export {
   consultPatient,
@@ -1871,5 +2083,6 @@ export {
   getDoctorDashboard,
   getWeeklyStats,
   getDoctorAnalytics,
-  getCurrentMonthRevenue
+  getCurrentMonthRevenue,
+  getAllConsultedPatients
 };

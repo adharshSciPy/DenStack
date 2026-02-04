@@ -1,9 +1,7 @@
 export const getPriceForUser = (variant, userRole, isClinicDoctor = false) => {
   const CLINIC_ROLE = process.env.CLINIC_ROLE || "700";
-  const DOCTOR_ROLE = process.env.DOCTOR_ROLE || "600";
-  const DOCTOR_CLINIC_ROLE = process.env.DOCTOR_CLINIC_ROLE || "456";
   
-  // If user is a clinic, apply clinic discount (d1)
+  // ✅ RULE 1: If user is a CLINIC (role 700) → Apply D1 (Clinic Discount)
   if (userRole === CLINIC_ROLE) {
     return {
       price: variant.clinicDiscountPrice || variant.originalPrice,
@@ -14,23 +12,29 @@ export const getPriceForUser = (variant, userRole, isClinicDoctor = false) => {
     };
   }
   
-  // If user is a clinic-doctor (role 456) OR a doctor onboarded in clinic OR other users
-  // Apply doctor discount (d2)
+  // ✅ RULE 2: If user is a DOCTOR with isClinicDoctor = true → Apply D2 (Doctor Discount)
+  if (isClinicDoctor === true) {
+    return {
+      price: variant.doctorDiscountPrice || variant.originalPrice,
+      discountPercentage: variant.doctorDiscountPercentage || 0,
+      priceType: 'doctor',
+      appliedDiscount: variant.doctorDiscountPrice ? 'Doctor/Clinic Staff Discount (D2)' : 'Original Price',
+      userType: 'Clinic Doctor'
+    };
+  }
+  
+  // ✅ RULE 3: All other users → Original Price (no discount)
   return {
-    price: variant.doctorDiscountPrice || variant.originalPrice,
-    discountPercentage: variant.doctorDiscountPercentage || 0,
-    priceType: 'doctor',
-    appliedDiscount: variant.doctorDiscountPrice ? 'Doctor/User Discount (D2)' : 'Original Price',
-    userType: userRole === DOCTOR_CLINIC_ROLE || userRole === DOCTOR_ROLE || isClinicDoctor ? 'Clinic Doctor' : 'Other User'
+    price: variant.originalPrice,
+    discountPercentage: 0,
+    priceType: 'original',
+    appliedDiscount: 'Original Price',
+    userType: 'Regular User'
   };
 };
 
 /**
  * Calculate total price for multiple items with role-based pricing
- * @param {Array} items - Array of cart items with product and variant info
- * @param {String} userRole - User's role
- * @param {Boolean} isClinicDoctor - Whether user is clinic doctor
- * @returns {Object} - { subtotal, totalDiscount, finalTotal, items }
  */
 export const calculateOrderTotal = (items, userRole, isClinicDoctor = false) => {
   let subtotal = 0;
@@ -69,10 +73,6 @@ export const calculateOrderTotal = (items, userRole, isClinicDoctor = false) => 
 
 /**
  * Format pricing information for display
- * @param {Object} variant - Product variant
- * @param {String} userRole - User's role
- * @param {Boolean} isClinicDoctor - Whether user is clinic doctor
- * @returns {Object} - Formatted pricing info
  */
 export const formatPricingInfo = (variant, userRole, isClinicDoctor = false) => {
   const pricing = getPriceForUser(variant, userRole, isClinicDoctor);
@@ -90,40 +90,26 @@ export const formatPricingInfo = (variant, userRole, isClinicDoctor = false) => 
 };
 
 /**
- * Validate if a price change is allowed based on role
- * @param {String} userRole - User's role
- * @returns {Boolean} - Whether user can see/modify pricing
- */
-export const canManagePricing = (userRole) => {
-  const ADMIN_ROLE = process.env.ADMIN_ROLE || "789";
-  const INVENTORY_MANAGER_ROLE = process.env.INVENTORY_MANAGER_ROLE || "999";
-  
-  return [ADMIN_ROLE, INVENTORY_MANAGER_ROLE].includes(userRole);
-};
-
-/**
  * Get all available pricing tiers for a variant
- * @param {Object} variant - Product variant
- * @returns {Object} - All pricing tiers
  */
 export const getAllPricingTiers = (variant) => {
   return {
     original: {
       price: variant.originalPrice,
       label: 'Original Price',
-      applicableTo: 'All users (no discount)'
+      applicableTo: 'Regular users'
     },
     clinic: {
       price: variant.clinicDiscountPrice || variant.originalPrice,
       discount: variant.clinicDiscountPercentage || 0,
       label: 'Clinic Price (D1)',
-      applicableTo: 'Clinics only'
+      applicableTo: 'Clinics only (Role: 700)'
     },
     doctor: {
       price: variant.doctorDiscountPrice || variant.originalPrice,
       discount: variant.doctorDiscountPercentage || 0,
-      label: 'Doctor/User Price (D2)',
-      applicableTo: 'Doctors onboarded in clinics and other users'
+      label: 'Clinic Staff Price (D2)',
+      applicableTo: 'Doctors onboarded in clinics (isClinicDoctor: true)'
     }
   };
 };
