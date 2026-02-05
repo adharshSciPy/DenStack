@@ -34,11 +34,11 @@ const featuredProductSchema = new Schema(
             default: true
         },
         startDate: {
-            type: Date,
+            type: String,
             default: Date.now
         },
         endDate: {
-            type: Date,
+            type: String,
             default: null  // null means no end date
         }
     },
