@@ -26,12 +26,13 @@ const app = express();
 
 // Middleware
 // app.use(cors());
-app.use(
-  cors({
-    origin: process.env.CLIENT_URL, // your Next.js URL
-    credentials: true, // 🔥 REQUIRED
-  }),
-);
+// app.use(
+//   cors({
+//     origin: process.env.CLIENT_URL, // your Next.js URL
+//     credentials: true, // 🔥 REQUIRED
+//   }),
+// );
+app.use(cors());
 app.use(express.json());
 app.use(cookieParser());
 
