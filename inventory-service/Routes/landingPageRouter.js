@@ -3,7 +3,7 @@
 // ============================================
 
 import express from "express";
-import { optionalAuth } from "../middlewares/authMiddleware.js";
+import { optionalAuth } from "../middlewares/authmiddleware.js";
 import {
   createCarouselSlide,
   getAllCarouselSlides,

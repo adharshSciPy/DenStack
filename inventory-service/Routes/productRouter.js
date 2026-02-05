@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { createProduct, productDetails, getProduct, productsByCategory, getProductsByBrand, updateProduct, deleteProduct, getProductsByIds, getProductDashboardMetrics, getProductInventoryList } from "../Controller/productController.js";
-import { verifyAuthToken, authorizeRoles } from "../middlewares/authMiddleware.js";
+import { verifyAuthToken, authorizeRoles } from "../middlewares/authmiddleware.js";
 import upload from "../middlewares/upload.js";
 
 const SUPER_ADMIN = process.env.SUPERADMIN_ROLE

@@ -2076,6 +2076,9 @@ export const addProduct = async (req, res) => {
       subCategoryId,
       brandId,
 
+      // ✅ Base Price (manually set by admin)
+      basePrice,
+
       // Variants (Array of objects with size, color, material, pricing)
       variants, // [{ size, color, material, originalPrice, clinicDiscountPrice, doctorDiscountPrice, stock }]
 
@@ -2121,10 +2124,10 @@ export const addProduct = async (req, res) => {
     // OPTION 2: Creating new product
     else {
       // Validate required fields
-      if (!name || !mainCategoryId || !subCategoryId || !brandId) {
+      if (!name || !mainCategoryId || !subCategoryId || !brandId || !basePrice) {
         return res.status(400).json({
           message:
-            "Required fields: name, mainCategoryId, subCategoryId, brandId",
+            "Required fields: name, mainCategoryId, subCategoryId, brandId, basePrice",
         });
       }
 
@@ -2271,6 +2274,7 @@ export const addProduct = async (req, res) => {
         mainCategory: mainCategoryId,
         subCategory: subCategoryId,
         brand: brandId,
+        basePrice: parseFloat(basePrice), // ✅ Admin-provided base price
         variants: processedVariants,
         image: imageUrls,
         expiryDate: expiryDate || null,

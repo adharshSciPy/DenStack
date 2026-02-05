@@ -3,7 +3,7 @@
 // ============================================
 
 import express from "express";
-import { verifyAuthToken, canPlaceOrder } from "../middlewares/authMiddleware.js";
+import { verifyAuthToken, canPlaceOrder } from "../middlewares/authmiddleware.js";
 import {
     createEcomOrder,
     getAllEcomOrders,

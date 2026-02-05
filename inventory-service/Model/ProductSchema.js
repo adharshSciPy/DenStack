@@ -66,6 +66,11 @@ const productSchema = new Schema(
             ref: "Brand", 
             required: true 
         },
+        basePrice: {
+        type: Number,
+        required: true,
+        min: 0
+        },
         mainCategory: {
             type: Schema.Types.ObjectId,
             ref: "MainCategory",
