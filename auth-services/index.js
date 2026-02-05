@@ -26,12 +26,12 @@ const app = express();
 
 // Middleware
 // app.use(cors());
-app.use(
-  cors({
-    origin: process.env.CLIENT_URL, // your Next.js URL
-    credentials: true, // 🔥 REQUIRED
-  }),
-);
+app.use(cors({
+  origin: ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:4000'], // Add your frontend URL
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 // app.use(cors());
 app.use(express.json());
 app.use(cookieParser());
