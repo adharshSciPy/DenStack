@@ -967,20 +967,22 @@ const getVisitHistory = async (req, res) => {
       patientId: new mongoose.Types.ObjectId(patientId),
     };
 
-    // Cursor condition
+    // FIXED CURSOR LOGIC: Handle multiple documents with same visitDate
     if (cursor && cursorId) {
+      const cursorDate = new Date(cursor);
       query.$or = [
-        { visitDate: { $lt: new Date(cursor) } },
-        {
-          visitDate: new Date(cursor),
-          _id: { $lt: new mongoose.Types.ObjectId(cursorId) },
-        },
+        { visitDate: { $lt: cursorDate } },
+        { 
+          visitDate: cursorDate,
+          _id: { $lt: new mongoose.Types.ObjectId(cursorId) }
+        }
       ];
     }
 
-    const visits = await PatientHistory.find(
-      query,
-      {
+    // Fetch ALL fields by not specifying projection, OR explicitly include all needed fields
+    const visits = await PatientHistory.find(query)
+      .select({
+        // Include all fields from schema
         visitDate: 1,
         doctorId: 1,
         clinicId: 1,
@@ -991,8 +993,24 @@ const getVisitHistory = async (req, res) => {
         isPaid: 1,
         dentalWork: 1,
         treatmentPlanId: 1,
-      }
-    )
+        // Add missing consultation fields
+        symptoms: 1,
+        diagnosis: 1,
+        prescriptions: 1,
+        notes: 1,
+        files: 1,
+        labHistory: 1,
+        procedures: 1,
+        createdBy: 1,
+        updatedBy: 1,
+        referral: 1,
+        softTissueExamination: 1,
+        tmjExamination: 1,
+        receptionBilling: 1,
+        billId: 1,
+        createdAt: 1,
+        updatedAt: 1
+      })
       .sort({ visitDate: -1, _id: -1 })
       .limit(limit + 1)
       .lean();
@@ -1000,24 +1018,27 @@ const getVisitHistory = async (req, res) => {
     const hasNextPage = visits.length > limit;
     const data = hasNextPage ? visits.slice(0, limit) : visits;
 
-    const lastItem = data[data.length - 1];
+    // Get last item for cursor - FIXED: check if data exists
+    const lastItem = data.length > 0 ? data[data.length - 1] : null;
 
     res.status(200).json({
       success: true,
       data,
-      nextCursor: hasNextPage
+      nextCursor: hasNextPage && lastItem
         ? {
             visitDate: lastItem.visitDate,
             _id: lastItem._id,
           }
         : null,
       hasNextPage,
+      total: data.length,
     });
   } catch (error) {
     console.error("getVisitHistory error:", error);
     res.status(500).json({
       success: false,
       message: "Internal server error",
+      error: error.message,
     });
   }
 };
