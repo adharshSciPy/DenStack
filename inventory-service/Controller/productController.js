@@ -3,6 +3,7 @@ import Category from "../Model/CategorySchema.js";
 import Vendor from "../Model/VendorSchema.js";
 import mongoose from 'mongoose'; 
 import Brand from "../Model/BrandSchema.js"
+import Favourite from "../Model/FavouritesSchema.js";
 
 // Create a new product with image upload
 const createProduct = async (req, res) => {
@@ -520,6 +521,202 @@ const getProductInventoryList = async (req, res) => {
   }
 };
 
+// favorites
+
+/**
+ * @route   GET /api/favorites
+ * @desc    Get user's favorite products
+ * @access  Private
+ */
+const getFavorites = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const favorites = await Favourite.find({ user: userId })
+      .populate({
+        path: "product",
+        select: "productId name basePrice image status brand mainCategory subCategory variants",
+        populate: [
+          { path: "brand", select: "name" },
+          { path: "mainCategory", select: "name" },
+          { path: "subCategory", select: "name" }
+        ]
+      })
+      .sort({ addedAt: -1 });
+
+    // Transform the response
+    const formattedFavorites = favorites.map(fav => ({
+      _id: fav._id,
+      product: fav.product,
+      variantId: fav.variantId,
+      addedAt: fav.addedAt
+    }));
+
+    res.status(200).json({
+      success: true,
+      count: formattedFavorites.length,
+      data: formattedFavorites
+    });
+  } catch (error) {
+    console.error("Get favorites error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while fetching favorites"
+    });
+  }
+};
+
+/**
+ * @route   POST /api/favorites/:productId
+ * @desc    Add product to favorites
+ * @access  Private
+ */
+const addFavorite = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { productId } = req.params;
+    const { variantId } = req.body; // Optional variant selection
+
+    // Check if product exists
+    const product = await Product.findById(productId);
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: "Product not found"
+      });
+    }
+
+    // Check if product is available
+    if (product.status !== "Available") {
+      return res.status(400).json({
+        success: false,
+        message: "Product is not available"
+      });
+    }
+
+    // Check if already in favorites
+    const existingFavorite = await Favourite.findOne({
+      user: userId,
+      product: productId
+    });
+
+    if (existingFavorite) {
+      return res.status(400).json({
+        success: false,
+        message: "Product already in favorites"
+      });
+    }
+
+    // Create new favorite
+    const favorite = await Favourite.create({
+      user: userId,
+      product: productId,
+      variantId: variantId || null
+    });
+
+    // Populate product details
+    await favorite.populate({
+      path: "product",
+      select: "productId name basePrice image status"
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Product added to favorites",
+      data: {
+        _id: favorite._id,
+        product: favorite.product,
+        variantId: favorite.variantId,
+        addedAt: favorite.addedAt
+      }
+    });
+  } catch (error) {
+    console.error("Add favorite error:", error);
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: "Product already in favorites"
+      });
+    }
+    res.status(500).json({
+      success: false,
+      message: "Server error while adding to favorites"
+    });
+  }
+};
+
+
+
+/**
+ * @route   DELETE /api/favorites/id/:favoriteId
+ * @desc    Remove favorite by its ID
+ * @access  Private
+ */
+const removeFavoriteById = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { favoriteId } = req.params;
+
+    const favorite = await Favourite.findOneAndDelete({
+      _id: favoriteId,
+      user: userId
+    });
+
+    if (!favorite) {
+      return res.status(404).json({
+        success: false,
+        message: "Favorite item not found"
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Item removed from favorites",
+      data: { productId: favorite.product }
+    });
+  } catch (error) {
+    console.error("Remove favorite by ID error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while removing from favorites"
+    });
+  }
+};
+
+/**
+ * @route   GET /api/favorites/check/:productId
+ * @desc    Check if product is in favorites
+ * @access  Private
+ */
+const checkFavorite = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { productId } = req.params;
+
+    const favorite = await Favourite.findOne({
+      user: userId,
+      product: productId
+    });
+
+    res.status(200).json({
+      success: true,
+      isFavorite: !!favorite,
+      data: favorite ? {
+        _id: favorite._id,
+        variantId: favorite.variantId,
+        addedAt: favorite.addedAt
+      } : null
+    });
+  } catch (error) {
+    console.error("Check favorite error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while checking favorite status"
+    });
+  }
+};
+
+
 
 
 export {
@@ -530,5 +727,6 @@ export {
   getProductsByBrand,
   updateProduct,
   deleteProduct,
-  getProductsByIds, getProductDashboardMetrics, getProductInventoryList
+  getProductsByIds, getProductDashboardMetrics, getProductInventoryList,
+  getFavorites, addFavorite, removeFavoriteById, checkFavorite
 };

@@ -1,5 +1,8 @@
 import { Router } from "express";
-import { createProduct, productDetails, getProduct, productsByCategory, getProductsByBrand, updateProduct, deleteProduct, getProductsByIds, getProductDashboardMetrics, getProductInventoryList } from "../Controller/productController.js";
+import {
+  createProduct, productDetails, getProduct, productsByCategory, getProductsByBrand, updateProduct, deleteProduct, getProductsByIds, getProductDashboardMetrics, getProductInventoryList,
+  getFavorites, addFavorite, removeFavoriteById, checkFavorite
+} from "../Controller/productController.js";
 import { verifyAuthToken, authorizeRoles } from "../middlewares/authmiddleware.js";
 import upload from "../middlewares/upload.js";
 
@@ -29,5 +32,11 @@ productRoute.delete("/deleteProduct/:id", verifyAuthToken, authorizeRoles(SUPER_
 productRoute.get("/productsByCategory/:id", verifyAuthToken, authorizeRoles(SUPER_ADMIN, CLINIC_ROLE), productsByCategory);
 productRoute.get("/productStats", getProductDashboardMetrics)
 productRoute.get("/productinventoryList", getProductInventoryList)
+
+// Favorite routes
+productRoute.get("/favorites", verifyAuthToken, getFavorites);
+productRoute.post("/favorites/add/:productId", verifyAuthToken, addFavorite);
+productRoute.delete("/favorites/remove/:productId", verifyAuthToken, removeFavoriteById);
+productRoute.get("/favorites/check/:productId", verifyAuthToken, checkFavorite);
 
 export default productRoute;
