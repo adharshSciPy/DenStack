@@ -53,7 +53,7 @@ EcommerceUserSchema.methods.generateAccessToken = function () {
       email: this.email,
     },
     process.env.ACCESS_TOKEN_SECRET,
-    { expiresIn: process.env.ACCESS_TOKEN_EXPIRY },
+    // { expiresIn: process.env.ACCESS_TOKEN_EXPIRY },
   );
 };
 EcommerceUserSchema.methods.generateRefreshToken = function () {
@@ -64,7 +64,7 @@ EcommerceUserSchema.methods.generateRefreshToken = function () {
       email: this.email,
     },
     process.env.REFRESH_TOKEN_SECRET,
-    { expiresIn: process.env.REFRESH_TOKEN_EXPIRY },
+    // { expiresIn: process.env.REFRESH_TOKEN_EXPIRY },
   );
 };
 
