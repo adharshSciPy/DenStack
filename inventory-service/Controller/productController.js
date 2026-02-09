@@ -1,7 +1,7 @@
 import Product from "../Model/ProductSchema.js";
 import Category from "../Model/CategorySchema.js";
 import Vendor from "../Model/VendorSchema.js";
-import mongoose from 'mongoose'; 
+import mongoose from 'mongoose';
 import Brand from "../Model/BrandSchema.js"
 import Favourite from "../Model/FavouritesSchema.js";
 
@@ -42,85 +42,85 @@ const createProduct = async (req, res) => {
     // Main Category validation - handle both ObjectId and name
     let mainCategoryId;
     let mainCat;
-    
+
     // Check if it's a valid 24-character hex string (MongoDB ObjectId format)
     const isValidObjectId = /^[0-9a-fA-F]{24}$/.test(mainCategory);
-    
+
     if (isValidObjectId) {
       // Try as ObjectId first
       mainCat = await Category.findById(mainCategory);
     }
-    
+
     if (!mainCat) {
       // Try as name (for frontend mock data or user convenience)
-      mainCat = await Category.findOne({ 
+      mainCat = await Category.findOne({
         name: { $regex: new RegExp(`^${mainCategory.trim()}$`, 'i') },
         parentCategory: null
       });
     }
-    
+
     if (!mainCat) {
-      return res.status(404).json({ 
-        message: `Main category "${mainCategory}" not found. Please ensure the category exists.` 
+      return res.status(404).json({
+        message: `Main category "${mainCategory}" not found. Please ensure the category exists.`
       });
     }
-    
+
     if (mainCat.parentCategory !== null) {
       return res.status(400).json({
         message: "Main category must not have a parentCategory",
       });
     }
-    
+
     mainCategoryId = mainCat._id;
 
     // Subcategory validation - handle both ObjectId and name
     let subCategoryId = null;
     if (subCategory) {
       let subCat;
-      
+
       // Check if it's a valid 24-character hex string (MongoDB ObjectId format)
       const isValidSubObjectId = /^[0-9a-fA-F]{24}$/.test(subCategory);
-      
+
       if (isValidSubObjectId) {
         // Try as ObjectId first
         subCat = await Category.findById(subCategory);
       }
-      
+
       if (!subCat) {
         // Try as name under the main category
-        subCat = await Category.findOne({ 
+        subCat = await Category.findOne({
           name: { $regex: new RegExp(`^${subCategory.trim()}$`, 'i') },
           parentCategory: mainCategoryId
         });
       }
-      
+
       if (!subCat) {
-        return res.status(404).json({ 
-          message: `Sub category "${subCategory}" not found` 
+        return res.status(404).json({
+          message: `Sub category "${subCategory}" not found`
         });
       }
-      
+
       if (!subCat.parentCategory) {
         return res.status(400).json({
           message: "Provided sub category has no parent",
         });
       }
-      
+
       if (String(subCat.parentCategory) !== String(mainCategoryId)) {
         return res.status(400).json({
           message: "Sub category does not belong to the selected main category",
         });
       }
-      
+
       subCategoryId = subCat._id;
     }
 
     // Brand validation - handle both ObjectId and name, auto-create if needed
     let brandId;
-    
+
     // Check if it's a valid 24-character hex string (MongoDB ObjectId format)
     const isValidBrandObjectId = /^[0-9a-fA-F]{24}$/.test(brand);
-    
+
     if (isValidBrandObjectId) {
       const brandDoc = await Brand.findById(brand);
       if (!brandDoc) {
@@ -129,10 +129,10 @@ const createProduct = async (req, res) => {
       brandId = brand;
     } else {
       // Look up by name or create
-      let brandDoc = await Brand.findOne({ 
+      let brandDoc = await Brand.findOne({
         name: { $regex: new RegExp(`^${brand.trim()}$`, 'i') }
       });
-      
+
       if (!brandDoc) {
         // Auto-create the brand with default values
         brandDoc = new Brand({
@@ -143,7 +143,7 @@ const createProduct = async (req, res) => {
         await brandDoc.save();
         console.log(`Brand "${brand}" created automatically`);
       }
-      
+
       brandId = brandDoc._id;
     }
 
@@ -190,14 +190,14 @@ const createProduct = async (req, res) => {
 
   } catch (error) {
     console.error("Create Product Error:", error);
-    
+
     // Handle validation errors from pre-save hooks
-    if (error.message.includes("Invalid Sub Category") || 
-        error.message.includes("Sub Category has no parent") ||
-        error.message.includes("does not belong to selected Main Category")) {
+    if (error.message.includes("Invalid Sub Category") ||
+      error.message.includes("Sub Category has no parent") ||
+      error.message.includes("does not belong to selected Main Category")) {
       return res.status(400).json({ message: error.message });
     }
-    
+
     res.status(500).json({ message: "Server Error", error: error.message });
   }
 };
@@ -575,72 +575,70 @@ const addFavorite = async (req, res) => {
   try {
     const userId = req.user.id;
     const { productId } = req.params;
-    const { variantId } = req.body; // Optional variant selection
+    const { variantId } = req.body; // optional
 
-    // Check if product exists
+    // Check product exists
     const product = await Product.findById(productId);
     if (!product) {
       return res.status(404).json({
         success: false,
-        message: "Product not found"
+        message: "Product not found",
       });
     }
 
-    // Check if product is available
+    // Check product availability
     if (product.status !== "Available") {
       return res.status(400).json({
         success: false,
-        message: "Product is not available"
+        message: "Product is not available",
       });
     }
 
-    // Check if already in favorites
+    // Check if already favorited
     const existingFavorite = await Favourite.findOne({
       user: userId,
-      product: productId
+      product: productId,
     });
 
+    // 👉 UNLIKE (Remove)
     if (existingFavorite) {
-      return res.status(400).json({
-        success: false,
-        message: "Product already in favorites"
+      await Favourite.deleteOne({ _id: existingFavorite._id });
+
+      return res.status(200).json({
+        success: true,
+        message: "Product removed from favorites",
+        liked: false,
       });
     }
 
-    // Create new favorite
+    // 👉 LIKE (Add)
     const favorite = await Favourite.create({
       user: userId,
       product: productId,
-      variantId: variantId || null
+      variantId: variantId || null,
     });
 
-    // Populate product details
     await favorite.populate({
       path: "product",
-      select: "productId name basePrice image status"
+      select: "productId name basePrice image status",
     });
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       message: "Product added to favorites",
+      liked: true,
       data: {
         _id: favorite._id,
         product: favorite.product,
         variantId: favorite.variantId,
-        addedAt: favorite.addedAt
-      }
+        addedAt: favorite.addedAt,
+      },
     });
   } catch (error) {
-    console.error("Add favorite error:", error);
-    if (error.code === 11000) {
-      return res.status(400).json({
-        success: false,
-        message: "Product already in favorites"
-      });
-    }
+    console.error("Toggle favorite error:", error);
     res.status(500).json({
       success: false,
-      message: "Server error while adding to favorites"
+      message: "Server error while toggling favorite",
     });
   }
 };

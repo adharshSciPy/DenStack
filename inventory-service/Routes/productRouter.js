@@ -14,7 +14,7 @@ const productRoute = Router();
 
 productRoute.post("/createProduct", verifyAuthToken, authorizeRoles(VENDOR_ROLE, SUPER_ADMIN), upload.array("image", 3), createProduct);
 
-productRoute.get("/productsDetails", verifyAuthToken, authorizeRoles(SUPER_ADMIN, CLINIC_ROLE), productDetails);
+productRoute.get("/productsDetails", productDetails);
 productRoute.get("/getProduct/:id", getProduct);
 productRoute.get("/getProductByBrand/:id", verifyAuthToken, authorizeRoles(SUPER_ADMIN, CLINIC_ROLE), getProductsByBrand)
 productRoute.post("/get-by-ids", getProductsByIds)
@@ -36,7 +36,7 @@ productRoute.get("/productinventoryList", getProductInventoryList)
 // Favorite routes
 productRoute.get("/favorites", verifyAuthToken, getFavorites);
 productRoute.post("/favorites/add/:productId", verifyAuthToken, addFavorite);
-productRoute.delete("/favorites/remove/:productId", verifyAuthToken, removeFavoriteById);
+productRoute.delete("/favorites/remove/:favoriteId", verifyAuthToken, removeFavoriteById);
 productRoute.get("/favorites/check/:productId", verifyAuthToken, checkFavorite);
 
 export default productRoute;
