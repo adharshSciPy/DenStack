@@ -148,7 +148,6 @@ const loginClinic = async (req, res) => {
   const { email, password } = req.body;
 
   try {
-
     // ====== VALIDATIONS ======
     if (!email || !emailValidator(email)) {
       return res.status(400).json({ message: "Invalid email" });
@@ -175,9 +174,49 @@ const loginClinic = async (req, res) => {
       });
     }
 
-    // ====== GENERATE TOKENS ======
-    const accessToken = clinic.generateAccessToken();
-    const refreshToken = clinic.generateRefreshToken();
+    // ✅ Check if subscription is active
+    const today = new Date();
+    const hasActiveSubscription = 
+      clinic.subscription?.isActive === true && 
+      clinic.subscription?.endDate && 
+      new Date(clinic.subscription.endDate) > today;
+
+    // ✅ If subscription expired, update status
+    if (clinic.subscription?.endDate && new Date(clinic.subscription.endDate) < today) {
+      clinic.subscription.isActive = false;
+      await clinic.save();
+    }
+
+    // ====== GENERATE TOKENS WITH SUBSCRIPTION INFO ======
+    const accessToken = jwt.sign(
+      {
+        clinicId: clinic._id,
+        name: clinic.name,
+        email: clinic.email,
+        role: clinic.role, // "700"
+        isClinicDoctor: false, // Clinics are not doctors
+        hasActiveSubscription: hasActiveSubscription, // ✅ Add this
+        subscriptionPackage: clinic.subscription?.package || null,
+        subscription: clinic.subscription?.package
+      },
+      process.env.ACCESS_TOKEN_SECRET,
+      { expiresIn: process.env.ACCESS_TOKEN_EXPIRY }
+    );
+
+    const refreshToken = jwt.sign(
+      {
+        clinicId: clinic._id,
+        name: clinic.name,
+        email: clinic.email,
+        role: clinic.role,
+        isClinicDoctor: false,
+        hasActiveSubscription: hasActiveSubscription, // ✅ Add this
+        subscription: clinic.subscription?.package
+      },
+      process.env.REFRESH_TOKEN_SECRET,
+      { expiresIn: process.env.REFRESH_TOKEN_EXPIRY }
+    );
+
     let subClinics = [];
     if (clinic.isMultipleClinic) {
       subClinics = await Clinic.find({ parentClinicId: clinic._id })
@@ -195,6 +234,7 @@ const loginClinic = async (req, res) => {
         type: clinic.type,
         role: clinic.role,
         subscription: clinic.subscription,
+        hasActiveSubscription: hasActiveSubscription, // ✅ Send to frontend
         subClinics,
       },
       accessToken,

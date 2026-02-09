@@ -2086,7 +2086,7 @@ export const addProduct = async (req, res) => {
       stock,
       expiryDate,
 
-      // Single pricing (if no variants)
+      // ✅ MAIN PRODUCT PRICING (always provided)
       originalPrice,
       clinicDiscountPrice,
       doctorDiscountPrice,
@@ -2124,17 +2124,10 @@ export const addProduct = async (req, res) => {
     // OPTION 2: Creating new product
     else {
       // Validate required fields
-      if (!name || !mainCategoryId || !subCategoryId || !brandId || !basePrice) {
+      if (!name || !mainCategoryId || !subCategoryId || !brandId || !basePrice || !originalPrice) {
         return res.status(400).json({
           message:
-            "Required fields: name, mainCategoryId, subCategoryId, brandId, basePrice",
-        });
-      }
-
-      // Validate pricing: either variants OR single pricing
-      if (!variants && !originalPrice) {
-        return res.status(400).json({
-          message: "Either provide variants array OR originalPrice",
+            "Required fields: name, mainCategoryId, subCategoryId, brandId, basePrice, originalPrice",
         });
       }
 
@@ -2197,85 +2190,91 @@ export const addProduct = async (req, res) => {
           .json({ message: "At least one product image is required" });
       }
 
-      // Process variants or create single variant
+      // ✅ Calculate MAIN PRODUCT pricing
+      const original = parseFloat(originalPrice);
+      const clinicDiscount = clinicDiscountPrice ? parseFloat(clinicDiscountPrice) : null;
+      const doctorDiscount = doctorDiscountPrice ? parseFloat(doctorDiscountPrice) : null;
+
+      const clinicDiscountPercentage = clinicDiscount
+        ? (((original - clinicDiscount) / original) * 100).toFixed(2)
+        : null;
+      const doctorDiscountPercentage = doctorDiscount
+        ? (((original - doctorDiscount) / original) * 100).toFixed(2)
+        : null;
+
+      // ✅ Store main product pricing
+      const mainProductPricing = {
+        originalPrice: original,
+        clinicDiscountPrice: clinicDiscount,
+        doctorDiscountPrice: doctorDiscount,
+        clinicDiscountPercentage: clinicDiscountPercentage
+          ? parseFloat(clinicDiscountPercentage)
+          : null,
+        doctorDiscountPercentage: doctorDiscountPercentage
+          ? parseFloat(doctorDiscountPercentage)
+          : null,
+        stock: stock ? parseInt(stock) : 0,
+      };
+
+      // ✅ Process variants (if provided)
       let processedVariants = [];
 
-      if (variants && Array.isArray(variants)) {
-        // Multiple variants
+      if (variants && Array.isArray(variants) && variants.length > 0) {
         processedVariants = variants.map((variant) => {
-          const original = parseFloat(variant.originalPrice);
-          const clinicDiscount = variant.clinicDiscountPrice
+          const variantOriginal = parseFloat(variant.originalPrice);
+          const variantClinicDiscount = variant.clinicDiscountPrice
             ? parseFloat(variant.clinicDiscountPrice)
             : null;
-          const doctorDiscount = variant.doctorDiscountPrice
+          const variantDoctorDiscount = variant.doctorDiscountPrice
             ? parseFloat(variant.doctorDiscountPrice)
             : null;
 
           // Calculate discount percentages
-          const clinicDiscountPercentage = clinicDiscount
-            ? (((original - clinicDiscount) / original) * 100).toFixed(2)
+          const variantClinicDiscountPercentage = variantClinicDiscount
+            ? (((variantOriginal - variantClinicDiscount) / variantOriginal) * 100).toFixed(2)
             : null;
-          const doctorDiscountPercentage = doctorDiscount
-            ? (((original - doctorDiscount) / original) * 100).toFixed(2)
+          const variantDoctorDiscountPercentage = variantDoctorDiscount
+            ? (((variantOriginal - variantDoctorDiscount) / variantOriginal) * 100).toFixed(2)
             : null;
 
           return {
             size: variant.size || null,
             color: variant.color || null,
             material: variant.material || null,
-            originalPrice: original,
-            clinicDiscountPrice: clinicDiscount,
-            doctorDiscountPrice: doctorDiscount,
-            clinicDiscountPercentage: clinicDiscountPercentage
-              ? parseFloat(clinicDiscountPercentage)
+            originalPrice: variantOriginal,
+            clinicDiscountPrice: variantClinicDiscount,
+            doctorDiscountPrice: variantDoctorDiscount,
+            clinicDiscountPercentage: variantClinicDiscountPercentage
+              ? parseFloat(variantClinicDiscountPercentage)
               : null,
-            doctorDiscountPercentage: doctorDiscountPercentage
-              ? parseFloat(doctorDiscountPercentage)
+            doctorDiscountPercentage: variantDoctorDiscountPercentage
+              ? parseFloat(variantDoctorDiscountPercentage)
               : null,
             stock: variant.stock ? parseInt(variant.stock) : 0,
           };
         });
-      } else {
-        // Single variant (backward compatibility)
-        const original = parseFloat(originalPrice);
-        const clinicDiscount = clinicDiscountPrice ? parseFloat(clinicDiscountPrice) : null;
-        const doctorDiscount = doctorDiscountPrice ? parseFloat(doctorDiscountPrice) : null;
-
-        const clinicDiscountPercentage = clinicDiscount
-          ? (((original - clinicDiscount) / original) * 100).toFixed(2)
-          : null;
-        const doctorDiscountPercentage = doctorDiscount
-          ? (((original - doctorDiscount) / original) * 100).toFixed(2)
-          : null;
-
-        processedVariants = [
-          {
-            size: null,
-            color: null,
-            material: null,
-            originalPrice: original,
-            clinicDiscountPrice: clinicDiscount,
-            doctorDiscountPrice: doctorDiscount,
-            clinicDiscountPercentage: clinicDiscountPercentage
-              ? parseFloat(clinicDiscountPercentage)
-              : null,
-            doctorDiscountPercentage: doctorDiscountPercentage
-              ? parseFloat(doctorDiscountPercentage)
-              : null,
-            stock: stock ? parseInt(stock) : 0,
-          },
-        ];
       }
 
-      // Create new product
+      // Create new product with BOTH main pricing AND variants
       const newProduct = new Product({
         name,
         description: description || "",
         mainCategory: mainCategoryId,
         subCategory: subCategoryId,
         brand: brandId,
-        basePrice: parseFloat(basePrice), // ✅ Admin-provided base price
+        basePrice: parseFloat(basePrice),
+        
+        // ✅ Main product pricing
+        originalPrice: mainProductPricing.originalPrice,
+        clinicDiscountPrice: mainProductPricing.clinicDiscountPrice,
+        doctorDiscountPrice: mainProductPricing.doctorDiscountPrice,
+        clinicDiscountPercentage: mainProductPricing.clinicDiscountPercentage,
+        doctorDiscountPercentage: mainProductPricing.doctorDiscountPercentage,
+        stock: mainProductPricing.stock,
+        
+        // ✅ Variants (can be empty array)
         variants: processedVariants,
+        
         image: imageUrls,
         expiryDate: expiryDate || null,
       });
@@ -2730,10 +2729,10 @@ export const addFeaturedProduct = async (req, res) => {
 
     await featuredProduct.save();
 
-    // Populate before sending response
+    // Populate before sending response - ✅ Added all pricing fields
     await featuredProduct.populate({
       path: 'product',
-      select: 'name description image variants brand mainCategory subCategory',
+      select: 'name description image variants brand mainCategory subCategory originalPrice clinicDiscountPrice doctorDiscountPrice clinicDiscountPercentage doctorDiscountPercentage stock',
       populate: [
         { path: 'brand', select: 'name' },
         { path: 'mainCategory', select: 'categoryName' },

@@ -19,7 +19,6 @@ const variantSchema = new Schema({
         required: true,
         min: 0
     },
-    // ✅ Clinic Discount (for clinics purchasing)
     clinicDiscountPrice: {
         type: Number,
         default: null,
@@ -31,7 +30,6 @@ const variantSchema = new Schema({
         min: 0,
         max: 100
     },
-    // ✅ Doctor/User Discount (for doctors onboarded in clinic or other users)
     doctorDiscountPrice: {
         type: Number,
         default: null,
@@ -67,9 +65,9 @@ const productSchema = new Schema(
             required: true 
         },
         basePrice: {
-        type: Number,
-        required: true,
-        min: 0
+            type: Number,
+            required: true,
+            min: 0
         },
         mainCategory: {
             type: Schema.Types.ObjectId,
@@ -85,16 +83,47 @@ const productSchema = new Schema(
             type: String,
             default: ""
         },
+        
+        // ✅ MAIN PRODUCT PRICING (at product level)
+        originalPrice: {
+            type: Number,
+            required: true,
+            min: 0
+        },
+        clinicDiscountPrice: {
+            type: Number,
+            default: null,
+            min: 0
+        },
+        clinicDiscountPercentage: {
+            type: Number,
+            default: null,
+            min: 0,
+            max: 100
+        },
+        doctorDiscountPrice: {
+            type: Number,
+            default: null,
+            min: 0
+        },
+        doctorDiscountPercentage: {
+            type: Number,
+            default: null,
+            min: 0,
+            max: 100
+        },
+        stock: {
+            type: Number,
+            default: 0,
+            min: 0
+        },
+        
+        // ✅ VARIANTS (now optional - can be empty array)
         variants: {
             type: [variantSchema],
-            required: true,
-            validate: {
-                validator: function(v) {
-                    return v && v.length > 0;
-                },
-                message: 'Product must have at least one variant'
-            }
+            default: []
         },
+        
         image: [{ type: String, required: true }],
         expiryDate: {
             type: Date
@@ -156,9 +185,11 @@ productSchema.pre("save", function (next) {
     if (this.expiryDate && this.expiryDate < today) {
         this.status = "Expired";
     } 
-    // Check total stock across all variants
+    // Check total stock (main product + all variants)
     else {
-        const totalStock = this.variants.reduce((sum, variant) => sum + (variant.stock || 0), 0);
+        // Total stock = main product stock + all variant stocks
+        const variantStock = this.variants.reduce((sum, variant) => sum + (variant.stock || 0), 0);
+        const totalStock = (this.stock || 0) + variantStock;
         
         if (totalStock <= 0) {
             this.status = "Out of Stock";
