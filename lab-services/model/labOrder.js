@@ -20,10 +20,10 @@ const dentalLabOrderSchema = new mongoose.Schema(
     },
     deliveryDate: {
       type: Date,
-      required: true,
+      // required: true,
     },
     niftiFile: {
-      fileName: String,
+      fileName: String,   
       fileUrl: String,
     },
     price: {

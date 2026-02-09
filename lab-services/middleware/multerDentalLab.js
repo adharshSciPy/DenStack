@@ -34,7 +34,7 @@ const fileFilter = (req, file, cb) => {
 // Initialize multer
 const uploadDentalLabFiles = multer({
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB max
+  limits: { fileSize: 1024 * 1024 * 1024 }, // 10MB max
   fileFilter,
 });
 

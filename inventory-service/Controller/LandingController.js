@@ -237,42 +237,42 @@ export const getAllBrands = async (req, res) => {
     const { includeInactive = false } = req.query;
 
     let filter = {};
-    if (includeInactive !== 'true') {
+    if (includeInactive !== "true") {
       filter.isActive = true;
     }
 
     const brands = await Brand.find(filter)
-      .populate('mainCategory', 'categoryName')
-      .populate('subCategory', 'categoryName')
+      .populate("mainCategory", "categoryName")
+      .populate("subCategory", "categoryName")
       .sort({ createdAt: -1 });
 
     // Fetch products for each brand
     const brandsWithProducts = await Promise.all(
       brands.map(async (brand) => {
         const products = await Product.find({
-          brand: brand._id
+          brand: brand._id,
         }).sort({ createdAt: -1 });
 
         return {
           ...brand.toObject(),
           products: products,
-          productCount: products.length
+          productCount: products.length,
         };
-      })
+      }),
     );
 
     res.status(200).json({
       success: true,
       message: "Brands retrieved successfully",
       count: brandsWithProducts.length,
-      data: brandsWithProducts
+      data: brandsWithProducts,
     });
   } catch (error) {
     console.error("Get All Brands Error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to fetch brands",
-      error: error.message
+      error: error.message,
     });
   }
 };
@@ -282,19 +282,19 @@ export const getBrandById = async (req, res) => {
     const { id } = req.params;
 
     const brand = await Brand.findById(id)
-      .populate('mainCategory', 'categoryName')
-      .populate('subCategory', 'categoryName');
+      .populate("mainCategory", "categoryName")
+      .populate("subCategory", "categoryName");
 
     if (!brand) {
       return res.status(404).json({
         success: false,
-        message: "Brand not found"
+        message: "Brand not found",
       });
     }
 
     // Fetch all products for this brand
     const products = await Product.find({
-      brand: brand._id
+      brand: brand._id,
     }).sort({ createdAt: -1 });
 
     res.status(200).json({
@@ -303,15 +303,15 @@ export const getBrandById = async (req, res) => {
       data: {
         brand: brand,
         products: products,
-        productCount: products.length
-      }
+        productCount: products.length,
+      },
     });
   } catch (error) {
     console.error("Get Brand Error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to fetch brand",
-      error: error.message
+      error: error.message,
     });
   }
 };
@@ -502,7 +502,7 @@ export const addTopBrand = async (req, res) => {
     if (!brand) {
       return res.status(404).json({
         success: false,
-        message: "Brand not found"
+        message: "Brand not found",
       });
     }
 
@@ -511,7 +511,7 @@ export const addTopBrand = async (req, res) => {
     if (existingTopBrand) {
       return res.status(400).json({
         success: false,
-        message: "Brand is already in top brands"
+        message: "Brand is already in top brands",
       });
     }
 
@@ -525,21 +525,21 @@ export const addTopBrand = async (req, res) => {
 
     // Populate before sending response
     await topBrand.populate({
-      path: 'brandId',
-      select: 'brandName description brandLogo'
+      path: "brandId",
+      select: "brandName description brandLogo",
     });
 
     res.status(201).json({
       success: true,
       message: "Brand added to top brands successfully",
-      data: topBrand
+      data: topBrand,
     });
   } catch (error) {
     console.error("Add Top Brand Error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to add top brand",
-      error: error.message
+      error: error.message,
     });
   }
 };
@@ -552,13 +552,13 @@ export const addMultipleTopBrands = async (req, res) => {
     if (!brands || !Array.isArray(brands) || brands.length === 0) {
       return res.status(400).json({
         success: false,
-        message: "Please provide an array of brands"
+        message: "Please provide an array of brands",
       });
     }
 
     const results = {
       success: [],
-      failed: []
+      failed: [],
     };
 
     for (const item of brands) {
@@ -570,7 +570,7 @@ export const addMultipleTopBrands = async (req, res) => {
         if (!brand) {
           results.failed.push({
             brandId,
-            reason: "Brand not found"
+            reason: "Brand not found",
           });
           continue;
         }
@@ -580,7 +580,7 @@ export const addMultipleTopBrands = async (req, res) => {
         if (existingTopBrand) {
           results.failed.push({
             brandId,
-            reason: "Brand is already in top brands"
+            reason: "Brand is already in top brands",
           });
           continue;
         }
@@ -588,22 +588,22 @@ export const addMultipleTopBrands = async (req, res) => {
         // Create top brand entry
         const topBrand = new TopBrand({
           brandId,
-          order: order || 0
+          order: order || 0,
         });
 
         await topBrand.save();
 
         // Populate before adding to success list
         await topBrand.populate({
-          path: 'brandId',
-          select: 'brandName description brandLogo'
+          path: "brandId",
+          select: "brandName description brandLogo",
         });
 
         results.success.push(topBrand);
       } catch (error) {
         results.failed.push({
           brandId: item.brandId,
-          reason: error.message
+          reason: error.message,
         });
       }
     }
@@ -617,16 +617,16 @@ export const addMultipleTopBrands = async (req, res) => {
         summary: {
           total: brands.length,
           successful: results.success.length,
-          failed: results.failed.length
-        }
-      }
+          failed: results.failed.length,
+        },
+      },
     });
   } catch (error) {
     console.error("Add Multiple Top Brands Error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to add top brands",
-      error: error.message
+      error: error.message,
     });
   }
 };
@@ -637,18 +637,18 @@ export const getAllTopBrands = async (req, res) => {
     const { includeInactive = false } = req.query;
 
     let filter = {};
-    if (includeInactive !== 'true') {
+    if (includeInactive !== "true") {
       filter.isActive = true;
     }
 
     const topBrands = await TopBrand.find(filter)
       .populate({
-        path: 'brandId',
-        select: 'name description image isActive mainCategory subCategory',
+        path: "brandId",
+        select: "name description image isActive mainCategory subCategory",
         populate: [
-          { path: 'mainCategory', select: 'categoryName' },
-          { path: 'subCategory', select: 'categoryName' }
-        ]
+          { path: "mainCategory", select: "categoryName" },
+          { path: "subCategory", select: "categoryName" },
+        ],
       })
       .sort({ order: 1, createdAt: -1 });
 
@@ -659,38 +659,37 @@ export const getAllTopBrands = async (req, res) => {
           return {
             ...topBrand.toObject(),
             products: [],
-            productCount: 0
+            productCount: 0,
           };
         }
 
         const products = await Product.find({
-          brand: topBrand.brandId._id
+          brand: topBrand.brandId._id,
         }).sort({ createdAt: -1 });
 
         return {
           ...topBrand.toObject(),
           products: products,
-          productCount: products.length
+          productCount: products.length,
         };
-      })
+      }),
     );
 
     res.status(200).json({
       success: true,
       message: "Top brands retrieved successfully",
       count: topBrandsWithProducts.length,
-      data: topBrandsWithProducts
+      data: topBrandsWithProducts,
     });
   } catch (error) {
     console.error("Get Top Brands Error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to fetch top brands",
-      error: error.message
+      error: error.message,
     });
   }
 };
-
 
 // ============= UPDATE TOP BRAND =============
 export const updateTopBrand = async (req, res) => {
@@ -702,33 +701,32 @@ export const updateTopBrand = async (req, res) => {
     if (order !== undefined) updateData.order = order;
     if (isActive !== undefined) updateData.isActive = isActive;
 
-    const topBrand = await TopBrand.findByIdAndUpdate(
-      id,
-      updateData,
-      { new: true, runValidators: true }
-    ).populate({
-      path: 'brandId',
-      select: 'brandName description brandLogo'
+    const topBrand = await TopBrand.findByIdAndUpdate(id, updateData, {
+      new: true,
+      runValidators: true,
+    }).populate({
+      path: "brandId",
+      select: "brandName description brandLogo",
     });
 
     if (!topBrand) {
       return res.status(404).json({
         success: false,
-        message: "Top brand not found"
+        message: "Top brand not found",
       });
     }
 
     res.status(200).json({
       success: true,
       message: "Top brand updated successfully",
-      data: topBrand
+      data: topBrand,
     });
   } catch (error) {
     console.error("Update Top Brand Error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to update top brand",
-      error: error.message
+      error: error.message,
     });
   }
 };
@@ -743,20 +741,20 @@ export const deleteTopBrand = async (req, res) => {
     if (!topBrand) {
       return res.status(404).json({
         success: false,
-        message: "Top brand not found"
+        message: "Top brand not found",
       });
     }
 
     res.status(200).json({
       success: true,
-      message: "Top brand removed successfully"
+      message: "Top brand removed successfully",
     });
   } catch (error) {
     console.error("Delete Top Brand Error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to remove top brand",
-      error: error.message
+      error: error.message,
     });
   }
 };
@@ -766,33 +764,32 @@ export const getTopBrandById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const topBrand = await TopBrand.findById(id)
-      .populate({
-        path: 'brandId',
-        select: 'name description image isActive mainCategory subCategory',
-        populate: [
-          { path: 'mainCategory', select: 'categoryName' },
-          { path: 'subCategory', select: 'categoryName' }
-        ]
-      });
+    const topBrand = await TopBrand.findById(id).populate({
+      path: "brandId",
+      select: "name description image isActive mainCategory subCategory",
+      populate: [
+        { path: "mainCategory", select: "categoryName" },
+        { path: "subCategory", select: "categoryName" },
+      ],
+    });
 
     if (!topBrand) {
       return res.status(404).json({
         success: false,
-        message: "Top brand not found"
+        message: "Top brand not found",
       });
     }
 
     if (!topBrand.brandId) {
       return res.status(404).json({
         success: false,
-        message: "Associated brand not found"
+        message: "Associated brand not found",
       });
     }
 
     // Fetch all products for this brand
     const products = await Product.find({
-      brand: topBrand.brandId._id
+      brand: topBrand.brandId._id,
     }).sort({ createdAt: -1 });
 
     res.status(200).json({
@@ -801,15 +798,15 @@ export const getTopBrandById = async (req, res) => {
       data: {
         topBrand: topBrand,
         products: products,
-        productCount: products.length
-      }
+        productCount: products.length,
+      },
     });
   } catch (error) {
     console.error("Get Top Brand Error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to fetch top brand",
-      error: error.message
+      error: error.message,
     });
   }
 };
@@ -1252,7 +1249,7 @@ export const addTopCategory = async (req, res) => {
     if (!category) {
       return res.status(404).json({
         success: false,
-        message: "Category not found"
+        message: "Category not found",
       });
     }
 
@@ -1261,7 +1258,7 @@ export const addTopCategory = async (req, res) => {
     if (existingTopCategory) {
       return res.status(400).json({
         success: false,
-        message: "Category is already in top categories"
+        message: "Category is already in top categories",
       });
     }
 
@@ -1276,7 +1273,8 @@ export const addTopCategory = async (req, res) => {
     if (!finalImageUrl) {
       return res.status(400).json({
         success: false,
-        message: "No image available. Category must have an image or provide imageUrl"
+        message:
+          "No image available. Category must have an image or provide imageUrl",
       });
     }
 
@@ -1292,21 +1290,21 @@ export const addTopCategory = async (req, res) => {
 
     // Populate before sending response
     await topCategory.populate({
-      path: 'categoryId',
-      select: 'categoryName description image'
+      path: "categoryId",
+      select: "categoryName description image",
     });
 
     res.status(201).json({
       success: true,
       message: "Category added to top categories successfully",
-      data: topCategory
+      data: topCategory,
     });
   } catch (error) {
     console.error("Add Top Category Error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to add top category",
-      error: error.message
+      error: error.message,
     });
   }
 };
@@ -1319,13 +1317,13 @@ export const addMultipleTopCategories = async (req, res) => {
     if (!categories || !Array.isArray(categories) || categories.length === 0) {
       return res.status(400).json({
         success: false,
-        message: "Please provide an array of categories"
+        message: "Please provide an array of categories",
       });
     }
 
     const results = {
       success: [],
-      failed: []
+      failed: [],
     };
 
     for (const item of categories) {
@@ -1337,7 +1335,7 @@ export const addMultipleTopCategories = async (req, res) => {
         if (!category) {
           results.failed.push({
             categoryId,
-            reason: "Category not found"
+            reason: "Category not found",
           });
           continue;
         }
@@ -1347,7 +1345,7 @@ export const addMultipleTopCategories = async (req, res) => {
         if (existingTopCategory) {
           results.failed.push({
             categoryId,
-            reason: "Category is already in top categories"
+            reason: "Category is already in top categories",
           });
           continue;
         }
@@ -1358,7 +1356,7 @@ export const addMultipleTopCategories = async (req, res) => {
         if (!finalImageUrl) {
           results.failed.push({
             categoryId,
-            reason: "No image available for this category"
+            reason: "No image available for this category",
           });
           continue;
         }
@@ -1368,22 +1366,22 @@ export const addMultipleTopCategories = async (req, res) => {
           categoryId,
           displayName: displayName || category.categoryName,
           imageUrl: finalImageUrl,
-          order: order || 0
+          order: order || 0,
         });
 
         await topCategory.save();
 
         // Populate before adding to success list
         await topCategory.populate({
-          path: 'categoryId',
-          select: 'categoryName description image'
+          path: "categoryId",
+          select: "categoryName description image",
         });
 
         results.success.push(topCategory);
       } catch (error) {
         results.failed.push({
           categoryId: item.categoryId,
-          reason: error.message
+          reason: error.message,
         });
       }
     }
@@ -1397,16 +1395,16 @@ export const addMultipleTopCategories = async (req, res) => {
         summary: {
           total: categories.length,
           successful: results.success.length,
-          failed: results.failed.length
-        }
-      }
+          failed: results.failed.length,
+        },
+      },
     });
   } catch (error) {
     console.error("Add Multiple Top Categories Error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to add top categories",
-      error: error.message
+      error: error.message,
     });
   }
 };
@@ -1440,7 +1438,7 @@ export const getAllTopCategories = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Server error",
-      error: err.message
+      error: err.message,
     });
   }
 };
@@ -1455,19 +1453,19 @@ export const deleteTopCategory = async (req, res) => {
     if (!topCategory) {
       return res.status(404).json({
         success: false,
-        message: "Top category not found"
+        message: "Top category not found",
       });
     }
 
     res.status(200).json({
       success: true,
-      message: "Top category removed successfully"
+      message: "Top category removed successfully",
     });
   } catch (err) {
     res.status(500).json({
       success: false,
       message: "Server error",
-      error: err.message
+      error: err.message,
     });
   }
 };
@@ -1485,7 +1483,7 @@ export const updateTopCategory = async (req, res) => {
       if (!category) {
         return res.status(404).json({
           success: false,
-          message: "Category not found"
+          message: "Category not found",
         });
       }
       updateData.categoryId = categoryId;
@@ -1496,7 +1494,8 @@ export const updateTopCategory = async (req, res) => {
     if (isActive !== undefined) updateData.isActive = isActive;
 
     if (req.file) {
-      updateData.imageUrl = req.file.path || `/uploads/landing/${req.file.filename}`;
+      updateData.imageUrl =
+        req.file.path || `/uploads/landing/${req.file.filename}`;
     }
 
     const topCategory = await TopCategory.findByIdAndUpdate(id, updateData, {
@@ -1507,7 +1506,7 @@ export const updateTopCategory = async (req, res) => {
     if (!topCategory) {
       return res.status(404).json({
         success: false,
-        message: "Top category not found"
+        message: "Top category not found",
       });
     }
 
@@ -1520,7 +1519,7 @@ export const updateTopCategory = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Server error",
-      error: err.message
+      error: err.message,
     });
   }
 };
@@ -2124,7 +2123,14 @@ export const addProduct = async (req, res) => {
     // OPTION 2: Creating new product
     else {
       // Validate required fields
-      if (!name || !mainCategoryId || !subCategoryId || !brandId || !basePrice || !originalPrice) {
+      if (
+        !name ||
+        !mainCategoryId ||
+        !subCategoryId ||
+        !brandId ||
+        !basePrice ||
+        !originalPrice
+      ) {
         return res.status(400).json({
           message:
             "Required fields: name, mainCategoryId, subCategoryId, brandId, basePrice, originalPrice",
@@ -2192,8 +2198,12 @@ export const addProduct = async (req, res) => {
 
       // ✅ Calculate MAIN PRODUCT pricing
       const original = parseFloat(originalPrice);
-      const clinicDiscount = clinicDiscountPrice ? parseFloat(clinicDiscountPrice) : null;
-      const doctorDiscount = doctorDiscountPrice ? parseFloat(doctorDiscountPrice) : null;
+      const clinicDiscount = clinicDiscountPrice
+        ? parseFloat(clinicDiscountPrice)
+        : null;
+      const doctorDiscount = doctorDiscountPrice
+        ? parseFloat(doctorDiscountPrice)
+        : null;
 
       const clinicDiscountPercentage = clinicDiscount
         ? (((original - clinicDiscount) / original) * 100).toFixed(2)
@@ -2231,10 +2241,16 @@ export const addProduct = async (req, res) => {
 
           // Calculate discount percentages
           const variantClinicDiscountPercentage = variantClinicDiscount
-            ? (((variantOriginal - variantClinicDiscount) / variantOriginal) * 100).toFixed(2)
+            ? (
+                ((variantOriginal - variantClinicDiscount) / variantOriginal) *
+                100
+              ).toFixed(2)
             : null;
           const variantDoctorDiscountPercentage = variantDoctorDiscount
-            ? (((variantOriginal - variantDoctorDiscount) / variantOriginal) * 100).toFixed(2)
+            ? (
+                ((variantOriginal - variantDoctorDiscount) / variantOriginal) *
+                100
+              ).toFixed(2)
             : null;
 
           return {
@@ -2263,7 +2279,7 @@ export const addProduct = async (req, res) => {
         subCategory: subCategoryId,
         brand: brandId,
         basePrice: parseFloat(basePrice),
-        
+
         // ✅ Main product pricing
         originalPrice: mainProductPricing.originalPrice,
         clinicDiscountPrice: mainProductPricing.clinicDiscountPrice,
@@ -2271,10 +2287,10 @@ export const addProduct = async (req, res) => {
         clinicDiscountPercentage: mainProductPricing.clinicDiscountPercentage,
         doctorDiscountPercentage: mainProductPricing.doctorDiscountPercentage,
         stock: mainProductPricing.stock,
-        
+
         // ✅ Variants (can be empty array)
         variants: processedVariants,
-        
+
         image: imageUrls,
         expiryDate: expiryDate || null,
       });
@@ -2543,14 +2559,20 @@ export const getTopSellingProducts = async (req, res) => {
 
     // Build match conditions
     let matchConditions = {};
-    if (mainCategoryId) matchConditions.mainCategory = new mongoose.Types.ObjectId(mainCategoryId);
-    if (subCategoryId) matchConditions.subCategory = new mongoose.Types.ObjectId(subCategoryId);
+    if (mainCategoryId)
+      matchConditions.mainCategory = new mongoose.Types.ObjectId(
+        mainCategoryId,
+      );
+    if (subCategoryId)
+      matchConditions.subCategory = new mongoose.Types.ObjectId(subCategoryId);
     if (brandId) matchConditions.brand = new mongoose.Types.ObjectId(brandId);
 
     // Aggregate pipeline to get top selling products
     const topProducts = await Product.aggregate([
       // Match filters if provided
-      ...(Object.keys(matchConditions).length > 0 ? [{ $match: matchConditions }] : []),
+      ...(Object.keys(matchConditions).length > 0
+        ? [{ $match: matchConditions }]
+        : []),
 
       // Lookup orders to get sales data
       {
@@ -2558,21 +2580,23 @@ export const getTopSellingProducts = async (req, res) => {
           from: "ecomorders", // IMPORTANT: Change this to your actual collection name
           localField: "_id",
           foreignField: "items.product",
-          as: "orderData"
-        }
+          as: "orderData",
+        },
       },
 
       // Unwind order data
       { $unwind: { path: "$orderData", preserveNullAndEmptyArrays: true } },
 
       // Unwind order items to get individual product quantities
-      { $unwind: { path: "$orderData.items", preserveNullAndEmptyArrays: true } },
+      {
+        $unwind: { path: "$orderData.items", preserveNullAndEmptyArrays: true },
+      },
 
       // Match only items that belong to this product
       {
         $match: {
-          $expr: { $eq: ["$_id", "$orderData.items.product"] }
-        }
+          $expr: { $eq: ["$_id", "$orderData.items.product"] },
+        },
       },
 
       // Group by product and calculate total quantity sold
@@ -2583,11 +2607,14 @@ export const getTopSellingProducts = async (req, res) => {
           totalQuantitySold: { $sum: "$orderData.items.quantity" },
           totalRevenue: {
             $sum: {
-              $multiply: ["$orderData.items.quantity", "$orderData.items.price"]
-            }
+              $multiply: [
+                "$orderData.items.quantity",
+                "$orderData.items.price",
+              ],
+            },
           },
-          totalOrders: { $sum: 1 }
-        }
+          totalOrders: { $sum: 1 },
+        },
       },
 
       // Sort by total quantity sold (descending)
@@ -2602,24 +2629,24 @@ export const getTopSellingProducts = async (req, res) => {
           from: "maincategories",
           localField: "product.mainCategory",
           foreignField: "_id",
-          as: "mainCategoryData"
-        }
+          as: "mainCategoryData",
+        },
       },
       {
         $lookup: {
           from: "subcategories",
           localField: "product.subCategory",
           foreignField: "_id",
-          as: "subCategoryData"
-        }
+          as: "subCategoryData",
+        },
       },
       {
         $lookup: {
           from: "brands",
           localField: "product.brand",
           foreignField: "_id",
-          as: "brandData"
-        }
+          as: "brandData",
+        },
       },
 
       // Project final structure
@@ -2639,15 +2666,15 @@ export const getTopSellingProducts = async (req, res) => {
           totalRevenue: 1,
           totalOrders: 1,
           createdAt: "$product.createdAt",
-          updatedAt: "$product.updatedAt"
-        }
-      }
+          updatedAt: "$product.updatedAt",
+        },
+      },
     ]);
 
     res.status(200).json({
       message: "Top selling products retrieved successfully",
       count: topProducts.length,
-      data: topProducts
+      data: topProducts,
     });
   } catch (err) {
     console.error("Get Top Selling Products Error:", err);
@@ -2688,31 +2715,26 @@ export const getTopSellingProductsSimple = async (req, res) => {
 // ============= ADD PRODUCT TO FEATURED =============
 export const addFeaturedProduct = async (req, res) => {
   try {
-    const {
-      productId,
-      title,
-      description,
-      badge,
-      order,
-      startDate,
-      endDate
-    } = req.body;
+    const { productId, title, description, badge, order, startDate, endDate } =
+      req.body;
 
     // Validate product exists
     const product = await Product.findById(productId);
     if (!product) {
       return res.status(404).json({
         success: false,
-        message: "Product not found"
+        message: "Product not found",
       });
     }
 
     // Check if product is already featured
-    const existingFeatured = await FeaturedProduct.findOne({ product: productId });
+    const existingFeatured = await FeaturedProduct.findOne({
+      product: productId,
+    });
     if (existingFeatured) {
       return res.status(400).json({
         success: false,
-        message: "Product is already featured"
+        message: "Product is already featured",
       });
     }
 
@@ -2723,34 +2745,35 @@ export const addFeaturedProduct = async (req, res) => {
       description: description || product.description,
       badge: badge || null,
       order: order || 0,
-      startDate: startDate || Date.now(),
-      endDate: endDate || null
+      startDate: startDate ? new Date(startDate) : Date.now(),
+      endDate: endDate ? new Date(endDate) : null,
     });
 
     await featuredProduct.save();
 
     // Populate before sending response - ✅ Added all pricing fields
     await featuredProduct.populate({
-      path: 'product',
-      select: 'name description image variants brand mainCategory subCategory originalPrice clinicDiscountPrice doctorDiscountPrice clinicDiscountPercentage doctorDiscountPercentage stock',
+      path: "product",
+      select:
+        "name description image variants brand mainCategory subCategory originalPrice clinicDiscountPrice doctorDiscountPrice clinicDiscountPercentage doctorDiscountPercentage stock",
       populate: [
-        { path: 'brand', select: 'name' },
-        { path: 'mainCategory', select: 'categoryName' },
-        { path: 'subCategory', select: 'categoryName' }
-      ]
+        { path: "brand", select: "name" },
+        { path: "mainCategory", select: "categoryName" },
+        { path: "subCategory", select: "categoryName" },
+      ],
     });
 
     res.status(201).json({
       success: true,
       message: "Product added to featured successfully",
-      data: featuredProduct
+      data: featuredProduct,
     });
   } catch (error) {
     console.error("Add Featured Product Error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to add featured product",
-      error: error.message
+      error: error.message,
     });
   }
 };
@@ -2763,35 +2786,45 @@ export const addMultipleFeaturedProducts = async (req, res) => {
     if (!products || !Array.isArray(products) || products.length === 0) {
       return res.status(400).json({
         success: false,
-        message: "Please provide an array of products"
+        message: "Please provide an array of products",
       });
     }
 
     const results = {
       success: [],
-      failed: []
+      failed: [],
     };
 
     for (const item of products) {
       try {
-        const { productId, title, description, badge, order, startDate, endDate } = item;
+        const {
+          productId,
+          title,
+          description,
+          badge,
+          order,
+          startDate,
+          endDate,
+        } = item;
 
         // Validate product exists
         const product = await Product.findById(productId);
         if (!product) {
           results.failed.push({
             productId,
-            reason: "Product not found"
+            reason: "Product not found",
           });
           continue;
         }
 
         // Check if product is already featured
-        const existingFeatured = await FeaturedProduct.findOne({ product: productId });
+        const existingFeatured = await FeaturedProduct.findOne({
+          product: productId,
+        });
         if (existingFeatured) {
           results.failed.push({
             productId,
-            reason: "Product is already featured"
+            reason: "Product is already featured",
           });
           continue;
         }
@@ -2804,27 +2837,28 @@ export const addMultipleFeaturedProducts = async (req, res) => {
           badge: badge || null,
           order: order || 0,
           startDate: startDate || Date.now(),
-          endDate: endDate || null
+          endDate: endDate || null,
         });
 
         await featuredProduct.save();
 
         // Populate before adding to success list
         await featuredProduct.populate({
-          path: 'product',
-          select: 'name description image variants brand mainCategory subCategory',
+          path: "product",
+          select:
+            "name description image variants brand mainCategory subCategory",
           populate: [
-            { path: 'brand', select: 'name' },
-            { path: 'mainCategory', select: 'categoryName' },
-            { path: 'subCategory', select: 'categoryName' }
-          ]
+            { path: "brand", select: "name" },
+            { path: "mainCategory", select: "categoryName" },
+            { path: "subCategory", select: "categoryName" },
+          ],
         });
 
         results.success.push(featuredProduct);
       } catch (error) {
         results.failed.push({
           productId: item.productId,
-          reason: error.message
+          reason: error.message,
         });
       }
     }
@@ -2838,16 +2872,16 @@ export const addMultipleFeaturedProducts = async (req, res) => {
         summary: {
           total: products.length,
           successful: results.success.length,
-          failed: results.failed.length
-        }
-      }
+          failed: results.failed.length,
+        },
+      },
     });
   } catch (error) {
     console.error("Add Multiple Featured Products Error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to add featured products",
-      error: error.message
+      error: error.message,
     });
   }
 };
@@ -2858,24 +2892,22 @@ export const getAllFeaturedProducts = async (req, res) => {
     const { includeInactive = false } = req.query;
 
     let filter = {};
-    if (includeInactive !== 'true') {
+    if (includeInactive !== "true") {
       filter.isActive = true;
       // Also filter by date
-      filter.$or = [
-        { endDate: null },
-        { endDate: { $gte: new Date() } }
-      ];
+      filter.$or = [{ endDate: null }, { endDate: { $gte: new Date() } }];
     }
 
     const featuredProducts = await FeaturedProduct.find(filter)
       .populate({
-        path: 'product',
-        select: 'name description image variants brand mainCategory subCategory status',
+        path: "product",
+        select:
+          "name description image variants brand mainCategory subCategory status",
         populate: [
-          { path: 'brand', select: 'name brandId' },
-          { path: 'mainCategory', select: 'categoryName mainCategoryId' },
-          { path: 'subCategory', select: 'categoryName subCategoryId' }
-        ]
+          { path: "brand", select: "name brandId" },
+          { path: "mainCategory", select: "categoryName mainCategoryId" },
+          { path: "subCategory", select: "categoryName subCategoryId" },
+        ],
       })
       .sort({ order: 1, createdAt: -1 });
 
@@ -2883,14 +2915,14 @@ export const getAllFeaturedProducts = async (req, res) => {
       success: true,
       message: "Featured products retrieved successfully",
       count: featuredProducts.length,
-      data: featuredProducts
+      data: featuredProducts,
     });
   } catch (error) {
     console.error("Get Featured Products Error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to fetch featured products",
-      error: error.message
+      error: error.message,
     });
   }
 };
@@ -2900,35 +2932,34 @@ export const getFeaturedProductById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const featuredProduct = await FeaturedProduct.findById(id)
-      .populate({
-        path: 'product',
-        select: 'name description image variants brand mainCategory subCategory',
-        populate: [
-          { path: 'brand', select: 'name' },
-          { path: 'mainCategory', select: 'categoryName' },
-          { path: 'subCategory', select: 'categoryName' }
-        ]
-      });
+    const featuredProduct = await FeaturedProduct.findById(id).populate({
+      path: "product",
+      select: "name description image variants brand mainCategory subCategory",
+      populate: [
+        { path: "brand", select: "name" },
+        { path: "mainCategory", select: "categoryName" },
+        { path: "subCategory", select: "categoryName" },
+      ],
+    });
 
     if (!featuredProduct) {
       return res.status(404).json({
         success: false,
-        message: "Featured product not found"
+        message: "Featured product not found",
       });
     }
 
     res.status(200).json({
       success: true,
       message: "Featured product retrieved successfully",
-      data: featuredProduct
+      data: featuredProduct,
     });
   } catch (error) {
     console.error("Get Featured Product Error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to fetch featured product",
-      error: error.message
+      error: error.message,
     });
   }
 };
@@ -2937,7 +2968,8 @@ export const getFeaturedProductById = async (req, res) => {
 export const updateFeaturedProduct = async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, description, badge, order, isActive, startDate, endDate } = req.body;
+    const { title, description, badge, order, isActive, startDate, endDate } =
+      req.body;
 
     const updateData = {};
     if (title !== undefined) updateData.title = title;
@@ -2951,35 +2983,35 @@ export const updateFeaturedProduct = async (req, res) => {
     const featuredProduct = await FeaturedProduct.findByIdAndUpdate(
       id,
       updateData,
-      { new: true, runValidators: true }
+      { new: true, runValidators: true },
     ).populate({
-      path: 'product',
-      select: 'name description image variants brand mainCategory subCategory',
+      path: "product",
+      select: "name description image variants brand mainCategory subCategory",
       populate: [
-        { path: 'brand', select: 'name' },
-        { path: 'mainCategory', select: 'categoryName' },
-        { path: 'subCategory', select: 'categoryName' }
-      ]
+        { path: "brand", select: "name" },
+        { path: "mainCategory", select: "categoryName" },
+        { path: "subCategory", select: "categoryName" },
+      ],
     });
 
     if (!featuredProduct) {
       return res.status(404).json({
         success: false,
-        message: "Featured product not found"
+        message: "Featured product not found",
       });
     }
 
     res.status(200).json({
       success: true,
       message: "Featured product updated successfully",
-      data: featuredProduct
+      data: featuredProduct,
     });
   } catch (error) {
     console.error("Update Featured Product Error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to update featured product",
-      error: error.message
+      error: error.message,
     });
   }
 };
@@ -2994,21 +3026,21 @@ export const deleteFeaturedProduct = async (req, res) => {
     if (!featuredProduct) {
       return res.status(404).json({
         success: false,
-        message: "Featured product not found"
+        message: "Featured product not found",
       });
     }
 
     res.status(200).json({
       success: true,
       message: "Featured product deleted successfully",
-      data: featuredProduct
+      data: featuredProduct,
     });
   } catch (error) {
     console.error("Delete Featured Product Error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to delete featured product",
-      error: error.message
+      error: error.message,
     });
   }
 };
@@ -3023,7 +3055,7 @@ export const toggleFeaturedProductStatus = async (req, res) => {
     if (!featuredProduct) {
       return res.status(404).json({
         success: false,
-        message: "Featured product not found"
+        message: "Featured product not found",
       });
     }
 
@@ -3031,21 +3063,21 @@ export const toggleFeaturedProductStatus = async (req, res) => {
     await featuredProduct.save();
 
     await featuredProduct.populate({
-      path: 'product',
-      select: 'name description image'
+      path: "product",
+      select: "name description image",
     });
 
     res.status(200).json({
       success: true,
-      message: `Featured product ${featuredProduct.isActive ? 'activated' : 'deactivated'} successfully`,
-      data: featuredProduct
+      message: `Featured product ${featuredProduct.isActive ? "activated" : "deactivated"} successfully`,
+      data: featuredProduct,
     });
   } catch (error) {
     console.error("Toggle Featured Product Error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to toggle featured product status",
-      error: error.message
+      error: error.message,
     });
   }
 };
@@ -3059,39 +3091,39 @@ export const getActiveFeaturedProducts = async (req, res) => {
 
     const featuredProducts = await FeaturedProduct.find({
       isActive: true,
-      $or: [
-        { endDate: null },
-        { endDate: { $gte: now } }
-      ]
+      $or: [{ endDate: null }, { endDate: { $gte: now } }],
     })
       .populate({
-        path: 'product',
-        match: { status: 'Available' }, // Only show available products
-        select: 'name description image variants brand mainCategory subCategory',
+        path: "product",
+        match: { status: "Available" }, // Only show available products
+        select:
+          "name description image variants brand mainCategory subCategory",
         populate: [
-          { path: 'brand', select: 'name' },
-          { path: 'mainCategory', select: 'categoryName' },
-          { path: 'subCategory', select: 'categoryName' }
-        ]
+          { path: "brand", select: "name" },
+          { path: "mainCategory", select: "categoryName" },
+          { path: "subCategory", select: "categoryName" },
+        ],
       })
       .sort({ order: 1, createdAt: -1 })
       .limit(parseInt(limit));
 
     // Filter out featured products where the product is null (out of stock or deleted)
-    const validFeaturedProducts = featuredProducts.filter(fp => fp.product !== null);
+    const validFeaturedProducts = featuredProducts.filter(
+      (fp) => fp.product !== null,
+    );
 
     res.status(200).json({
       success: true,
       message: "Active featured products retrieved successfully",
       count: validFeaturedProducts.length,
-      data: validFeaturedProducts
+      data: validFeaturedProducts,
     });
   } catch (error) {
     console.error("Get Active Featured Products Error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to fetch active featured products",
-      error: error.message
+      error: error.message,
     });
   }
 };
@@ -3106,36 +3138,35 @@ export const createClinicSetup = async (req, res) => {
       email,
       city,
       address,
-      specialization
+      specialization,
     });
     await newClinicSetup.save();
 
     res.status(200).json({
       message: "Clinic setup created successfully",
-      data: newClinicSetup
+      data: newClinicSetup,
     });
   } catch (error) {
     console.error("Create Clinic Setup Error:", error);
     res.status(500).json({
       success: false,
       message: "Failed to create clinic setup",
-      error: error.message
+      error: error.message,
     });
   }
-
-}
+};
 
 export const getClinicSetup = async (req, res) => {
   try {
     const clinicSetups = await ClinicSetup.find();
     res.status(200).json({
       message: "Clinic setups retrieved successfully",
-      data: clinicSetups
+      data: clinicSetups,
     });
   } catch (error) {
     res.status(500).json({
       message: "Failed to fetch clinic setups",
-      error: error.message
+      error: error.message,
     });
   }
-}
+};

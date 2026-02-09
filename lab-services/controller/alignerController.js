@@ -1,153 +1,104 @@
-import mongoose from "mongoose";
 import AlignerOrder from "../model/aligerModel.js";
 
- const createAlignerOrder = async (req, res) => {
+const createAlignerOrder = async (req, res) => {
   try {
     const {
-      vendorId,
       patientId,
+      vendorId,
       caseId,
       doctorName,
       clinicName,
-      trays,
       treatmentDuration,
+      notes,
       totalAmount,
-      status,
-      paymentStatus,
-      notes
+      upperArch,
+      lowerArch,
     } = req.body;
 
-    /* ------------------ BASIC REQUIRED VALIDATION ------------------ */
-    if (!patientId || !caseId || !doctorName || !clinicName || !vendorId) {
+    // ✅ STL files from multer
+    const upperFile = req.files?.upperFile?.[0];
+    const lowerFile = req.files?.lowerFile?.[0];
+    const totalJaw = req.files?.totalJaw?.[0];
+    
+    const upperStl = upperFile
+      ? `/uploads/dental-orders/${upperFile.filename}`
+      : null;
+
+    const totalJawStl = totalJaw
+      ? `/uploads/dental-orders/${totalJaw.filename}`
+      : null;
+    const lowerStl = lowerFile
+      ? `/uploads/dental-orders/${lowerFile.filename}`
+      : null;
+
+    // basic validation
+    if (!patientId || !vendorId) {
       return res.status(400).json({
-        success: false,
-        message: "patientId, caseId, doctorName, clinicName and vendorId are required"
+        message: "patientId and vendorId are required",
       });
     }
 
-    /* ------------------ OBJECT ID VALIDATION ------------------ */
-    if (!mongoose.Types.ObjectId.isValid(patientId)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid patientId"
-      });
-    }
-
-    /* ------------------ DUPLICATE CASE ID CHECK ------------------ */
-    const existingCase = await AlignerOrder.findOne({ caseId });
-    if (existingCase) {
-      return res.status(409).json({
-        success: false,
-        message: "Aligner order already exists for this caseId"
-      });
-    }
-
-    /* ------------------ TRAYS VALIDATION ------------------ */
-    if (
-      !trays ||
-      typeof trays.upperArch !== "number" ||
-      typeof trays.lowerArch !== "number"
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "trays.upperArch and trays.lowerArch must be numbers"
-      });
-    }
-
-    if (trays.upperArch <= 0 || trays.lowerArch <= 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Tray count must be greater than zero"
-      });
-    }
-
-    /* ------------------ AMOUNT VALIDATION ------------------ */
-    if (totalAmount !== undefined && totalAmount < 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Total amount cannot be negative"
-      });
-    }
-
-    /* ------------------ ENUM VALIDATION ------------------ */
-    const validStatus = [
-      "draft",
-      "approved",
-      "manufacturing",
-      "shipped",
-      "in-treatment",
-      "completed"
-    ];
-
-    if (status && !validStatus.includes(status)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid order status"
-      });
-    }
-
-    const validPaymentStatus = ["pending", "paid"];
-    if (paymentStatus && !validPaymentStatus.includes(paymentStatus)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid payment status"
-      });
-    }
-
-    /* ------------------ CREATE ORDER ------------------ */
-    const order = await AlignerOrder.create({
-      vendorId,
+    const newOrder = await AlignerOrder.create({
       patientId,
+      vendorId,
       caseId,
       doctorName,
       clinicName,
-      trays,
+
+      trays: {
+        upperArch,
+        lowerArch,
+      },
+
       treatmentDuration,
+      notes,
       totalAmount,
-      status: status || "draft",
-      paymentStatus: paymentStatus || "pending",
-      notes
+
+      stlFiles: {
+        upper: upperStl,
+        lower: lowerStl,
+        total: totalJawStl,
+      },
     });
 
-    return res.status(201).json({
-      success: true,
+    res.status(201).json({
       message: "Aligner order created successfully",
-      data: order
+      order: newOrder,
     });
-
   } catch (error) {
-    console.error("Create Aligner Order Error:", error);
+    console.error("Aligner order error:", error);
 
-    return res.status(500).json({
-      success: false,
-      message: "Internal server error"
+    res.status(500).json({
+      message: "Failed to create aligner order",
+      error: error.message,
     });
   }
 };
-
 
 const getAlignerOrderById = async (req, res) => {
   try {
     const { orderId } = req.params;
 
-    const order = await AlignerOrder.findById(orderId)
-      .populate("patientId", "name age gender phone");
+    const order = await AlignerOrder.findById(orderId).populate(
+      "patientId",
+      "name age gender phone",
+    );
 
     if (!order) {
       return res.status(404).json({
         success: false,
-        message: "Aligner order not found"
+        message: "Aligner order not found",
       });
     }
 
     res.status(200).json({
       success: true,
-      data: order
+      data: order,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message,
     });
   }
 };
@@ -162,27 +113,27 @@ const updateAlignerOrderStatus = async (req, res) => {
       {
         status,
         paymentStatus,
-        notes
+        notes,
       },
-      { new: true }
+      { new: true },
     );
 
     if (!updatedOrder) {
       return res.status(404).json({
         success: false,
-        message: "Aligner order not found"
+        message: "Aligner order not found",
       });
     }
 
     res.status(200).json({
       success: true,
       message: "Aligner order updated successfully",
-      data: updatedOrder
+      data: updatedOrder,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message,
     });
   }
 };
@@ -191,24 +142,25 @@ const getAlignerOrdersByPatientId = async (req, res) => {
   try {
     const { patientId } = req.params;
 
-    const orders = await AlignerOrder.find({ patientId })
-      .sort({ createdAt: -1 });
+    const orders = await AlignerOrder.find({ patientId }).sort({
+      createdAt: -1,
+    });
 
     res.status(200).json({
       success: true,
       count: orders.length,
-      data: orders
+      data: orders,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message,
     });
   }
 };
 export {
-    createAlignerOrder,
-    getAlignerOrderById,
-    updateAlignerOrderStatus,
-    getAlignerOrdersByPatientId
+  createAlignerOrder,
+  getAlignerOrderById,
+  updateAlignerOrderStatus,
+  getAlignerOrdersByPatientId,
 };
