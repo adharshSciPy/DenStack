@@ -2751,15 +2751,17 @@ export const addFeaturedProduct = async (req, res) => {
 
     await featuredProduct.save();
 
-    // Populate before sending response - ✅ Added all pricing fields
+    // ✅ Populate with ALL pricing fields (main product pricing)
     await featuredProduct.populate({
       path: "product",
       select:
-        "name description image variants brand mainCategory subCategory originalPrice clinicDiscountPrice doctorDiscountPrice clinicDiscountPercentage doctorDiscountPercentage stock",
+        "name description image variants brand mainCategory subCategory " +
+        "originalPrice clinicDiscountPrice doctorDiscountPrice " +
+        "clinicDiscountPercentage doctorDiscountPercentage stock basePrice status",
       populate: [
-        { path: "brand", select: "name" },
-        { path: "mainCategory", select: "categoryName" },
-        { path: "subCategory", select: "categoryName" },
+        { path: "brand", select: "name brandId" },
+        { path: "mainCategory", select: "categoryName mainCategoryId" },
+        { path: "subCategory", select: "categoryName subCategoryId" },
       ],
     });
 
@@ -2902,7 +2904,9 @@ export const getAllFeaturedProducts = async (req, res) => {
       .populate({
         path: "product",
         select:
-          "name description image variants brand mainCategory subCategory status",
+          "name description image variants brand mainCategory subCategory status " +
+          "originalPrice clinicDiscountPrice doctorDiscountPrice " +
+          "clinicDiscountPercentage doctorDiscountPercentage stock basePrice",
         populate: [
           { path: "brand", select: "name brandId" },
           { path: "mainCategory", select: "categoryName mainCategoryId" },
@@ -2927,6 +2931,7 @@ export const getAllFeaturedProducts = async (req, res) => {
   }
 };
 
+
 // ============= GET FEATURED PRODUCT BY ID =============
 export const getFeaturedProductById = async (req, res) => {
   try {
@@ -2934,11 +2939,14 @@ export const getFeaturedProductById = async (req, res) => {
 
     const featuredProduct = await FeaturedProduct.findById(id).populate({
       path: "product",
-      select: "name description image variants brand mainCategory subCategory",
+      select:
+        "name description image variants brand mainCategory subCategory " +
+        "originalPrice clinicDiscountPrice doctorDiscountPrice " +
+        "clinicDiscountPercentage doctorDiscountPercentage stock basePrice status",
       populate: [
-        { path: "brand", select: "name" },
-        { path: "mainCategory", select: "categoryName" },
-        { path: "subCategory", select: "categoryName" },
+        { path: "brand", select: "name brandId" },
+        { path: "mainCategory", select: "categoryName mainCategoryId" },
+        { path: "subCategory", select: "categoryName subCategoryId" },
       ],
     });
 
@@ -2964,42 +2972,48 @@ export const getFeaturedProductById = async (req, res) => {
   }
 };
 
+
 // ============= UPDATE FEATURED PRODUCT =============
 export const updateFeaturedProduct = async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, description, badge, order, isActive, startDate, endDate } =
+    const { title, description, badge, order, startDate, endDate, isActive } =
       req.body;
 
-    const updateData = {};
-    if (title !== undefined) updateData.title = title;
-    if (description !== undefined) updateData.description = description;
-    if (badge !== undefined) updateData.badge = badge;
-    if (order !== undefined) updateData.order = order;
-    if (isActive !== undefined) updateData.isActive = isActive;
-    if (startDate !== undefined) updateData.startDate = startDate;
-    if (endDate !== undefined) updateData.endDate = endDate;
-
-    const featuredProduct = await FeaturedProduct.findByIdAndUpdate(
-      id,
-      updateData,
-      { new: true, runValidators: true },
-    ).populate({
-      path: "product",
-      select: "name description image variants brand mainCategory subCategory",
-      populate: [
-        { path: "brand", select: "name" },
-        { path: "mainCategory", select: "categoryName" },
-        { path: "subCategory", select: "categoryName" },
-      ],
-    });
-
+    const featuredProduct = await FeaturedProduct.findById(id);
     if (!featuredProduct) {
       return res.status(404).json({
         success: false,
         message: "Featured product not found",
       });
     }
+
+    // Update fields
+    if (title !== undefined) featuredProduct.title = title;
+    if (description !== undefined) featuredProduct.description = description;
+    if (badge !== undefined) featuredProduct.badge = badge;
+    if (order !== undefined) featuredProduct.order = order;
+    if (startDate !== undefined)
+      featuredProduct.startDate = new Date(startDate);
+    if (endDate !== undefined)
+      featuredProduct.endDate = endDate ? new Date(endDate) : null;
+    if (isActive !== undefined) featuredProduct.isActive = isActive;
+
+    await featuredProduct.save();
+
+    // ✅ Populate with main product pricing
+    await featuredProduct.populate({
+      path: "product",
+      select:
+        "name description image variants brand mainCategory subCategory " +
+        "originalPrice clinicDiscountPrice doctorDiscountPrice " +
+        "clinicDiscountPercentage doctorDiscountPercentage stock basePrice status",
+      populate: [
+        { path: "brand", select: "name brandId" },
+        { path: "mainCategory", select: "categoryName mainCategoryId" },
+        { path: "subCategory", select: "categoryName subCategoryId" },
+      ],
+    });
 
     res.status(200).json({
       success: true,
@@ -3022,7 +3036,6 @@ export const deleteFeaturedProduct = async (req, res) => {
     const { id } = req.params;
 
     const featuredProduct = await FeaturedProduct.findByIdAndDelete(id);
-
     if (!featuredProduct) {
       return res.status(404).json({
         success: false,
@@ -3032,8 +3045,7 @@ export const deleteFeaturedProduct = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: "Featured product deleted successfully",
-      data: featuredProduct,
+      message: "Featured product removed successfully",
     });
   } catch (error) {
     console.error("Delete Featured Product Error:", error);
@@ -3051,7 +3063,6 @@ export const toggleFeaturedProductStatus = async (req, res) => {
     const { id } = req.params;
 
     const featuredProduct = await FeaturedProduct.findById(id);
-
     if (!featuredProduct) {
       return res.status(404).json({
         success: false,
@@ -3064,7 +3075,15 @@ export const toggleFeaturedProductStatus = async (req, res) => {
 
     await featuredProduct.populate({
       path: "product",
-      select: "name description image",
+      select:
+        "name description image variants brand mainCategory subCategory " +
+        "originalPrice clinicDiscountPrice doctorDiscountPrice " +
+        "clinicDiscountPercentage doctorDiscountPercentage stock basePrice status",
+      populate: [
+        { path: "brand", select: "name brandId" },
+        { path: "mainCategory", select: "categoryName mainCategoryId" },
+        { path: "subCategory", select: "categoryName subCategoryId" },
+      ],
     });
 
     res.status(200).json({
