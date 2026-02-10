@@ -2,6 +2,7 @@ import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
 import path from "path";
+import cookieParser from "cookie-parser";
 import { fileURLToPath } from "url";
 import connectDB from "./mongoDB/config.js";
 import categoryRoute from "./Routes/categoryRouter.js";
@@ -16,7 +17,7 @@ import cartRouter from "./Routes/cartRouter.js";
 import buyingGuideRouter from "./Routes/buyingGuideRouter.js";
 import eventRouter from "./Routes/eventRouter.js";
 import userAccountRouter from "./Routes/userAccountRouter.js";
-
+import tokenCheckRouter from "./Controller/tokenCheck.js";
 
 import lowStockAlertsCron from "./middlewares/lowStockCron.js";
 
@@ -25,6 +26,7 @@ connectDB();
 
 const app = express();
 
+app.use(cookieParser());
 // ✅ CORS Configuration - MUST come before routes
 app.use(cors({
   origin: ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:4000'], // Add your frontend URL
@@ -68,7 +70,7 @@ app.use("/api/v1/ecom-order", ecomOrderRouter);
 app.use("/api/v1/cart", cartRouter);
 app.use("/api/v1/event", eventRouter);
 app.use("/api/v1/userAccount", userAccountRouter);
-
+app.use("/api/v1/auth",tokenCheckRouter); 
 const PORT = process.env.PORT || 8004;
 app.listen(PORT, () => {
   console.log(`✅ Server running on port:${PORT}`);

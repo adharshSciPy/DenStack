@@ -238,7 +238,6 @@ export const getAllBrands = async (req, res) => {
 
     let filter = {};
     if (includeInactive !== "true") {
-    if (includeInactive !== "true") {
       filter.isActive = true;
     }
 

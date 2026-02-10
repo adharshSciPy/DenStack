@@ -5,6 +5,7 @@ import {
 } from "../Controller/productController.js";
 import { verifyAuthToken, authorizeRoles } from "../middlewares/authmiddleware.js";
 import upload from "../middlewares/upload.js";
+import { authMiddleware } from "../../auth-services/utils/auth.js";
 
 const SUPER_ADMIN = process.env.SUPERADMIN_ROLE
 const CLINIC_ROLE = process.env.CLINIC_ROLE
@@ -34,9 +35,9 @@ productRoute.get("/productStats", getProductDashboardMetrics)
 productRoute.get("/productinventoryList", getProductInventoryList)
 
 // Favorite routes
-productRoute.get("/favorites", verifyAuthToken, getFavorites);
-productRoute.post("/favorites/add/:productId", verifyAuthToken, addFavorite);
-productRoute.delete("/favorites/remove/:favoriteId", verifyAuthToken, removeFavoriteById);
-productRoute.get("/favorites/check/:productId", verifyAuthToken, checkFavorite);
+productRoute.get("/favorites", authMiddleware, getFavorites);
+productRoute.post("/favorites/add/:productId", authMiddleware, addFavorite);
+productRoute.delete("/favorites/remove/:favoriteId", authMiddleware, removeFavoriteById);
+productRoute.get("/favorites/check/:productId", authMiddleware, checkFavorite);
 
 export default productRoute;
