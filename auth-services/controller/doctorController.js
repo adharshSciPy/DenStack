@@ -5,6 +5,7 @@ import {
   passwordValidator,
   phoneValidator,
 } from "../utils/validators.js";
+
 import mongoose from "mongoose";
 const generateDoctorId = () => {
   const randomNum = Math.floor(100000 + Math.random() * 900000); // 6-digit random

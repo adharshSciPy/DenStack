@@ -13,7 +13,7 @@ import Brand from "../Model/BrandSchema.js";
 import SubCategory from "../Model/SubCategorySchema.js";
 import FeaturedProduct from "../Model/featuredProductSchema.js";
 import ClinicSetup from "../Model/ClinicSetupSchema.js";
-
+import { getPriceForUser } from "../utils/pricingHelper.js";
 // ============= CAROUSEL SLIDES =============
 export const createCarouselSlide = async (req, res) => {
   try {
@@ -2075,9 +2075,6 @@ export const addProduct = async (req, res) => {
       subCategoryId,
       brandId,
 
-      // ✅ Base Price (manually set by admin)
-      basePrice,
-
       // Variants (Array of objects with size, color, material, pricing)
       variants, // [{ size, color, material, originalPrice, clinicDiscountPrice, doctorDiscountPrice, stock }]
 
@@ -2128,12 +2125,11 @@ export const addProduct = async (req, res) => {
         !mainCategoryId ||
         !subCategoryId ||
         !brandId ||
-        !basePrice ||
         !originalPrice
       ) {
         return res.status(400).json({
           message:
-            "Required fields: name, mainCategoryId, subCategoryId, brandId, basePrice, originalPrice",
+            "Required fields: name, mainCategoryId, subCategoryId, brandId, originalPrice",
         });
       }
 
@@ -2196,7 +2192,7 @@ export const addProduct = async (req, res) => {
           .json({ message: "At least one product image is required" });
       }
 
-      // ✅ Calculate MAIN PRODUCT pricing
+      // ✅ Calculate MAIN PRODUCT pricing (ALWAYS STORE THIS)
       const original = parseFloat(originalPrice);
       const clinicDiscount = clinicDiscountPrice
         ? parseFloat(clinicDiscountPrice)
@@ -2211,20 +2207,6 @@ export const addProduct = async (req, res) => {
       const doctorDiscountPercentage = doctorDiscount
         ? (((original - doctorDiscount) / original) * 100).toFixed(2)
         : null;
-
-      // ✅ Store main product pricing
-      const mainProductPricing = {
-        originalPrice: original,
-        clinicDiscountPrice: clinicDiscount,
-        doctorDiscountPrice: doctorDiscount,
-        clinicDiscountPercentage: clinicDiscountPercentage
-          ? parseFloat(clinicDiscountPercentage)
-          : null,
-        doctorDiscountPercentage: doctorDiscountPercentage
-          ? parseFloat(doctorDiscountPercentage)
-          : null,
-        stock: stock ? parseInt(stock) : 0,
-      };
 
       // ✅ Process variants (if provided)
       let processedVariants = [];
@@ -2271,24 +2253,27 @@ export const addProduct = async (req, res) => {
         });
       }
 
-      // Create new product with BOTH main pricing AND variants
+      // ✅ Create new product - ALWAYS store main product pricing
       const newProduct = new Product({
         name,
         description: description || "",
         mainCategory: mainCategoryId,
         subCategory: subCategoryId,
         brand: brandId,
-        basePrice: parseFloat(basePrice),
 
-        // ✅ Main product pricing
-        originalPrice: mainProductPricing.originalPrice,
-        clinicDiscountPrice: mainProductPricing.clinicDiscountPrice,
-        doctorDiscountPrice: mainProductPricing.doctorDiscountPrice,
-        clinicDiscountPercentage: mainProductPricing.clinicDiscountPercentage,
-        doctorDiscountPercentage: mainProductPricing.doctorDiscountPercentage,
-        stock: mainProductPricing.stock,
+        // ✅ Main product pricing (ALWAYS STORED - admin can set discounts here)
+        originalPrice: original,
+        clinicDiscountPrice: clinicDiscount,
+        doctorDiscountPrice: doctorDiscount,
+        clinicDiscountPercentage: clinicDiscountPercentage
+          ? parseFloat(clinicDiscountPercentage)
+          : null,
+        doctorDiscountPercentage: doctorDiscountPercentage
+          ? parseFloat(doctorDiscountPercentage)
+          : null,
+        stock: stock ? parseInt(stock) : 0,
 
-        // ✅ Variants (can be empty array)
+        // ✅ Variants (can be empty array if product has no variants)
         variants: processedVariants,
 
         image: imageUrls,
@@ -2318,7 +2303,229 @@ export const addProduct = async (req, res) => {
     res.status(500).json({ message: "Server error", error: err.message });
   }
 };
+export const getProducts = async (req, res) => {
+  try {
+    const {
+      mainCategoryId,
+      subCategoryId,
+      brandId,
+      search,
+      page = 1,
+      limit = 20,
+    } = req.query;
 
+    // ✅ Get user info from optionalAuth middleware
+    const userRole = req.user?.role || null;
+    const isClinicDoctor = req.user?.isClinicDoctor || false;
+    const hasActiveSubscription = req.user?.hasActiveSubscription || false;
+
+    // ✅ Use status instead of isActive
+    const query = { 
+      status: { $in: ["Available", "Out of Stock"] } // Exclude "Discontinued" and "Expired"
+    };
+
+    if (mainCategoryId) query.mainCategory = mainCategoryId;
+    if (subCategoryId) query.subCategory = subCategoryId;
+    if (brandId) query.brand = brandId;
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: "i" } },
+        { description: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    const products = await Product.find(query)
+      .populate("mainCategory", "categoryName mainCategoryId")
+      .populate("subCategory", "categoryName subCategoryId")
+      .populate("brand", "name brandId")
+      .limit(limit * 1)
+      .skip((page - 1) * limit)
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // ✅ Apply discount logic to each product
+    const productsWithPricing = products.map((product) => {
+      // Main product pricing
+      let mainProductPricing = null;
+      
+      if (product.originalPrice) {
+        mainProductPricing = getPriceForUser(
+          {
+            originalPrice: product.originalPrice,
+            clinicDiscountPrice: product.clinicDiscountPrice,
+            doctorDiscountPrice: product.doctorDiscountPrice,
+            clinicDiscountPercentage: product.clinicDiscountPercentage,
+            doctorDiscountPercentage: product.doctorDiscountPercentage,
+          },
+          userRole,
+          isClinicDoctor,
+          hasActiveSubscription
+        );
+      }
+
+      // Variant pricing
+      const variantsWithPricing = product.variants?.map((variant) => {
+        const pricing = getPriceForUser(
+          variant,
+          userRole,
+          isClinicDoctor,
+          hasActiveSubscription
+        );
+
+        const lowStockThreshold = 10;
+        const isOutOfStock = !variant.stock || variant.stock === 0;
+        const isLowStock = !isOutOfStock && variant.stock > 0 && variant.stock <= lowStockThreshold;
+
+        const variantStatus = isOutOfStock 
+          ? "Out of Stock" 
+          : isLowStock 
+            ? "Low Stock" 
+            : "In Stock";
+
+        return {
+          ...variant,
+          applicablePrice: pricing.price,
+          discountPercentage: pricing.discountPercentage,
+          variantStatus, // Use different name to avoid conflict
+          isLowStock,
+          isOutOfStock,
+        };
+      }) || [];
+
+      // ✅ Don't recalculate status - use the one from schema
+      // The pre-save hook already handles this correctly
+
+      return {
+        ...product,
+        mainProductPricing: mainProductPricing ? {
+          applicablePrice: mainProductPricing.price,
+          discountPercentage: mainProductPricing.discountPercentage,
+        } : null,
+        variants: variantsWithPricing,
+        // status, isLowStock already in product from schema
+      };
+    });
+
+    const count = await Product.countDocuments(query);
+
+    res.status(200).json({
+      success: true,
+      products: productsWithPricing,
+      totalPages: Math.ceil(count / limit),
+      currentPage: parseInt(page),
+      totalProducts: count,
+    });
+  } catch (err) {
+    console.error("❌ Get Products Error:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
+};
+export const getProductById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Find product by ID
+    const product = await Product.findById(id)
+      .populate("mainCategory", "categoryName mainCategoryId")
+      .populate("subCategory", "categoryName subCategoryId")
+      .populate("brand", "name brandId");
+
+    if (!product) {
+      return res.status(404).json({ message: "Product not found" });
+    }
+
+    // ✅ Check isActive if it exists, otherwise check status
+    if (product.isActive === false) {
+      return res.status(404).json({ message: "Product is not available" });
+    }
+
+    // ✅ Also check if product is discontinued or expired
+    if (product.status === "Discontinued" || product.status === "Expired") {
+      return res.status(404).json({ message: "Product is not available" });
+    }
+
+    // ✅ Get user info from optionalAuth middleware
+    const userRole = req.user?.role || null;
+    const isClinicDoctor = req.user?.isClinicDoctor || false;
+    const hasActiveSubscription = req.user?.hasActiveSubscription || false;
+
+    // ✅ Apply discount logic to main product pricing
+    let mainProductPricing = null;
+    
+    if (product.originalPrice) {
+      mainProductPricing = getPriceForUser(
+        {
+          originalPrice: product.originalPrice,
+          clinicDiscountPrice: product.clinicDiscountPrice,
+          doctorDiscountPrice: product.doctorDiscountPrice,
+          clinicDiscountPercentage: product.clinicDiscountPercentage,
+          doctorDiscountPercentage: product.doctorDiscountPercentage,
+        },
+        userRole,
+        isClinicDoctor,
+        hasActiveSubscription
+      );
+    }
+
+    // ✅ Apply discount logic to variants
+    const variantsWithPricing = product.variants?.map((variant) => {
+      const pricing = getPriceForUser(
+        variant,
+        userRole,
+        isClinicDoctor,
+        hasActiveSubscription
+      );
+
+      // ✅ Stock status for variant
+      const lowStockThreshold = 10;
+      const isOutOfStock = !variant.stock || variant.stock === 0;
+      const isLowStock = !isOutOfStock && variant.stock > 0 && variant.stock <= lowStockThreshold;
+
+      const variantStatus = isOutOfStock 
+        ? "Out of Stock" 
+        : isLowStock 
+          ? "Low Stock" 
+          : "In Stock";
+
+      return {
+        ...variant.toObject(),
+        applicablePrice: pricing.price,
+        discountPercentage: pricing.discountPercentage,
+        priceType: pricing.priceType,
+        appliedDiscount: pricing.appliedDiscount,
+        userType: pricing.userType,
+        variantStatus, // Changed from 'status' to avoid conflict
+        isLowStock,
+        isOutOfStock,
+      };
+    }) || [];
+
+    res.status(200).json({
+      success: true,
+      product: {
+        ...product.toObject(),
+        
+        // Main product pricing
+        mainProductPricing: mainProductPricing ? {
+          applicablePrice: mainProductPricing.price,
+          discountPercentage: mainProductPricing.discountPercentage,
+          priceType: mainProductPricing.priceType,
+          appliedDiscount: mainProductPricing.appliedDiscount,
+          userType: mainProductPricing.userType,
+        } : null,
+        
+        // Variants with pricing
+        variants: variantsWithPricing,
+        
+        // ✅ Use the status and isLowStock already calculated by the schema pre-save hook
+        // No need to recalculate - the schema already handles this correctly
+      },
+    });
+  } catch (err) {
+    console.error("Get Product By ID Error:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
+};
 // ============= GET PRODUCTS BY FILTERS =============
 export const getProductsByFilters = async (req, res) => {
   try {

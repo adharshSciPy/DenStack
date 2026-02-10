@@ -49,6 +49,8 @@ import {
   getCategorySectionById,
   updateCategorySection,
   addProduct,
+  getProducts,
+  getProductById,
   getProductsByFilters,
   getProductsByMainCategory,
   getProductsBySubCategory,
@@ -145,6 +147,8 @@ landingRouter.put("/categorySections/update/:id", updateCategorySection);
 // ============= PRODUCT ROUTES =============
 // Add product (NO AUTH - anyone can add)
 landingRouter.post("/products/add", flexibleUpload, addProduct);
+landingRouter.get('/products', optionalAuth, getProducts);
+landingRouter.get('/products/:id', optionalAuth, getProductById);
 
 // Get products with optional personalized pricing
 landingRouter.get("/products/filter", optionalAuth, getProductsByFilters);

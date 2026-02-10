@@ -66,7 +66,6 @@ const productSchema = new Schema(
         },
         basePrice: {
             type: Number,
-            required: true,
             min: 0
         },
         mainCategory: {
@@ -136,6 +135,10 @@ const productSchema = new Schema(
         isLowStock: { 
             type: Boolean, 
             default: false 
+        },
+        isActive: {
+            type: Boolean,
+            default: true
         }
     },
     { timestamps: true }
