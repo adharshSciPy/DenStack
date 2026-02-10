@@ -2965,6 +2965,9 @@ export const addFeaturedProduct = async (req, res) => {
         "name description image variants brand mainCategory subCategory " +
         "originalPrice clinicDiscountPrice doctorDiscountPrice " +
         "clinicDiscountPercentage doctorDiscountPercentage stock basePrice status",
+      path: "product",
+      select:
+        "name description image variants brand mainCategory subCategory originalPrice clinicDiscountPrice doctorDiscountPrice clinicDiscountPercentage doctorDiscountPercentage stock",
       populate: [
         { path: "brand", select: "name brandId" },
         { path: "mainCategory", select: "categoryName mainCategoryId" },

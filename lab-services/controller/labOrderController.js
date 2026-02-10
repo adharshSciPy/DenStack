@@ -16,7 +16,7 @@ export const createDentalLabOrder = async (req, res) => {
       vendor,
       dentist,
       patientName,
-      deliveryDate,
+      // deliveryDate,
       note,
       price,
       appointmentId,
@@ -26,7 +26,7 @@ export const createDentalLabOrder = async (req, res) => {
       !vendor ||
       !dentist ||
       !patientName ||
-      !deliveryDate ||
+      // !deliveryDate ||
       !price ||
       !note
     ) {
@@ -51,7 +51,7 @@ export const createDentalLabOrder = async (req, res) => {
       vendor,
       dentist,
       patientName,
-      deliveryDate,
+      // deliveryDate,
       price,
       attachments,
       note,
