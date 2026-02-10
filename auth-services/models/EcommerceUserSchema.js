@@ -32,6 +32,11 @@ const EcommerceUserSchema = new Schema({
   },
   licenseNumber: {
     type: String
+  },
+  role: {
+    type: String,
+    enum: ["user", "clinic", "doctor"],
+    default: "user",
   }
 });
 
@@ -51,6 +56,7 @@ EcommerceUserSchema.methods.generateAccessToken = function () {
       id: this._id,
       name: this.name,
       email: this.email,
+      role: this.role
     },
     process.env.ACCESS_TOKEN_SECRET,
     // { expiresIn: process.env.ACCESS_TOKEN_EXPIRY },
@@ -62,6 +68,7 @@ EcommerceUserSchema.methods.generateRefreshToken = function () {
       id: this._id,
       name: this.name,
       email: this.email,
+      role: this.role
     },
     process.env.REFRESH_TOKEN_SECRET,
     // { expiresIn: process.env.REFRESH_TOKEN_EXPIRY },

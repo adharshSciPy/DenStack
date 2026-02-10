@@ -8,7 +8,7 @@ import {
 
 const registerEcommerceUser = async (req, res) => {
   try {
-    const { name, email, password, phoneNumber } = req.body;
+    const { name, email, password, phoneNumber, role } = req.body;
     if (!nameValidator(name))
       return res.status(400).json({ message: "Invalid name" });
     if (!emailValidator(email))
@@ -34,6 +34,7 @@ const registerEcommerceUser = async (req, res) => {
       email,
       password,
       phoneNumber,
+      role
     });
     await newSuperAdmin.save();
 
@@ -47,6 +48,7 @@ const registerEcommerceUser = async (req, res) => {
         name: newSuperAdmin.name,
         email: newSuperAdmin.email,
         phoneNumber: newSuperAdmin.phoneNumber,
+        role: newSuperAdmin.role
       },
       accessToken,
       refreshToken,
@@ -110,6 +112,7 @@ const loginEcommerceUser = async (req, res) => {
         name: superAdmin.name,
         email: superAdmin.email,
         phoneNumber: superAdmin.phoneNumber,
+        role: superAdmin.role
       },
     });
   } catch (error) {
@@ -143,7 +146,7 @@ const getProfile = async (req, res) => {
   }
 };
 
- const editUserProfile = async (req, res) => {
+const editUserProfile = async (req, res) => {
   try {
     const userId = req.user.id; // ✅ from auth middleware
 
@@ -216,4 +219,4 @@ const logoutUser = (req, res) => {
   res.json({ message: "Logged out successfully" });
 };
 
-export { registerEcommerceUser, loginEcommerceUser, getProfile,editUserProfile, logoutUser };
+export { registerEcommerceUser, loginEcommerceUser, getProfile, editUserProfile, logoutUser };
