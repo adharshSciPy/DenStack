@@ -35,7 +35,6 @@ const EcommerceUserSchema = new Schema({
   },
   role: {
     type: String,
-    enum: ["user", "clinic", "doctor"],
     default: "user",
   }
 });
