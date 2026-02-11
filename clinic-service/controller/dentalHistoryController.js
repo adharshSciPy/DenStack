@@ -57,7 +57,7 @@ export const createDentalHistory = async (req, res) => {
 // Get all dental histories with pagination and search
 export const getAllDentalHistories = async (req, res) => {
   try {
-    const clinicId = req.clinicId;
+    const clinicId = req.clinicId||req.query.clinicId;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const search = req.query.search || "";
