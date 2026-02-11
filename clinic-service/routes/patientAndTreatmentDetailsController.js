@@ -16,7 +16,7 @@ import { createPatientDiagnosis, getAllPatientDiagnoses, getPatientDiagnosisById
 
 // ===== TREATMENT PROCEDURES ROUTES =====
 patientAndTreatmentDetailsRouter.post('/treatment-procedures', createTreatmentProcedure);
-patientAndTreatmentDetailsRouter.get('/treatment-procedures', getAllTreatmentProcedures);
+patientAndTreatmentDetailsRouter.get('/treatment-procedures', getAllTreatmentProcedures);   
 patientAndTreatmentDetailsRouter.get('/treatment-procedures/search', searchTreatmentProcedures);
 patientAndTreatmentDetailsRouter.get('/treatment-procedures/:id', getTreatmentProcedureById);
 patientAndTreatmentDetailsRouter.put('/treatment-procedures/:id', updateTreatmentProcedure);
