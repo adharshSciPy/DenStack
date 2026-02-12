@@ -6,7 +6,7 @@ import {
 //tooth based
 const surfaceConditionSchema = new Schema({
   surface: { type: String, enum: TOOTH_SURFACES, required: true },
-  conditions: [{ type: String, enum: TOOTH_CONDITIONS }],
+  conditions: [{ type: String}],//examination of the surface 
 });
 const procedureExecutionSchema = new Schema({
   name: { type: String, required: true },
@@ -32,11 +32,12 @@ const visitToothSchema = new mongoose.Schema({
   toothNumber: { type: Number, required: true },
   // surface: { type: String, enum: TOOTH_SURFACES, required: true },
 
-  conditions: [{ type: String, enum: TOOTH_CONDITIONS }],
+  conditions: [{ type: String }],
 
   surfaceConditions: [surfaceConditionSchema],
 
   procedures: [procedureExecutionSchema],
+    notes: { type: String, maxlength: 1000 },
 });
 //reusable schema for both soft tissues and tmj (custom+dropdown value storing )
 const clinicalEntrySchema = new Schema(
@@ -49,63 +50,27 @@ const clinicalEntrySchema = new Schema(
 //soft tissue based
 const softTissueSchema = new Schema(
   {
-    id: {
-      type: String,
-      required: true, // eg:- "tongue"
-    },
-    name: {
-      type: String,
-      required: true,
-    },
-    // svgName: {
-    //   type: String,
-    //   required: true
-    // },
-
-    onExamination: [clinicalEntrySchema],
-    diagnosis: [clinicalEntrySchema],
-    treatment: [clinicalEntrySchema],
-
-    notes: {
-      type: String,
-      maxlength: 1000,
-    },
+    id: { type: String, required: true },
+    name: { type: String, required: true },
+    onExamination: [clinicalEntrySchema], // Examination findings
+    diagnosis: [clinicalEntrySchema],     // Diagnosis
+    treatment: [clinicalEntrySchema],     // Treatment plan
+    notes: { type: String, maxlength: 1000 },
   },
-  { _id: false },
+  { _id: false }
 );
 //tmj based
 const tmjSchema = new Schema(
   {
-    id: {
-      type: String,
-      required: true, // "tmj-left"
-    },
-    name: {
-      type: String,
-      required: true,
-    },
-    // svgName: {
-    //   type: String,
-    //   required: true
-    // },
-    // side: {
-    //   type: String,
-    //   enum: ["left", "right", "both"],
-    //   required: true,
-    // },
-
-    onExamination: [clinicalEntrySchema],
-    diagnosis: [clinicalEntrySchema],
-    treatment: [clinicalEntrySchema],
-
-    notes: {
-      type: String,
-      maxlength: 1000,
-    },
+    id: { type: String, required: true },
+    name: { type: String, required: true },
+    onExamination: [clinicalEntrySchema], // Examination findings
+    diagnosis: [clinicalEntrySchema],     // Diagnosis
+    treatment: [clinicalEntrySchema],     // Treatment plan
+    notes: { type: String, maxlength: 1000 },
   },
-  { _id: false },
+  { _id: false }
 );
-
 const patientHistorySchema = new mongoose.Schema(
   {
     patientId: {
@@ -130,15 +95,31 @@ const patientHistorySchema = new mongoose.Schema(
     },
     visitDate: { type: Date, default: Date.now },
 
-    // ✅ Doctor-entered data
-    symptoms: { type: [String], default: [] },
+        chiefComplaints: [clinicalEntrySchema],
+
+    // ✅ NEW: Examination Findings - Multi-select dropdown with custom entries
+    examinationFindings: [clinicalEntrySchema],
+
+    // ✅ NEW: Dental History - Multi-select dropdown with custom entries
+    dentalHistory: [clinicalEntrySchema],
+
+    // ✅ Diagnosis - Multi-line text input (keeping for backward compatibility)
     diagnosis: { type: [String], default: [] },
+
+    // Prescriptions
     prescriptions: [
       {
         medicineName: { type: String, required: true },
         dosage: { type: String },
         frequency: { type: String },
         duration: { type: String },
+        instructions: { type: String },
+        medicineId: { type: Schema.Types.ObjectId, ref: "Medicine" },
+        genericName: String,
+        brandNames: [String],
+        dosageForms: [String],
+        strengths: [String],
+        category: String,
       },
     ],
     notes: {
@@ -210,19 +191,30 @@ const patientHistorySchema = new mongoose.Schema(
         default: "pending",
       },
     },
-    
-    dentalWork: [visitToothSchema],
+        dentalWork: [visitToothSchema],
 
+    // ✅ Soft Tissue Examination - Updated with three dropdowns
     softTissueExamination: {
       type: [softTissueSchema],
       default: [],
     },
 
+    // ✅ TMJ Examination - Updated with three dropdowns
     tmjExamination: {
       type: [tmjSchema],
       default: [],
     },
 
+    // ✅ Planned Procedures from Dental Chart
+    plannedProcedures: [
+      {
+        toothNumber: Number,
+        name: String,
+        surface: { type: String, enum: TOOTH_SURFACES },
+        estimatedCost: { type: Number, default: 0 },
+        notes: String,
+      },
+    ],
     receptionBilling: {
       procedureCharges: [
         {

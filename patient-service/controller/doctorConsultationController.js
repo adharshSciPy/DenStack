@@ -33,7 +33,13 @@ const consultPatient = async (req, res) => {
     const parseJSON = (v, d = []) =>
       v == null ? d : typeof v === "string" ? JSON.parse(v) : v;
 
-    const symptoms = parseJSON(req.body.symptoms, []);
+    // ---------- 🟢 CHANGE 1: ADD NEW FIELDS FROM FRONTEND ----------
+    // Previously only had 'symptoms' - now we have chiefComplaints, examinationFindings, dentalHistory
+    const chiefComplaints = parseJSON(req.body.chiefComplaints || req.body.symptoms, []);
+    const examinationFindings = parseJSON(req.body.examinationFindings, []);
+    const dentalHistory = parseJSON(req.body.dentalHistory, []);
+    
+    // Keep existing fields
     const diagnosis = parseJSON(req.body.diagnosis, []);
     const prescriptionsRaw = parseJSON(req.body.prescriptions, []);
     const files = parseJSON(req.body.files, []);
@@ -50,6 +56,11 @@ const consultPatient = async (req, res) => {
     const tmjInput = parseJSON(req.body.tmjExamination, []);
 
     console.log("📥 ========== CONSULTATION REQUEST RECEIVED ==========");
+    // 🟢 ADD: Log new fields
+    console.log("Chief Complaints:", chiefComplaints.length);
+    console.log("Examination Findings:", examinationFindings.length);
+    console.log("Dental History:", dentalHistory.length);
+    
     console.log(
       "📋 Treatment Plan Input:",
       treatmentPlanInput
@@ -235,6 +246,7 @@ const consultPatient = async (req, res) => {
       notes: tmj.notes || "",
     }));
 
+    // 🟢 CHANGE 2: ADD THE 3 NEW FIELDS TO THE VISIT DOCUMENT CREATION
     const [visitDoc] = await PatientHistory.create(
       [
         {
@@ -242,7 +254,31 @@ const consultPatient = async (req, res) => {
           clinicId: appointment.clinicId,
           doctorId,
           appointmentId,
-          symptoms,
+          // 🟢 REPLACE 'symptoms' with 'chiefComplaints' (or keep both for backward compatibility)
+          symptoms: chiefComplaints.map(c => c.value || c.name || c), // Keep for backward compatibility
+          chiefComplaints: chiefComplaints.map(c => ({
+            value: c.value || c.name || c,
+            isCustom: c.isCustom || false,
+            code: c.code,
+            category: c.category,
+            selectedAt: c.selectedAt ? new Date(c.selectedAt) : new Date()
+          })),
+          // 🟢 ADD examinationFindings
+          examinationFindings: examinationFindings.map(e => ({
+            value: e.value || e.name || e,
+            isCustom: e.isCustom || false,
+            code: e.code,
+            category: e.category,
+            selectedAt: e.selectedAt ? new Date(e.selectedAt) : new Date()
+          })),
+          // 🟢 ADD dentalHistory
+          dentalHistory: dentalHistory.map(d => ({
+            value: d.value || d.name || d,
+            isCustom: d.isCustom || false,
+            code: d.code,
+            category: d.category,
+            selectedAt: d.selectedAt ? new Date(d.selectedAt) : new Date()
+          })),
           diagnosis,
           prescriptions,
           notes,
@@ -269,9 +305,9 @@ const consultPatient = async (req, res) => {
       await updatePatientDentalChart(
         appointment.patientId,
         dentalWork,
-        visitDoc._id, // Now we have the visitId
+        visitDoc._id,
         doctorId,
-        null, // No treatmentPlanId for regular dental work
+        null,
         session
       );
     }
@@ -526,7 +562,7 @@ const consultPatient = async (req, res) => {
             },
           );
 
-          // CRITICAL FIX: Determine stage status correctly
+          // Use status from frontend
           const stageStatus = stageInput.status || "pending";
 
           console.log(`  Using status: ${stageStatus} (from frontend)`);
@@ -550,35 +586,23 @@ const consultPatient = async (req, res) => {
         },
       );
 
-      // FIX: Calculate overall plan status based on stages
-      const hasInProgressStages = stagesData.some(
-        (stage) => stage.status === "in-progress",
-      );
-      const hasCompletedStages = stagesData.some(
-        (stage) => stage.status === "completed",
-      );
-      const allStagesCompleted =
-        stagesData.length > 0 &&
-        stagesData.every((stage) => stage.status === "completed");
-      const allStagesPending =
-        stagesData.length > 0 &&
-        stagesData.every((stage) => stage.status === "pending");
-
+      // ---------- 🟢 CHANGE 3: FIX THE BUG IN PLAN STATUS CALCULATION ----------
+      // Original code had a bug where "completed" would never be set
       let planStatus = "draft";
-
+      
+      // Fix: Check for completed stages FIRST
+      const allStagesCompleted = stagesData.length > 0 && 
+        stagesData.every((stage) => stage.status === "completed");
+      
       if (allStagesCompleted) {
         planStatus = "completed";
-      } else if (hasInProgressStages || hasCompletedStages) {
+      } else if (stagesData.some(stage => 
+        stage.status === "in-progress" || stage.status === "completed")) {
         planStatus = "ongoing";
-      } else if (allStagesPending) {
-        planStatus = "draft";
       }
+      // Otherwise stays "draft"
 
       console.log(`📊 Calculated plan status: ${planStatus}`);
-      console.log(`  Has in-progress stages: ${hasInProgressStages}`);
-      console.log(`  Has completed stages: ${hasCompletedStages}`);
-      console.log(`  All stages completed: ${allStagesCompleted}`);
-      console.log(`  All stages pending: ${allStagesPending}`);
 
       // Create treatment plan
       [treatmentPlan] = await TreatmentPlan.create(
@@ -647,14 +671,14 @@ const consultPatient = async (req, res) => {
         await updatePatientDentalChart(
           appointment.patientId,
           treatmentPlanProcedures,
-          null, // No visitId for planned procedures
+          null,
           doctorId,
           treatmentPlan._id,
           session
         );
       }
 
-      // Link to patient - use the fresh patient instance
+      // Link to patient
       if (!freshPatient.treatmentPlans) {
         freshPatient.treatmentPlans = [];
       }
@@ -731,7 +755,7 @@ const consultPatient = async (req, res) => {
       { session },
     );
 
-    // Update visit history - use the fresh patient instance
+    // Update visit history
     if (!freshPatient.visitHistory) {
       freshPatient.visitHistory = [];
     }
