@@ -3,8 +3,7 @@ import {Router}from 'express';
 import ClinicAutheticationMiddleware from '../middleware/ClinicAutheticationMiddleware.js';
 const patientAndTreatmentDetailsRouter = Router();
 
-// Apply clinic authentication to all routes
-patientAndTreatmentDetailsRouter.use(ClinicAutheticationMiddleware);
+
 import { createPatientComplaint,getAllPatientComplaints,getPatientComplaintById, updatePatientComplaint, deletePatientComplaint, } from '../controller/patientComplaintController.js';
 import { createTreatmentProcedure,getAllTreatmentProcedures,searchTreatmentProcedures,getTreatmentProcedureById, updateTreatmentProcedure, deleteTreatmentProcedure } from '../controller/treatmentAndProcedureController.js';
 import { createMedicalHistory,getAllMedicalHistories,getMedicalHistoryById, updateMedicalHistory, deleteMedicalHistory } from '../controller/medicalHistoryController.js'; 
@@ -13,7 +12,18 @@ import { createDentalHistory, getAllDentalHistories, getDentalHistoryById, updat
 import { createExaminationFinding, getAllExaminationFindings, getExaminationFindingById, updateExaminationFinding, deleteExaminationFinding, addCommonFindings } from '../controller/examinationFindingController.js';
 import { createPatientDiagnosis, getAllPatientDiagnoses, getPatientDiagnosisById, updatePatientDiagnosis, deletePatientDiagnosis, addCommonDiagnoses } from '../controller/patientDiagnosisController.js';
           
+const requireClinicAuth = (req, res, next) => {
+    // Only require clinic authentication for modifying operations
+    if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
+        return ClinicAutheticationMiddleware(req, res, next);
+    }
+    // Skip authentication for GET and other safe methods
+    next();
+};
+// Apply clinic authentication to all routes
+patientAndTreatmentDetailsRouter.use(requireClinicAuth);
 
+// 
 // ===== TREATMENT PROCEDURES ROUTES =====
 patientAndTreatmentDetailsRouter.post('/treatment-procedures', createTreatmentProcedure);
 patientAndTreatmentDetailsRouter.get('/treatment-procedures', getAllTreatmentProcedures);   

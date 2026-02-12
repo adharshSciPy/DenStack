@@ -57,7 +57,7 @@ export const createDentalHistory = async (req, res) => {
 // Get all dental histories with pagination and search
 export const getAllDentalHistories = async (req, res) => {
   try {
-    const clinicId = req.clinicId||req.query.clinicId;
+    const clinicId = req.query.clinicId;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const search = req.query.search || "";
@@ -111,7 +111,7 @@ export const getAllDentalHistories = async (req, res) => {
 export const getDentalHistoryById = async (req, res) => {
   try {
     const { id } = req.params;
-    const clinicId = req.clinicId;
+    const clinicId = req.query.clinicId;
 
     if (!id) {
       return res.status(400).json({ 
@@ -290,7 +290,7 @@ export const deleteDentalHistory = async (req, res) => {
 // Search dental histories
 export const searchDentalHistories = async (req, res) => {
   try {
-    const clinicId = req.clinicId;
+    const clinicId = req.query.clinicId;
     const query = req.query.q || "";
     const limit = parseInt(req.query.limit) || 20;
 

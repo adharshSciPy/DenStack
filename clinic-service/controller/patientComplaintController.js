@@ -57,7 +57,7 @@ export const createPatientComplaint = async (req, res) => {
 // Get all patient complaints
 export const getAllPatientComplaints = async (req, res) => {
   try {
-    const clinicId = req.clinicId;
+    const clinicId = req.query.clinicId;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const search = req.query.search || "";
@@ -111,7 +111,7 @@ export const getAllPatientComplaints = async (req, res) => {
 export const getPatientComplaintById = async (req, res) => {
   try {
     const { id } = req.params;
-    const clinicId = req.clinicId;
+    const clinicId = req.query.clinicId;
 
     if (!id) {
       return res.status(400).json({ 

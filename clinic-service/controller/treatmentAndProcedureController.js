@@ -72,7 +72,7 @@ export const createTreatmentProcedure = async (req, res) => {
 // Get all treatment procedures with pagination and search
 export const getAllTreatmentProcedures = async (req, res) => {
   try {
-    const clinicId = req.clinicId || req.query.clinicId;
+    const clinicId = req.query.clinicId;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const search = req.query.search || "";
@@ -133,7 +133,7 @@ export const getAllTreatmentProcedures = async (req, res) => {
 export const getTreatmentProcedureById = async (req, res) => {
   try {
     const { id } = req.params;
-    const clinicId = req.clinicId;
+    const clinicId = req.query.clinicId;
 
     if (!id) {
       return res.status(400).json({ 
@@ -322,7 +322,7 @@ export const deleteTreatmentProcedure = async (req, res) => {
 // Search treatment procedures
 export const searchTreatmentProcedures = async (req, res) => {
   try {
-    const clinicId = req.clinicId;
+    const clinicId = req.query.clinicId;
     const query = req.query.q || "";
     const limit = parseInt(req.query.limit) || 20;
 
