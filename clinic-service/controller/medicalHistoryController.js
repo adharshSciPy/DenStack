@@ -57,7 +57,7 @@ export const createMedicalHistory = async (req, res) => {
 // Get all medical histories
 export const getAllMedicalHistories = async (req, res) => {
   try {
-    const clinicId = req.clinicId;
+    const clinicId = req.query.clinicId;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const search = req.query.search || "";
@@ -111,7 +111,7 @@ export const getAllMedicalHistories = async (req, res) => {
 export const getMedicalHistoryById = async (req, res) => {
   try {
     const { id } = req.params;
-    const clinicId = req.clinicId;
+    const clinicId = req.query.clinicId;
 
     if (!id) {
       return res.status(400).json({ 
