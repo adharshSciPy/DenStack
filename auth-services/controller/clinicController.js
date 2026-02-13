@@ -36,6 +36,7 @@ const registerClinic = async (req, res) => {
       features,
       isMultipleClinic = false,
       isOwnLab = false,
+      googlePlaceId,
     } = req.body;
 
 
@@ -83,6 +84,7 @@ const registerClinic = async (req, res) => {
       theme,
       isMultipleClinic,
       isOwnLab,
+      googlePlaceId
     });
 
     // 🔹 Default subscription on registration (basic/monthly)
@@ -130,6 +132,7 @@ const registerClinic = async (req, res) => {
         theme: newClinic.theme,
         isMultipleClinic: newClinic.isMultipleClinic,
         isOwnLab: newClinic.isOwnLab,
+        googlePlaceId: newClinic.googlePlaceId,
       },
       accessToken,
       refreshToken,
