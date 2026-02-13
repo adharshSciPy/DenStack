@@ -15,6 +15,8 @@ dotenv.config();
 const AUTH_SERVICE_BASE_URL = process.env.AUTH_SERVICE_BASE_URL;
 
 const registerPatient = async (req, res) => {
+const token = crypto.randomBytes(24).toString("hex");
+
   try {
     const { id: clinicId } = req.params;
     const {
@@ -116,6 +118,7 @@ const registerPatient = async (req, res) => {
       createdBy: userId,
       createdByRole: userRole.charAt(0).toUpperCase() + userRole.slice(1), // Admin or Receptionist
       parentPatient: parentPatient?._id || null,
+      reviewToken: token  
     });
 
     await newPatient.save();

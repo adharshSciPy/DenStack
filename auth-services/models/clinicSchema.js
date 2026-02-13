@@ -43,6 +43,11 @@ const clinicSchema = new Schema(
       ],
     },
 
+    googlePlaceId: { type: String, default: null }, // ⭐ IMPORTANT
+    ratingAvg: { type: Number, default: 0 },
+    totalReviews: { type: Number, default: 0 },
+    isApproved: { type: Boolean, default: false },
+
     password: {
       type: String,
       required: [true, "Password is required"],
@@ -79,8 +84,12 @@ const clinicSchema = new Schema(
     },
 
     // ===== Subscription Plan =====
-  subscription: {
-      package: { type: String, enum: ["starter", "growth", "enterprise"], default: "starter" },
+    subscription: {
+      package: {
+        type: String,
+        enum: ["starter", "growth", "enterprise"],
+        default: "starter",
+      },
       type: { type: String, enum: ["annual"], default: "annual" },
       price: { type: Number, default: 0 },
       startDate: { type: Date, default: Date.now },
@@ -98,7 +107,7 @@ const clinicSchema = new Schema(
     },
     lastActive: {
       type: Date,
-      default: null
+      default: null,
     },
     isMultipleClinic: {
       type: Boolean,
@@ -151,10 +160,8 @@ const clinicSchema = new Schema(
         ref: "Clinic",
       },
     ],
-
-
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 // ===== Pre-save Hook: Hash Password =====
@@ -198,7 +205,7 @@ clinicSchema.methods.generateAccessToken = function (role = CLINIC_ROLE) {
       subscription: this.subscription.package,
     },
     process.env.ACCESS_TOKEN_SECRET,
-    { expiresIn: process.env.ACCESS_TOKEN_EXPIRY }
+    { expiresIn: process.env.ACCESS_TOKEN_EXPIRY },
   );
 };
 
@@ -213,7 +220,7 @@ clinicSchema.methods.generateRefreshToken = function (role = CLINIC_ROLE) {
       subscription: this.subscription.package,
     },
     process.env.REFRESH_TOKEN_SECRET,
-    { expiresIn: process.env.REFRESH_TOKEN_EXPIRY }
+    { expiresIn: process.env.REFRESH_TOKEN_EXPIRY },
   );
 };
 
@@ -221,7 +228,7 @@ clinicSchema.methods.generateRefreshToken = function (role = CLINIC_ROLE) {
 clinicSchema.methods.activateSubscription = function (
   type = "annual",
   pkg = "starter",
-  price = 0
+  price = 0,
 ) {
   const now = new Date();
   const endDate = new Date(now);
@@ -241,7 +248,6 @@ clinicSchema.methods.activateSubscription = function (
 
   return this.subscription;
 };
-
 
 // 🔹 Check subscription validity
 clinicSchema.methods.isSubscriptionValid = function () {

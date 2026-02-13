@@ -188,6 +188,8 @@ const patientSchema = new mongoose.Schema({
     }
   ],
 
+    reviewToken: { type: String },
+    isReviewed: { type: Boolean, default: false },
 
   createdAt: { type: Date, default: Date.now }
 });
