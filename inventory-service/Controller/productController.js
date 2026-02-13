@@ -573,9 +573,16 @@ const getFavorites = async (req, res) => {
  */
 const addFavorite = async (req, res) => {
   try {
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
+
     const userId = req.user.id;
     const { productId } = req.params;
-    const { variantId } = req.body; // optional
+    const { variantId } = req.body || {};
 
     // Check product exists
     const product = await Product.findById(productId);
@@ -586,7 +593,7 @@ const addFavorite = async (req, res) => {
       });
     }
 
-    // Check product availability
+    // Check availability
     if (product.status !== "Available") {
       return res.status(400).json({
         success: false,
@@ -600,7 +607,7 @@ const addFavorite = async (req, res) => {
       product: productId,
     });
 
-    // 👉 UNLIKE (Remove)
+    // 🔁 UNLIKE
     if (existingFavorite) {
       await Favourite.deleteOne({ _id: existingFavorite._id });
 
@@ -611,7 +618,7 @@ const addFavorite = async (req, res) => {
       });
     }
 
-    // 👉 LIKE (Add)
+    // ❤️ LIKE
     const favorite = await Favourite.create({
       user: userId,
       product: productId,
@@ -620,23 +627,18 @@ const addFavorite = async (req, res) => {
 
     await favorite.populate({
       path: "product",
-      select: "productId name basePrice image status",
+      select: "name image status",
     });
 
     return res.status(200).json({
       success: true,
       message: "Product added to favorites",
       liked: true,
-      data: {
-        _id: favorite._id,
-        product: favorite.product,
-        variantId: favorite.variantId,
-        addedAt: favorite.addedAt,
-      },
+      data: favorite,
     });
   } catch (error) {
     console.error("Toggle favorite error:", error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Server error while toggling favorite",
     });

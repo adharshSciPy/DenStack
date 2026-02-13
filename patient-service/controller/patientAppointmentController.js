@@ -1512,25 +1512,16 @@ const getMonthlyAppointmentsClinicWise = async (req, res) => {
 };
 const getPatientHistoryById = async (req, res) => {
   try {
-    const { id:visitHistoryId } = req.params;
+    const { id } = req.params;
 
-    if (!mongoose.Types.ObjectId.isValid(visitHistoryId)) {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
         message: "Invalid visitHistoryId",
       });
     }
 
-    const history = await PatientHistory.findById(visitHistoryId)
-      // .populate("patientId", "name age gender phone")
-      // .populate("doctorId", "name specialization")
-      // .populate("clinicId", "name")
-      // .populate("appointmentId")
-      // .populate("treatmentPlanId")
-      // .populate("billId")
-      // .populate("referral.referredByDoctorId", "name")
-      // .populate("referral.referredToDoctorId", "name")
-      .lean();
+    const history = await PatientHistory.findById(id).lean();
 
     if (!history) {
       return res.status(404).json({
@@ -1543,14 +1534,16 @@ const getPatientHistoryById = async (req, res) => {
       success: true,
       data: history,
     });
+
   } catch (error) {
-    console.error("Get Patient History Error:", error);
+    console.error("❌ Get Patient History Error:", error);
     return res.status(500).json({
       success: false,
       message: "Internal server error",
     });
   }
 };
+
 const approveRecallAppointment = async (req, res) => {
   const session = await mongoose.startSession();
 

@@ -1,4 +1,5 @@
 import EcommerceUser from "../models/EcommerceUserSchema.js";
+import Clinic from "../models/clinicSchema.js";
 import {
   emailValidator,
   passwordValidator,
@@ -8,7 +9,7 @@ import {
 
 const registerEcommerceUser = async (req, res) => {
   try {
-    const { name, email, password, phoneNumber } = req.body;
+    const { name, email, password, phoneNumber, role } = req.body;
     if (!nameValidator(name))
       return res.status(400).json({ message: "Invalid name" });
     if (!emailValidator(email))
@@ -34,6 +35,7 @@ const registerEcommerceUser = async (req, res) => {
       email,
       password,
       phoneNumber,
+      role
     });
     await newSuperAdmin.save();
 
@@ -47,6 +49,7 @@ const registerEcommerceUser = async (req, res) => {
         name: newSuperAdmin.name,
         email: newSuperAdmin.email,
         phoneNumber: newSuperAdmin.phoneNumber,
+        role: newSuperAdmin.role
       },
       accessToken,
       refreshToken,
@@ -110,6 +113,7 @@ const loginEcommerceUser = async (req, res) => {
         name: superAdmin.name,
         email: superAdmin.email,
         phoneNumber: superAdmin.phoneNumber,
+        role: superAdmin.role
       },
     });
   } catch (error) {
@@ -120,22 +124,72 @@ const loginEcommerceUser = async (req, res) => {
 
 const getProfile = async (req, res) => {
   try {
-    const id = req.user.id; // from JWT
+    const userId = req.user.id || req.user.clinicId; // from JWT
+    console.log("User ID from token:", userId);
+    console.log("Full user object from token:", req.user);
 
-    const user = await EcommerceUser.findById(id).select(
+    // First try to find in EcommerceUser collection
+    let user = await EcommerceUser.findById(userId).select(
       "-password -refreshToken",
     );
+    console.log("EcommerceUser found:", user ? "Yes" : "No");
+
+    let userType = 'ecommerce';
+
+    // If not found in EcommerceUser, try Clinic collection
+    if (!user) {
+      user = await Clinic.findById(userId).select(
+        "-password -refreshToken",
+      );
+      console.log("Clinic found:", user ? "Yes" : "No");
+      userType = 'clinic';
+    }
 
     if (!user) {
+      console.log("User not found in either collection");
       return res.status(404).json({ message: "User not found" });
+    }
+
+    // Format response based on user type
+    let responseData = {};
+
+    if (userType === 'ecommerce') {
+      responseData = {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        phoneNumber: user.phoneNumber,
+        DOB: user.DOB,
+        specialization: user.specialization,
+        clinicName: user.clinicName,
+        licenseNumber: user.licenseNumber,
+        userType: 'ecommerce',
+        // ... other ecommerce user fields
+      };
+    } else {
+      // Clinic user - map clinic fields to match frontend expectations
+      responseData = {
+        id: user._id,
+        name: user.clinicName || user.name || '',
+        email: user.email || '',
+        phoneNumber: user.phone || user.phoneNumber || '',
+        DOB: '', // Clinics might not have DOB
+        specialization: user.specialization || '',
+        clinicName: user.clinicName || user.name || '',
+        licenseNumber: user.licenseNumber || '',
+        userType: 'clinic',
+        // ... other clinic fields
+      };
     }
 
     return res.status(200).json({
       message: "Fetched Profile Details",
-      data: user,
+      data: responseData,
+      userType: userType
     });
+
   } catch (error) {
-    console.error(error);
+    console.error("Error in getProfile:", error);
     return res.status(500).json({
       message: "Internal Server Error",
       error: error.message,
@@ -143,7 +197,7 @@ const getProfile = async (req, res) => {
   }
 };
 
- const editUserProfile = async (req, res) => {
+const editUserProfile = async (req, res) => {
   try {
     const userId = req.user.id; // ✅ from auth middleware
 
@@ -216,4 +270,4 @@ const logoutUser = (req, res) => {
   res.json({ message: "Logged out successfully" });
 };
 
-export { registerEcommerceUser, loginEcommerceUser, getProfile,editUserProfile, logoutUser };
+export { registerEcommerceUser, loginEcommerceUser, getProfile, editUserProfile, logoutUser };

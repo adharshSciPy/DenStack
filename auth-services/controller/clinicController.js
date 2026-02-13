@@ -14,6 +14,7 @@ import Nurse from "../models/nurseSchema.js";
 import Receptionist from "../models/receptionSchema.js";
 import Accountant from "../models/accountantSchema.js";
 import Technician from "../models/technicianSchema.js";
+import jwt from "jsonwebtoken";
 config();
 const CLINIC_SERVICE_BASE_URL = process.env.CLINIC_SERVICE_BASE_URL || "http://localhost:8003/api/v1/clinic-service";
 const PATIENT_SERVICE_BASE_URL = process.env.PATIENT_SERVICE_BASE_URL || "http://localhost:8002/api/v1/patient-service";
