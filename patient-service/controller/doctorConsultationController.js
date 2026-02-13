@@ -33,30 +33,23 @@ const consultPatient = async (req, res) => {
     const parseJSON = (v, d = []) =>
       v == null ? d : typeof v === "string" ? JSON.parse(v) : v;
 
-    // ---------- 🟢 CHANGE 1: ADD NEW FIELDS FROM FRONTEND ----------
-    // Previously only had 'symptoms' - now we have chiefComplaints, examinationFindings, dentalHistory
+    // ---------- Parse all input data ----------
     const chiefComplaints = parseJSON(req.body.chiefComplaints || req.body.symptoms, []);
     const examinationFindings = parseJSON(req.body.examinationFindings, []);
     const dentalHistory = parseJSON(req.body.dentalHistory, []);
-    
-    // Keep existing fields
     const diagnosis = parseJSON(req.body.diagnosis, []);
     const prescriptionsRaw = parseJSON(req.body.prescriptions, []);
     const files = parseJSON(req.body.files, []);
     const plannedProcedures = parseJSON(req.body.plannedProcedures, []);
     const performedTeeth = parseJSON(req.body.performedTeeth, []);
     const treatmentPlanInput = parseJSON(req.body.treatmentPlan, null);
-    const treatmentPlanStatusUpdate = parseJSON(
-      req.body.treatmentPlanStatus,
-      null,
-    );
+    const treatmentPlanStatusUpdate = parseJSON(req.body.treatmentPlanStatus, null);
     const recall = parseJSON(req.body.recall, null);
     const notes = req.body.notes || "";
     const softTissueInput = parseJSON(req.body.softTissueExamination, []);
     const tmjInput = parseJSON(req.body.tmjExamination, []);
 
     console.log("📥 ========== CONSULTATION REQUEST RECEIVED ==========");
-    // 🟢 ADD: Log new fields
     console.log("Chief Complaints:", chiefComplaints.length);
     console.log("Examination Findings:", examinationFindings.length);
     console.log("Dental History:", dentalHistory.length);
@@ -73,7 +66,6 @@ const consultPatient = async (req, res) => {
         : "No treatment plan",
     );
 
-    // Log detailed stage information from frontend
     if (treatmentPlanInput?.stages) {
       console.log("📊 STAGES RECEIVED FROM FRONTEND:");
       treatmentPlanInput.stages.forEach((stage, index) => {
@@ -85,6 +77,28 @@ const consultPatient = async (req, res) => {
       });
     }
 
+    // ---------- fetch appointment ----------
+    const appointment = await Appointment.findById(appointmentId).session(session);
+    if (!appointment || appointment.status === "cancelled") {
+      return res
+        .status(404)
+        .json({ success: false, message: "Invalid appointment" });
+    }
+
+    if (appointment.doctorId.toString() !== doctorId.toString()) {
+      return res
+        .status(403)
+        .json({ success: false, message: "Doctor mismatch" });
+    }
+
+    // ✅ SINGLE PATIENT INSTANCE - use this throughout the entire transaction
+    const patient = await Patient.findById(appointment.patientId).session(session);
+    if (!patient) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Patient not found" });
+    }
+
     // ---------- MEDICINE AUTO-SUGGESTION & AUTO-CREATION ----------
     const processPrescriptions = async (prescriptionsRaw) => {
       const processedPrescriptions = [];
@@ -93,10 +107,8 @@ const consultPatient = async (req, res) => {
         const medicineName = prescription.medicineName || prescription.medicine;
         
         if (medicineName && medicineName.trim().length >= 3) {
-          // Find or create medicine in master database
           const medicineData = await findOrCreateMedicine(medicineName, doctorId, appointment.clinicId);
           
-          // Add medicine data to prescription
           processedPrescriptions.push({
             medicineName: medicineData?.name || medicineName,
             dosage: prescription.dosage,
@@ -117,39 +129,6 @@ const consultPatient = async (req, res) => {
       return processedPrescriptions;
     };
 
-    // ---------- fetch appointment ----------
-    const appointment =
-      await Appointment.findById(appointmentId).session(session);
-    if (!appointment || appointment.status === "cancelled") {
-      return res
-        .status(404)
-        .json({ success: false, message: "Invalid appointment" });
-    }
-
-    if (appointment.doctorId.toString() !== doctorId.toString()) {
-      return res
-        .status(403)
-        .json({ success: false, message: "Doctor mismatch" });
-    }
-
-    const patient = await Patient.findById(appointment.patientId).session(
-      session,
-    );
-    if (!patient) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Patient not found" });
-    }
-    
-    // FIX: Fetch fresh patient instance to avoid version conflicts
-    const freshPatient = await Patient.findById(appointment.patientId).session(session);
-    if (!freshPatient) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Patient not found" });
-    }
-
-    // ---------- Process prescriptions with auto-creation ----------
     const prescriptions = await processPrescriptions(prescriptionsRaw);
 
     // ---------- fetch consultation fee ----------
@@ -246,7 +225,6 @@ const consultPatient = async (req, res) => {
       notes: tmj.notes || "",
     }));
 
-    // 🟢 CHANGE 2: ADD THE 3 NEW FIELDS TO THE VISIT DOCUMENT CREATION
     const [visitDoc] = await PatientHistory.create(
       [
         {
@@ -254,8 +232,7 @@ const consultPatient = async (req, res) => {
           clinicId: appointment.clinicId,
           doctorId,
           appointmentId,
-          // 🟢 REPLACE 'symptoms' with 'chiefComplaints' (or keep both for backward compatibility)
-          symptoms: chiefComplaints.map(c => c.value || c.name || c), // Keep for backward compatibility
+          symptoms: chiefComplaints.map(c => c.value || c.name || c),
           chiefComplaints: chiefComplaints.map(c => ({
             value: c.value || c.name || c,
             isCustom: c.isCustom || false,
@@ -263,7 +240,6 @@ const consultPatient = async (req, res) => {
             category: c.category,
             selectedAt: c.selectedAt ? new Date(c.selectedAt) : new Date()
           })),
-          // 🟢 ADD examinationFindings
           examinationFindings: examinationFindings.map(e => ({
             value: e.value || e.name || e,
             isCustom: e.isCustom || false,
@@ -271,7 +247,6 @@ const consultPatient = async (req, res) => {
             category: e.category,
             selectedAt: e.selectedAt ? new Date(e.selectedAt) : new Date()
           })),
-          // 🟢 ADD dentalHistory
           dentalHistory: dentalHistory.map(d => ({
             value: d.value || d.name || d,
             isCustom: d.isCustom || false,
@@ -302,8 +277,9 @@ const consultPatient = async (req, res) => {
     // ---------- UPDATE DENTAL CHART WITH PERFORMED PROCEDURES FIRST ----------
     if (dentalWork.length > 0) {
       console.log("🦷 Updating patient's dental chart with performed work");
+      // ✅ Pass the patient document directly instead of fetching again
       await updatePatientDentalChart(
-        appointment.patientId,
+        patient,  // Pass the existing patient document
         dentalWork,
         visitDoc._id,
         doctorId,
@@ -342,7 +318,6 @@ const consultPatient = async (req, res) => {
         );
 
         if (stage && stage.status !== "completed") {
-          // Complete all procedures in this stage
           treatmentPlan.teeth.forEach((tooth) => {
             tooth.procedures.forEach((procedure) => {
               if (
@@ -359,7 +334,6 @@ const consultPatient = async (req, res) => {
               }
             });
 
-            // Check if all procedures for this tooth are completed
             const toothProcedures = tooth.procedures.filter(
               (p) => p.status === "completed",
             );
@@ -370,7 +344,6 @@ const consultPatient = async (req, res) => {
             }
           });
 
-          // Update stage status
           stage.status = "completed";
           stage.completedAt = new Date();
           stage.completedInVisitId = visitDoc._id;
@@ -382,7 +355,6 @@ const consultPatient = async (req, res) => {
       if (treatmentPlanStatusUpdate?.completedProcedures?.length > 0) {
         console.log("🔧 Updating specific procedures:", treatmentPlanStatusUpdate.completedProcedures);
         
-        // Collect completed procedures for dental chart update
         const completedProceduresForChart = [];
         
         treatmentPlanStatusUpdate.completedProcedures.forEach((procUpdate) => {
@@ -402,7 +374,6 @@ const consultPatient = async (req, res) => {
               procedure.completedInVisitId = visitDoc._id;
               procedure.performedBy = doctorId;
               
-              // Add to dental chart update list
               completedProceduresForChart.push({
                 toothNumber: procUpdate.toothNumber,
                 conditions: [],
@@ -421,10 +392,10 @@ const consultPatient = async (req, res) => {
           }
         });
         
-        // Update dental chart with completed procedures
         if (completedProceduresForChart.length > 0) {
+          // ✅ Pass the patient document directly
           await updatePatientDentalChart(
-            appointment.patientId,
+            patient,
             completedProceduresForChart,
             visitDoc._id,
             doctorId,
@@ -434,10 +405,8 @@ const consultPatient = async (req, res) => {
         }
       }
 
-      // Update overall plan status
       treatmentPlan.updatePlanStatus();
 
-      // Update stage statuses based on completed procedures
       console.log("📊 Updating stage statuses:");
       treatmentPlan.stages.forEach((stage) => {
         const proceduresInStage = treatmentPlan.teeth.flatMap((tooth) =>
@@ -477,7 +446,6 @@ const consultPatient = async (req, res) => {
     if (!updatedExistingPlan && treatmentPlanInput?.planName) {
       console.log("🆕 Creating new treatment plan");
 
-      // Process teeth data
       const teethData = (treatmentPlanInput.teeth || []).map((toothPlan) => ({
         toothNumber: toothPlan.toothNumber,
         priority: toothPlan.priority || "medium",
@@ -492,7 +460,6 @@ const consultPatient = async (req, res) => {
         })),
       }));
 
-      // Log procedures with statuses
       console.log("🦷 Teeth Data with Procedure Statuses:");
       teethData.forEach((tooth) => {
         console.log(`  Tooth ${tooth.toothNumber}:`);
@@ -503,7 +470,6 @@ const consultPatient = async (req, res) => {
         });
       });
 
-      // Process stages data with toothSurfaceProcedures
       const stagesData = (treatmentPlanInput.stages || []).map(
         (stageInput, index) => {
           const stageNumber = index + 1;
@@ -515,14 +481,10 @@ const consultPatient = async (req, res) => {
           );
           console.log(`  Scheduled Date: ${stageInput.scheduledDate}`);
 
-          // Build toothSurfaceProcedures for this stage
           const toothSurfaceProcedures = [];
-
-          // Group procedures by tooth and surface for this stage
           const proceduresByToothAndSurface = {};
 
           teethData.forEach((tooth) => {
-            // Get procedures for this stage
             const stageProcedures = tooth.procedures.filter(
               (p) => p.stage === stageNumber,
             );
@@ -531,7 +493,6 @@ const consultPatient = async (req, res) => {
               const toothKey = tooth.toothNumber;
               proceduresByToothAndSurface[toothKey] = {};
 
-              // Group by surface
               stageProcedures.forEach((proc) => {
                 const surfaceKey = proc.surface;
                 if (!proceduresByToothAndSurface[toothKey][surfaceKey]) {
@@ -544,7 +505,6 @@ const consultPatient = async (req, res) => {
             }
           });
 
-          // Convert to toothSurfaceProcedures format
           Object.entries(proceduresByToothAndSurface).forEach(
             ([toothNumStr, surfaces]) => {
               const toothNumber = parseInt(toothNumStr);
@@ -562,7 +522,6 @@ const consultPatient = async (req, res) => {
             },
           );
 
-          // Use status from frontend
           const stageStatus = stageInput.status || "pending";
 
           console.log(`  Using status: ${stageStatus} (from frontend)`);
@@ -586,11 +545,8 @@ const consultPatient = async (req, res) => {
         },
       );
 
-      // ---------- 🟢 CHANGE 3: FIX THE BUG IN PLAN STATUS CALCULATION ----------
-      // Original code had a bug where "completed" would never be set
       let planStatus = "draft";
       
-      // Fix: Check for completed stages FIRST
       const allStagesCompleted = stagesData.length > 0 && 
         stagesData.every((stage) => stage.status === "completed");
       
@@ -600,11 +556,9 @@ const consultPatient = async (req, res) => {
         stage.status === "in-progress" || stage.status === "completed")) {
         planStatus = "ongoing";
       }
-      // Otherwise stays "draft"
 
       console.log(`📊 Calculated plan status: ${planStatus}`);
 
-      // Create treatment plan
       [treatmentPlan] = await TreatmentPlan.create(
         [
           {
@@ -638,7 +592,6 @@ const consultPatient = async (req, res) => {
         ),
       });
 
-      // Log final stage statuses
       console.log("📊 FINAL STAGE STATUSES SAVED TO DATABASE:");
       treatmentPlan.stages.forEach((stage, index) => {
         console.log(
@@ -646,7 +599,6 @@ const consultPatient = async (req, res) => {
         );
       });
 
-      // Add treatment plan procedures to dental chart
       const treatmentPlanProcedures = [];
       
       treatmentPlan.teeth.forEach((toothPlan) => {
@@ -668,8 +620,9 @@ const consultPatient = async (req, res) => {
 
       if (treatmentPlanProcedures.length > 0) {
         console.log("📋 Adding treatment plan procedures to dental chart");
+        // ✅ Pass the patient document directly
         await updatePatientDentalChart(
-          appointment.patientId,
+          patient,
           treatmentPlanProcedures,
           null,
           doctorId,
@@ -678,12 +631,12 @@ const consultPatient = async (req, res) => {
         );
       }
 
-      // Link to patient
-      if (!freshPatient.treatmentPlans) {
-        freshPatient.treatmentPlans = [];
+      // ✅ Link to patient using the SAME patient instance
+      if (!patient.treatmentPlans) {
+        patient.treatmentPlans = [];
       }
-      freshPatient.treatmentPlans.push(treatmentPlan._id);
-      await freshPatient.save({ session });
+      patient.treatmentPlans.push(treatmentPlan._id);
+      // ✅ Don't save yet - we'll save at the end
     }
 
     // ---------- HANDLE PERFORMED PROCEDURES FROM TREATMENT PLAN ----------
@@ -755,12 +708,14 @@ const consultPatient = async (req, res) => {
       { session },
     );
 
-    // Update visit history
-    if (!freshPatient.visitHistory) {
-      freshPatient.visitHistory = [];
+    // ✅ Update visit history on the SAME patient instance
+    if (!patient.visitHistory) {
+      patient.visitHistory = [];
     }
-    freshPatient.visitHistory.push(visitDoc._id);
-    await freshPatient.save({ session });
+    patient.visitHistory.push(visitDoc._id);
+    
+    // ✅ SAVE PATIENT ONCE at the end with ALL changes
+    await patient.save({ session });
 
     await session.commitTransaction();
 
