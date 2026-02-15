@@ -13,14 +13,23 @@ const EcommerceUserSchema = new Schema({
     required: true,
     unique: true,
   },
-  phoneNumber: {
-    type: Number,
-    required: true,
-  },
   password: {
     type: String,
-    required: true,
+    required: function () {
+      return !this.isClinicUser;
+    }
   },
+  phoneNumber: {
+    type: String,
+    required: function () {
+      return !this.isClinicUser;
+    }
+  },
+  isClinicUser: {
+    type: Boolean,
+    default: false
+  },
+
   DOB: {
     type: String,
   },
