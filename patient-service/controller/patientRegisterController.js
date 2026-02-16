@@ -15,6 +15,8 @@ dotenv.config();
 const AUTH_SERVICE_BASE_URL = process.env.AUTH_SERVICE_BASE_URL;
 
 const registerPatient = async (req, res) => {
+const token = crypto.randomBytes(24).toString("hex");
+
   try {
     const { id: clinicId } = req.params;
     const {
@@ -116,6 +118,7 @@ const registerPatient = async (req, res) => {
       createdBy: userId,
       createdByRole: userRole.charAt(0).toUpperCase() + userRole.slice(1), // Admin or Receptionist
       parentPatient: parentPatient?._id || null,
+      reviewToken: token  
     });
 
     await newPatient.save();
@@ -980,40 +983,11 @@ const getVisitHistory = async (req, res) => {
     }
 
     // Fetch ALL fields by not specifying projection, OR explicitly include all needed fields
-    const visits = await PatientHistory.find(query)
-      .select({
-        // Include all fields from schema
-        visitDate: 1,
-        doctorId: 1,
-        clinicId: 1,
-        appointmentId: 1,
-        status: 1,
-        consultationFee: 1,
-        totalAmount: 1,
-        isPaid: 1,
-        dentalWork: 1,
-        treatmentPlanId: 1,
-        // Add missing consultation fields
-        symptoms: 1,
-        diagnosis: 1,
-        prescriptions: 1,
-        notes: 1,
-        files: 1,
-        labHistory: 1,
-        procedures: 1,
-        createdBy: 1,
-        updatedBy: 1,
-        referral: 1,
-        softTissueExamination: 1,
-        tmjExamination: 1,
-        receptionBilling: 1,
-        billId: 1,
-        createdAt: 1,
-        updatedAt: 1
-      })
-      .sort({ visitDate: -1, _id: -1 })
-      .limit(limit + 1)
-      .lean();
+  const visits = await PatientHistory.find(query)
+  .sort({ visitDate: -1, _id: -1 })
+  .limit(limit + 1)
+  .lean();
+
 
     const hasNextPage = visits.length > limit;
     const data = hasNextPage ? visits.slice(0, limit) : visits;

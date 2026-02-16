@@ -13,14 +13,23 @@ const EcommerceUserSchema = new Schema({
     required: true,
     unique: true,
   },
-  phoneNumber: {
-    type: Number,
-    required: true,
-  },
   password: {
     type: String,
-    required: true,
+    required: function () {
+      return !this.isClinicUser;
+    }
   },
+  phoneNumber: {
+    type: String,
+    required: function () {
+      return !this.isClinicUser;
+    }
+  },
+  isClinicUser: {
+    type: Boolean,
+    default: false
+  },
+
   DOB: {
     type: String,
   },
@@ -32,6 +41,10 @@ const EcommerceUserSchema = new Schema({
   },
   licenseNumber: {
     type: String
+  },
+  role: {
+    type: String,
+    default: "user",
   }
 });
 
@@ -51,6 +64,7 @@ EcommerceUserSchema.methods.generateAccessToken = function () {
       id: this._id,
       name: this.name,
       email: this.email,
+      role: this.role
     },
     process.env.ACCESS_TOKEN_SECRET,
     // { expiresIn: process.env.ACCESS_TOKEN_EXPIRY },
@@ -62,6 +76,7 @@ EcommerceUserSchema.methods.generateRefreshToken = function () {
       id: this._id,
       name: this.name,
       email: this.email,
+      role: this.role
     },
     process.env.REFRESH_TOKEN_SECRET,
     // { expiresIn: process.env.REFRESH_TOKEN_EXPIRY },

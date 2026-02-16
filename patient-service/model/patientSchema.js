@@ -17,8 +17,7 @@ const dentalChartEntrySchema = new mongoose.Schema({
   
   // Keep conditions for general tooth conditions
   conditions: [{ 
-    type: String, 
-    enum: TOOTH_CONDITIONS 
+    type: String  
   }],
   
   // Unified procedures array - all dental work goes here
@@ -189,6 +188,8 @@ const patientSchema = new mongoose.Schema({
     }
   ],
 
+    reviewToken: { type: String },
+    isReviewed: { type: Boolean, default: false },
 
   createdAt: { type: Date, default: Date.now }
 });

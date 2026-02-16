@@ -4,13 +4,14 @@ import {
   registerEcommerceUser,
   getProfile,
   editUserProfile,
-  logoutUser,
+  logoutUser, clinicMarketplaceLogin
 } from "../controller/EcommerceUserController.js";
 import { authMiddleware } from "../utils/auth.js";
 
 const EcommerceUserRoutes = Router();
 EcommerceUserRoutes.post("/register", registerEcommerceUser);
 EcommerceUserRoutes.post("/login", loginEcommerceUser);
+EcommerceUserRoutes.post("/clinic-marketplace-login", clinicMarketplaceLogin);
 
 // 🔒 Protected route
 EcommerceUserRoutes.get("/getProfile", authMiddleware, getProfile);
