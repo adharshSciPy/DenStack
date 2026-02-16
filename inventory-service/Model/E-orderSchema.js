@@ -11,11 +11,12 @@ const orderItemSchema = new Schema({
         type: String,
         required: true
     },
-    variant: {
-    variantId: {
-        type: mongoose.Schema.Types.ObjectId,  // ✅ Add 'type:' wrapper
-        required: true
-    },
+     variant: {
+        variantId: {
+            type: mongoose.Schema.Types.ObjectId,
+            required: false,  // ✅ Change to false or remove required entirely
+            default: null     // ✅ Add default null
+        },
     size: String,
     color: String,
     material: String

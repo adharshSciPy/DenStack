@@ -2253,6 +2253,13 @@ export const addProduct = async (req, res) => {
         });
       }
 
+      // ✅ Parse stock properly - handle undefined, null, empty string, and NaN
+      let parsedStock = 0; // Default to 0
+      if (stock !== undefined && stock !== null && stock !== '') {
+        const stockNum = parseInt(stock);
+        parsedStock = isNaN(stockNum) ? 0 : stockNum;
+      }
+
       // ✅ Create new product - ALWAYS store main product pricing
       const newProduct = new Product({
         name,
@@ -2271,7 +2278,7 @@ export const addProduct = async (req, res) => {
         doctorDiscountPercentage: doctorDiscountPercentage
           ? parseFloat(doctorDiscountPercentage)
           : null,
-        stock: stock ? parseInt(stock) : 0,
+        stock: parsedStock, // ✅ Fixed - now properly handles all edge cases
 
         // ✅ Variants (can be empty array if product has no variants)
         variants: processedVariants,

@@ -9,7 +9,7 @@
 export const getPriceForUser = (variant, userRole, isClinicDoctor = false, hasActiveSubscription = false) => {
   const CLINIC_ROLE = process.env.CLINIC_ROLE || "700";
   
-  // ✅ RULE 1: Clinic with ACTIVE subscription → Apply D1 (Clinic Discount)
+  // ✅ RULE 1: Clinic with ACTIVE subscription → D1
   if (userRole === CLINIC_ROLE && hasActiveSubscription === true) {
     return {
       price: variant.clinicDiscountPrice || variant.originalPrice,
@@ -20,7 +20,7 @@ export const getPriceForUser = (variant, userRole, isClinicDoctor = false, hasAc
     };
   }
   
-  // ✅ RULE 2: Clinic Doctor (isClinicDoctor = true) → Apply D1 (Clinic Discount)
+  // ✅ RULE 2: Clinic Doctor → D1
   if (isClinicDoctor === true) {
     return {
       price: variant.clinicDiscountPrice || variant.originalPrice,
@@ -31,35 +31,18 @@ export const getPriceForUser = (variant, userRole, isClinicDoctor = false, hasAc
     };
   }
   
-  // ✅ RULE 3: Clinic WITHOUT subscription → Apply D2 (Doctor Discount)
-  if (userRole === CLINIC_ROLE && hasActiveSubscription === false) {
-    return {
-      price: variant.doctorDiscountPrice || variant.originalPrice,
-      discountPercentage: variant.doctorDiscountPercentage || 0,
-      priceType: 'doctor',
-      appliedDiscount: variant.doctorDiscountPrice ? 'Standard Discount (D2)' : 'Original Price',
-      userType: 'Clinic without Subscription'
-    };
-  }
-  
-  // ✅ RULE 4: Regular Doctor (not clinic doctor) → Apply D2 (Doctor Discount)
-  if (isClinicDoctor === false) {
-    return {
-      price: variant.doctorDiscountPrice || variant.originalPrice,
-      discountPercentage: variant.doctorDiscountPercentage || 0,
-      priceType: 'doctor',
-      appliedDiscount: variant.doctorDiscountPrice ? 'Doctor Discount (D2)' : 'Original Price',
-      userType: 'Regular Doctor'
-    };
-  }
-  
-  // ✅ RULE 5: All other users → Original Price (no discount)
+  // ✅ RULES 3, 4, 5 COMBINED: Everyone else gets D2
+  // - Clinic WITHOUT subscription
+  // - Regular doctors (not clinic doctors)
+  // - Normal users/guests
   return {
-    price: variant.originalPrice,
-    discountPercentage: 0,
-    priceType: 'original',
-    appliedDiscount: 'Original Price',
-    userType: 'Regular User'
+    price: variant.doctorDiscountPrice || variant.originalPrice,
+    discountPercentage: variant.doctorDiscountPercentage || 0,
+    priceType: 'doctor',
+    appliedDiscount: variant.doctorDiscountPrice ? 'Standard Discount (D2)' : 'Original Price',
+    userType: userRole === CLINIC_ROLE 
+      ? 'Clinic without Subscription' 
+      : (userRole ? 'Regular Doctor' : 'Regular User')
   };
 };
 
@@ -139,7 +122,7 @@ export const getAllPricingTiers = (variant) => {
       price: variant.doctorDiscountPrice || variant.originalPrice,
       discount: variant.doctorDiscountPercentage || 0,
       label: 'Standard Discount (D2)',
-      applicableTo: 'Clinics without subscription OR Regular Doctors'
+      applicableTo: 'Clinics without subscription OR Regular Doctors OR Normal Users' // 🔴 ADD "OR Normal Users"
     }
   };
 };
@@ -154,12 +137,18 @@ export const qualifiesForD1Discount = (userRole, isClinicDoctor, hasActiveSubscr
   return (userRole === CLINIC_ROLE && hasActiveSubscription === true) || isClinicDoctor === true;
 };
 
+
 /**
  * Check if user qualifies for D2 discount
  */
 export const qualifiesForD2Discount = (userRole, isClinicDoctor, hasActiveSubscription) => {
   const CLINIC_ROLE = process.env.CLINIC_ROLE || "700";
   
-  // Clinic without subscription OR Regular Doctor
-  return (userRole === CLINIC_ROLE && hasActiveSubscription === false) || (isClinicDoctor === false && userRole !== CLINIC_ROLE);
+  // D1 users (should return false)
+  if ((userRole === CLINIC_ROLE && hasActiveSubscription === true) || isClinicDoctor === true) {
+    return false;
+  }
+  
+  // Everyone else gets D2: Clinic without subscription, Regular Doctors, Normal Users
+  return true;
 };

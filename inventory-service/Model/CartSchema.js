@@ -10,7 +10,8 @@ const cartItemSchema = new Schema({
     variant: {
         variantId: {
             type: mongoose.Schema.Types.ObjectId,
-            required: true
+            required: false,  // ✅ Changed to false - not all products have variants
+            default: null
         },
         size: String,
         color: String,
