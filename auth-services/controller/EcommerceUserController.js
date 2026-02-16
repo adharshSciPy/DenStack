@@ -1,3 +1,4 @@
+import jwt from "jsonwebtoken";
 import EcommerceUser from "../models/EcommerceUserSchema.js";
 import Clinic from "../models/clinicSchema.js";
 import {
@@ -121,6 +122,63 @@ const loginEcommerceUser = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
+
+const clinicMarketplaceLogin = async (req, res) => {
+  try {
+    console.log("AUTH HEADER:", req.headers.authorization);
+
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({ message: "Clinic token missing" });
+    }
+
+    const clinicToken = authHeader.split(" ")[1];
+
+    const decoded = jwt.verify(
+      clinicToken,
+      process.env.ACCESS_TOKEN_SECRET
+    );
+
+    const clinic = await Clinic.findById(decoded.clinicId);
+
+    if (!clinic) {
+      return res.status(404).json({ message: "Clinic not found" });
+    }
+
+    let user = await EcommerceUser.findOne({ email: clinic.email });
+
+    if (!user) {
+      user = await EcommerceUser.create({
+        name: clinic.name,
+        email: clinic.email,
+        isClinicUser: true
+      });
+    }
+
+    const ecommerceToken = jwt.sign(
+      {
+        id: user._id,
+        role: "clinic"
+      },
+      process.env.ACCESS_TOKEN_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    res.cookie("accessToken", ecommerceToken, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production"
+    });
+
+    res.json({ success: true });
+
+  } catch (err) {
+    console.error("SSO error:", err);
+    res.status(401).json({ message: "Invalid clinic token" });
+  }
+};
+
 
 const getProfile = async (req, res) => {
   try {
@@ -270,4 +328,4 @@ const logoutUser = (req, res) => {
   res.json({ message: "Logged out successfully" });
 };
 
-export { registerEcommerceUser, loginEcommerceUser, getProfile, editUserProfile, logoutUser };
+export { registerEcommerceUser, loginEcommerceUser, clinicMarketplaceLogin, getProfile, editUserProfile, logoutUser };
