@@ -530,8 +530,9 @@ const getProductInventoryList = async (req, res) => {
  */
 const getFavorites = async (req, res) => {
   try {
-    const userId = req.user.id;
-
+    const userId = req.user.clinicId;
+    console.log(userId);
+    
     const favorites = await Favourite.find({ user: userId })
       .populate({
         path: "product",
@@ -573,14 +574,15 @@ const getFavorites = async (req, res) => {
  */
 const addFavorite = async (req, res) => {
   try {
-    if (!req.user || !req.user.id) {
+ 
+    if (!req.user || !req.user.clinicId) {
       return res.status(401).json({
         success: false,
         message: "Unauthorized",
       });
     }
 
-    const userId = req.user.id;
+    const userId = req.user.clinicId;
     const { productId } = req.params;
     const { variantId } = req.body || {};
 
@@ -654,7 +656,7 @@ const addFavorite = async (req, res) => {
  */
 const removeFavoriteById = async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user.clinicId;
     const { favoriteId } = req.params;
 
     const favorite = await Favourite.findOneAndDelete({
