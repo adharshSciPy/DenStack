@@ -14,9 +14,13 @@ import {
   // ✅ NEW: Consultation billing functions
   syncConsultationToBilling,
   markConsultationAsPaid,
+ 
   getUnpaidConsultations
 } from "../controller/billingController.js";
-
+import { financialDashboard } from "../controller/financialDashboard.js";
+import { verifyAuthToken } from "../middleware/authMiddleware.js";
+import { authorizeRoles } from "../middleware/authMiddleware.js";
+import { authorizeClinicAccess } from "../middleware/authMiddleware.js";
 const billingRouter = Router();
 
 // Get complete bills (consultation + pharmacy) for a patient
@@ -64,5 +68,15 @@ billingRouter.route("/:billId/payment").patch(updatePaymentStatus);
 
 // Cancel a bill
 billingRouter.route("/:billId/cancel").patch(cancelBill);
+
+
+billingRouter.get(
+  "/dashboard/:clinicId",
+  verifyAuthToken,
+  authorizeRoles(500, 700),
+  authorizeClinicAccess,
+  financialDashboard
+);
+
 
 export default billingRouter;

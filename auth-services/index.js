@@ -18,7 +18,8 @@ import clinicSubscriptionCron from "./utils/clinicSubscriptionCron.js";
 import staffShiftCron from "./utils/staffShiftCron.js";
 import permissionRoutes from "./routes/permissionRoutes.js";
 import EcommerceUserRoutes from "./routes/ecommerceuserRouter.js";
-
+import salaryRouter from "./routes/salaryRouter.js";
+import expenseRouter from "./routes/expenseRouter.js";
 dotenv.config();
 connectDB();
 
@@ -56,7 +57,8 @@ app.use("/api/v1/auth/assistant", assistantRouter);
 app.use("/api/v1/auth/roles", permissionRoutes);
 app.use("/api/v1/super-admin", superAdminDashboardRouter);
 app.use("/api/v1/ecommerceuser", EcommerceUserRoutes);
-
+app.use("/api/v1/salary", salaryRouter);
+app.use("/api/v1/expense", expenseRouter);
 const PORT = process.env.PORT || 8001;
 app.listen(PORT, () => {
   console.log(`✅ Server running on port:${PORT}`);
