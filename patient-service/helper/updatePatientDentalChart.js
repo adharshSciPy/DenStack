@@ -78,7 +78,6 @@ export const updatePatientDentalChart = async (patient, dentalWork, visitId, doc
                 visitIds: visitId ? [visitId] : [],
                 treatmentPlanId: treatmentPlanId,
                 notes: "",
-                // Don't set procedureType for conditions
                 procedureType: undefined
               });
               console.log(`✅ Added surface condition: ${condition} on tooth ${toothNumber} (${surface})`);
