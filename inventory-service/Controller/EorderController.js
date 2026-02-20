@@ -996,3 +996,127 @@ export const getEcomOrderAnalytics = async (req, res) => {
     });
   }
 };
+
+export const updateOrderStatus = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { status, cancellationReason } = req.body;
+
+    // ✅ Allow only these two
+    if (!["DELIVERED", "CANCELLED"].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Only DELIVERED or CANCELLED status allowed"
+      });
+    }
+
+    const order = await EcomOrder.findById(orderId);
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found"
+      });
+    }
+
+    // 🚫 Prevent modifying final state
+    if (["DELIVERED", "CANCELLED", "RETURNED"].includes(order.orderStatus)) {
+      return res.status(400).json({
+        success: false,
+        message: `Order already ${order.orderStatus}`
+      });
+    }
+
+    // ===============================
+    // 🔴 If Cancelling
+    // ===============================
+    if (status === "CANCELLED") {
+
+      if (!cancellationReason) {
+        return res.status(400).json({
+          success: false,
+          message: "Cancellation reason is required"
+        });
+      }
+
+      order.orderStatus = "CANCELLED";
+      order.cancellationReason = cancellationReason;
+
+      // 💰 Auto refund logic (if payment was PAID)
+      if (order.paymentDetails.status === "PAID") {
+        order.paymentDetails.status = "REFUNDED";
+      }
+    }
+
+    // ===============================
+    // 🟢 If Delivering
+    // ===============================
+    if (status === "DELIVERED") {
+      order.orderStatus = "DELIVERED";
+
+      // If COD and delivered → mark as PAID
+      if (order.paymentDetails.method === "COD") {
+        order.paymentDetails.status = "PAID";
+        order.paymentDetails.paidAt = new Date();
+      }
+    }
+
+    await order.save(); // triggers your pre-save hooks
+
+    return res.status(200).json({
+      success: true,
+      message: `Order marked as ${status}`,
+      data: order
+    });
+
+  } catch (error) {
+    console.error("Update Order Status Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error"
+    });
+  }
+};
+export const getDeliveredProducts = async (req, res) => {
+  const { clinicId } = req.params;
+
+  // 👉 Get page from query (default = 1)
+  const page = parseInt(req.query.page) || 1;
+  const limit = 10;
+
+  try {
+    // 👉 Count total delivered orders
+    const totalOrders = await EcomOrder.countDocuments({
+      clinic: clinicId,
+      orderStatus: "DELIVERED"
+    });
+
+    // 👉 Fetch paginated orders
+    const orders = await EcomOrder.find({
+      clinic: clinicId,
+      orderStatus: "DELIVERED"
+    })
+      .populate("items.product", "name image")
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .sort({ createdAt: -1 }); // latest first
+
+    res.status(200).json({
+      success: true,
+      message: "Delivered products retrieved successfully",
+      currentPage: page,
+      totalPages: Math.ceil(totalOrders / limit),
+      totalOrders,
+      data: orders
+    });
+
+  } catch (error) {
+    console.error("Get Delivered Products Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to retrieve delivered products",
+      error: error.message
+    });
+  }
+};
+

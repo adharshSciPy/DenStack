@@ -22,8 +22,8 @@ const featuredProductSchema = new Schema(
     },
     badge: {
       type: String,
-      enum: ["NEW", "HOT", "SALE", "TRENDING", "EXCLUSIVE", null],
-      default: null,
+      default: null, // or just remove default if not needed
+      trim: true,
     },
     order: {
       type: Number,

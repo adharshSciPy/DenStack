@@ -7,25 +7,39 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-// ✅ YOUR EXISTING MIDDLEWARE (Keep as is)
+// ✅ UPDATED: Now handles BOTH Bearer tokens AND cookies
 export const verifyAuthToken = (req, res, next) => {
+    // Step 1: Check if token is in Authorization header (Clinic/Doctor)
     const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    
+    // Step 2: Check if token is in cookies (Normal User)
+    const cookieToken = req.cookies?.accessToken;
+    
+    let token;
+    
+    // Try to get token from either place
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+        token = authHeader.split(" ")[1]; // Get token from header (Clinic/Doctor)
+    } else if (cookieToken) {
+        token = cookieToken; // Get token from cookie (Normal User)
+    }
+    
+    // If no token found anywhere
+    if (!token) {
         return res.status(401).json({ message: "Access token missing or invalid" });
     }
 
-    const token = authHeader.split(" ")[1];
-
+    // Verify the token
     try {
         const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
-        req.user = decoded; // Sets role, isClinicDoctor, etc.
+        req.user = decoded; // Save user info (role, isClinicDoctor, etc.)
         next();
     } catch (err) {
         return res.status(403).json({ message: "Invalid or expired token" });
     }
 };
 
-// ✅ YOUR EXISTING MIDDLEWARE (Keep for future use, but not using now)
+// ✅ Keep this as is
 export const authorizeRoles = (...roles) => {
     return (req, res, next) => {
         if (!roles.includes(req.user.role)) {
@@ -35,28 +49,41 @@ export const authorizeRoles = (...roles) => {
     };
 };
 
-// ✅ NEW: Optional authentication (for product listing with personalized pricing)
+// ✅ UPDATED: Now handles BOTH Bearer tokens AND cookies
 export const optionalAuth = (req, res, next) => {
+    // Check Authorization header (Clinic/Doctor)
     const authHeader = req.headers.authorization;
     
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-        req.user = null; // No user logged in
+    // Check cookies (Normal User)
+    const cookieToken = req.cookies?.accessToken;
+    
+    let token;
+    
+    // Try to get token from either place
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+        token = authHeader.split(" ")[1];
+    } else if (cookieToken) {
+        token = cookieToken;
+    }
+    
+    // If no token found, user is not logged in (that's okay for optional auth)
+    if (!token) {
+        req.user = null;
         return next();
     }
 
-    const token = authHeader.split(" ")[1];
-
+    // Try to verify token
     try {
         const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
         req.user = decoded; // User is logged in
         next();
     } catch (err) {
-        req.user = null; // Invalid token, treat as not logged in
+        req.user = null; // Token is invalid, treat as not logged in
         next();
     }
 };
 
-// ✅ NEW: Check if user can place orders (clinic or clinic-doctor)
+// ✅ Keep this as is
 export const canPlaceOrder = (req, res, next) => {
     const CLINIC_ROLE = process.env.CLINIC_ROLE || "700";
     

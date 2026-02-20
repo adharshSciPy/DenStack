@@ -151,9 +151,10 @@ receptionSchema.methods.generateAccessToken = function () {
   return jwt.sign(
     {
       receptionId: this._id,
-      name: this.name,
-      email: this.email,
-      role: this.role,
+      name:        this.name,
+      email:       this.email,
+      role:        this.role,
+      hospitalId:  this.clinicId,   // ← add this
     },
     process.env.ACCESS_TOKEN_SECRET,
     { expiresIn: process.env.ACCESS_TOKEN_EXPIRY }
@@ -164,9 +165,10 @@ receptionSchema.methods.generateRefreshToken = function () {
   return jwt.sign(
     {
       receptionId: this._id,
-      name: this.name,
-      email: this.email,
-      role: this.role,
+      name:        this.name,
+      email:       this.email,
+      role:        this.role,
+      hospitalId:  this.clinicId,   // ← add this
     },
     process.env.REFRESH_TOKEN_SECRET,
     { expiresIn: process.env.REFRESH_TOKEN_EXPIRY }

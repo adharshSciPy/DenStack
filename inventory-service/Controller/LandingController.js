@@ -973,6 +973,191 @@ export const deleteMainCategory = async (req, res) => {
     res.status(500).json({ message: "Server error", error: err.message });
   }
 };
+export const getAllMainCategoriesWithDetails = async (req, res) => {
+  try {
+    // Step 1: Get all active main categories
+    const mainCategories = await MainCategory.find({
+      isActive: true,
+      parentCategory: null,
+    }).sort({ order: 1, categoryName: 1 }).lean();
+
+    if (!mainCategories.length) {
+      return res.status(200).json({
+        message: "Main categories fetched successfully",
+        data: [],
+      });
+    }
+
+    const mainCategoryIds = mainCategories.map((c) => c._id);
+
+    // Step 2: Get all subcategories that belong to these main categories
+    const allSubCategories = await SubCategory.find({
+      mainCategory: { $in: mainCategoryIds },
+      isActive: true,
+    }).lean();
+
+    const subCategoryIds = allSubCategories.map((s) => s._id);
+
+    // Step 3: Get all brands that belong to these subcategories
+    const allBrands = await Brand.find({
+      subCategory: { $in: subCategoryIds },
+      isActive: true,
+    }).lean();
+
+    const brandIds = allBrands.map((b) => b._id);
+
+    // Step 4: Get all products that belong to these brands
+    const allProducts = await Product.find({
+      brand: { $in: brandIds },
+      status: { $in: ["Available", "Out of Stock"] },
+    }).lean();
+
+    // Step 5: Build lookup maps for fast nesting
+    // products grouped by brandId
+    const productsByBrand = {};
+    for (const product of allProducts) {
+      const key = product.brand.toString();
+      if (!productsByBrand[key]) productsByBrand[key] = [];
+      productsByBrand[key].push(product);
+    }
+
+    // brands grouped by subCategoryId
+    const brandsBySubCategory = {};
+    for (const brand of allBrands) {
+      const key = brand.subCategory.toString();
+      if (!brandsBySubCategory[key]) brandsBySubCategory[key] = [];
+      brandsBySubCategory[key].push({
+        ...brand,
+        products: productsByBrand[brand._id.toString()] || [],
+        productCount: (productsByBrand[brand._id.toString()] || []).length,
+      });
+    }
+
+    // subcategories grouped by mainCategoryId
+    const subCategoriesByMain = {};
+    for (const sub of allSubCategories) {
+      const key = sub.mainCategory.toString();
+      if (!subCategoriesByMain[key]) subCategoriesByMain[key] = [];
+      const subBrands = brandsBySubCategory[sub._id.toString()] || [];
+      subCategoriesByMain[key].push({
+        ...sub,
+        brands: subBrands,
+        brandCount: subBrands.length,
+        productCount: subBrands.reduce((sum, b) => sum + b.productCount, 0),
+      });
+    }
+
+    // Step 6: Assemble final response
+    const result = mainCategories.map((cat) => {
+      const subCategories = subCategoriesByMain[cat._id.toString()] || [];
+      return {
+        ...cat,
+        subCategories,
+        subCategoryCount: subCategories.length,
+        brandCount: subCategories.reduce((sum, s) => sum + s.brandCount, 0),
+        productCount: subCategories.reduce((sum, s) => sum + s.productCount, 0),
+      };
+    });
+
+    res.status(200).json({
+      message: "Main categories with details fetched successfully",
+      data: result,
+    });
+  } catch (err) {
+    console.error("getAllMainCategoriesWithDetails Error:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
+};
+
+export const getMainCategoryWithDetails = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Step 1: Find the main category
+    const query = mongoose.Types.ObjectId.isValid(id)
+      ? { _id: id, parentCategory: null }
+      : { mainCategoryId: id, parentCategory: null };
+
+    const mainCategory = await MainCategory.findOne({
+      ...query,
+      isActive: true,
+    }).lean();
+
+    if (!mainCategory) {
+      return res.status(404).json({ message: "Main category not found" });
+    }
+
+    // Step 2: Get all subcategories under this main category
+    const subCategories = await SubCategory.find({
+      mainCategory: mainCategory._id,
+      isActive: true,
+    }).sort({ order: 1, categoryName: 1 }).lean();
+
+    const subCategoryIds = subCategories.map((s) => s._id);
+
+    // Step 3: Get all brands under these subcategories
+    const allBrands = await Brand.find({
+      subCategory: { $in: subCategoryIds },
+      isActive: true,
+    }).lean();
+
+    const brandIds = allBrands.map((b) => b._id);
+
+    // Step 4: Get all products under these brands
+    const allProducts = await Product.find({
+      brand: { $in: brandIds },
+      status: { $in: ["Available", "Out of Stock"] },
+    }).lean();
+
+    // Step 5: Build lookup maps
+    const productsByBrand = {};
+    for (const product of allProducts) {
+      const key = product.brand.toString();
+      if (!productsByBrand[key]) productsByBrand[key] = [];
+      productsByBrand[key].push(product);
+    }
+
+    const brandsBySubCategory = {};
+    for (const brand of allBrands) {
+      const key = brand.subCategory.toString();
+      if (!brandsBySubCategory[key]) brandsBySubCategory[key] = [];
+      brandsBySubCategory[key].push({
+        ...brand,
+        products: productsByBrand[brand._id.toString()] || [],
+        productCount: (productsByBrand[brand._id.toString()] || []).length,
+      });
+    }
+
+    // Step 6: Nest subcategories with their brands and products
+    const subCategoriesWithDetails = subCategories.map((sub) => {
+      const brands = brandsBySubCategory[sub._id.toString()] || [];
+      return {
+        ...sub,
+        brands,
+        brandCount: brands.length,
+        productCount: brands.reduce((sum, b) => sum + b.productCount, 0),
+      };
+    });
+
+    // Step 7: Assemble final response
+    const result = {
+      ...mainCategory,
+      subCategories: subCategoriesWithDetails,
+      subCategoryCount: subCategoriesWithDetails.length,
+      brandCount: subCategoriesWithDetails.reduce((sum, s) => sum + s.brandCount, 0),
+      productCount: subCategoriesWithDetails.reduce((sum, s) => sum + s.productCount, 0),
+    };
+
+    res.status(200).json({
+      message: "Main category with details fetched successfully",
+      data: result,
+    });
+  } catch (err) {
+    console.error("getMainCategoryWithDetails Error:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
+};
+
 export const createSubCategory = async (req, res) => {
   try {
     const { categoryName, description, mainCategoryId, order } = req.body;

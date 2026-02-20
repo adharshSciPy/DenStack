@@ -198,29 +198,30 @@ clinicSchema.methods.toggleActive = function () {
 clinicSchema.methods.generateAccessToken = function (role = CLINIC_ROLE) {
   return jwt.sign(
     {
-      clinicId: this._id,
-      name: this.name,
-      email: this.email,
+      clinicId:     this._id,
+      name:         this.name,
+      email:        this.email,
       role,
       subscription: this.subscription.package,
+      hospitalId:   this._id,   // ← add this
     },
     process.env.ACCESS_TOKEN_SECRET,
-    { expiresIn: process.env.ACCESS_TOKEN_EXPIRY },
+    { expiresIn: process.env.ACCESS_TOKEN_EXPIRY }
   );
 };
 
-// 🔹 JWT Refresh Token
 clinicSchema.methods.generateRefreshToken = function (role = CLINIC_ROLE) {
   return jwt.sign(
     {
-      clinicId: this._id,
-      name: this.name,
-      email: this.email,
+      clinicId:     this._id,
+      name:         this.name,
+      email:        this.email,
       role,
       subscription: this.subscription.package,
+      hospitalId:   this._id,   // ← add this
     },
     process.env.REFRESH_TOKEN_SECRET,
-    { expiresIn: process.env.REFRESH_TOKEN_EXPIRY },
+    { expiresIn: process.env.REFRESH_TOKEN_EXPIRY }
   );
 };
 

@@ -67,7 +67,9 @@ import {
   toggleFeaturedProductStatus,
   getActiveFeaturedProducts,
   createClinicSetup,
-  getClinicSetup
+  getClinicSetup,
+  getAllMainCategoriesWithDetails,
+  getMainCategoryWithDetails
 } from "../Controller/LandingController.js";
 import landingUpload from "../middlewares/landingUpload.js";
 import ClinicSetup from "../Model/ClinicSetupSchema.js";
@@ -94,8 +96,14 @@ landingRouter.delete("/carousel/delete/:id", deleteCarouselSlide);
 landingRouter.post("/brands/create", flexibleUpload, createBrand);
 landingRouter.get("/brands/getAll", getAllBrands);
 landingRouter.get("/brands/getById/:id", getBrandById);
-landingRouter.get("/brands/byMainCategory/:mainCategoryId", getBrandsByMainCategory);
-landingRouter.get("/brands/bySubCategory/:subCategoryId", getBrandsBySubCategory);
+landingRouter.get(
+  "/brands/byMainCategory/:mainCategoryId",
+  getBrandsByMainCategory,
+);
+landingRouter.get(
+  "/brands/bySubCategory/:subCategoryId",
+  getBrandsBySubCategory,
+);
 landingRouter.put("/brands/update/:id", flexibleUpload, updateBrand);
 landingRouter.delete("/brands/delete/:id", deleteBrand);
 
@@ -114,6 +122,10 @@ landingRouter.get("/main/getById/:id", getMainCategoryById);
 landingRouter.put("/main/update/:id", flexibleUpload, updateMainCategory);
 landingRouter.delete("/main/delete/:id", deleteMainCategory);
 
+//these apis will fetch all the subcat,brand,prod from the main category
+landingRouter.get("/main/getWithDetails", getAllMainCategoriesWithDetails);
+landingRouter.get("/main/getWithDetails/:id", getMainCategoryWithDetails);
+
 // ============= SUB CATEGORY ROUTES =============
 landingRouter.post("/sub/create", createSubCategory);
 landingRouter.get("/sub/getByParent/:mainCategoryId", getSubCategories);
@@ -126,16 +138,36 @@ landingRouter.delete("/sub/delete/:id", deleteSubCategory);
 landingRouter.get("/hierarchy", getMainCategoryHierarchy);
 
 // ============= TOP CATEGORIES ROUTES =============
-landingRouter.post("/topCategories/create", flexibleUpload, addTopCategory);
-landingRouter.post("/topCategories/add-multiple", flexibleUpload, addMultipleTopCategories);
+landingRouter.post(
+  "/topCategories/create",
+  landingUpload.single("image"),
+  addTopCategory,
+);
+landingRouter.post(
+  "/topCategories/add-multiple",
+  flexibleUpload,
+  addMultipleTopCategories,
+);
 landingRouter.get("/topCategories/getAll", getAllTopCategories);
-landingRouter.put("/topCategories/update/:id", flexibleUpload, updateTopCategory);
+landingRouter.put(
+  "/topCategories/update/:id",
+  flexibleUpload,
+  updateTopCategory,
+);
 landingRouter.delete("/topCategories/delete/:id", deleteTopCategory);
 
 // ============= FEATURED CATEGORIES ROUTES =============
-landingRouter.post("/featuredCategories/create", flexibleUpload, createFeaturedCategory);
+landingRouter.post(
+  "/featuredCategories/create",
+  flexibleUpload,
+  createFeaturedCategory,
+);
 landingRouter.get("/featuredCategories/getAll", getAllFeaturedCategories);
-landingRouter.put("/featuredCategories/update/:id", flexibleUpload, updateFeaturedCategory);
+landingRouter.put(
+  "/featuredCategories/update/:id",
+  flexibleUpload,
+  updateFeaturedCategory,
+);
 landingRouter.delete("/featuredCategories/delete/:id", deleteFeaturedCategory);
 
 // ============= CATEGORY SECTIONS ROUTES =============
@@ -147,16 +179,32 @@ landingRouter.put("/categorySections/update/:id", updateCategorySection);
 // ============= PRODUCT ROUTES =============
 // Add product (NO AUTH - anyone can add)
 landingRouter.post("/products/add", flexibleUpload, addProduct);
-landingRouter.get('/products', optionalAuth, getProducts);
-landingRouter.get('/products/:id', optionalAuth, getProductById);
+landingRouter.get("/products", optionalAuth, getProducts);
+landingRouter.get("/products/:id", optionalAuth, getProductById);
 
 // Get products with optional personalized pricing
 landingRouter.get("/products/filter", optionalAuth, getProductsByFilters);
-landingRouter.get("/products/byMainCategory/:mainCategoryId", optionalAuth, getProductsByMainCategory);
-landingRouter.get("/products/bySubCategory/:subCategoryId", optionalAuth, getProductsBySubCategory);
-landingRouter.get("/products/byBrand/:brandId", optionalAuth, getProductsByBrand);
+landingRouter.get(
+  "/products/byMainCategory/:mainCategoryId",
+  optionalAuth,
+  getProductsByMainCategory,
+);
+landingRouter.get(
+  "/products/bySubCategory/:subCategoryId",
+  optionalAuth,
+  getProductsBySubCategory,
+);
+landingRouter.get(
+  "/products/byBrand/:brandId",
+  optionalAuth,
+  getProductsByBrand,
+);
 landingRouter.get("/products/top-selling", optionalAuth, getTopSellingProducts);
-landingRouter.get("/products/top-selling-simple", optionalAuth, getTopSellingProductsSimple);
+landingRouter.get(
+  "/products/top-selling-simple",
+  optionalAuth,
+  getTopSellingProductsSimple,
+);
 
 // Update and delete products (NO AUTH - anyone can manage)
 landingRouter.put("/products/update/:productId", flexibleUpload, updateProduct);
@@ -164,13 +212,17 @@ landingRouter.delete("/products/delete/:productId", deleteProduct);
 
 // ============= FEATURED PRODUCTS ROUTES =============
 landingRouter.post("/featured-products/add", addFeaturedProduct);
-landingRouter.post("/featured-products/add-multiple", addMultipleFeaturedProducts);
+landingRouter.post(
+  "/featured-products/add-multiple",
+  addMultipleFeaturedProducts,
+);
 landingRouter.get("/featured-products/getAll", getAllFeaturedProducts);
 landingRouter.get("/featured-products/active", getActiveFeaturedProducts);
 landingRouter.get("/featured-products/getById/:id", getFeaturedProductById);
 landingRouter.put("/featured-products/update/:id", updateFeaturedProduct);
 landingRouter.put("/featured-products/toggle/:id", toggleFeaturedProductStatus);
 landingRouter.delete("/featured-products/delete/:id", deleteFeaturedProduct);
+
 
 // ClinicSetup
 

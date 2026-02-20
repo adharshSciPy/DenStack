@@ -13,7 +13,8 @@ import {
     updateEcomPaymentStatus,
     cancelEcomOrder,
     getRecentEcomOrders,
-    getEcomOrderAnalytics
+    getEcomOrderAnalytics,
+    getDeliveredProducts
 } from "../Controller/EorderController.js";
 
 const ecomOrderRouter = express.Router();
@@ -34,5 +35,7 @@ ecomOrderRouter.get("/clinic/:clinicId", verifyAuthToken, getClinicEcomOrders);
 ecomOrderRouter.put("/updateStatus/:orderId", verifyAuthToken, updateEcomOrderStatus);
 ecomOrderRouter.put("/updatePayment/:orderId", verifyAuthToken, updateEcomPaymentStatus);
 ecomOrderRouter.put("/cancel/:orderId", verifyAuthToken, cancelEcomOrder);
+ecomOrderRouter.get("/clinic/deliver/:clinicId", verifyAuthToken, getDeliveredProducts);
+
 
 export default ecomOrderRouter;

@@ -10,7 +10,7 @@ const cartItemSchema = new Schema({
     variant: {
         variantId: {
             type: mongoose.Schema.Types.ObjectId,
-            required: false,  // ✅ Changed to false - not all products have variants
+            required: false,
             default: null
         },
         size: String,
@@ -38,8 +38,13 @@ const cartSchema = new Schema(
     {
         clinic: {
             type: mongoose.Schema.Types.ObjectId,
-            required: true,
-            unique: true  // One cart per clinic
+            required: false, // ✅ Changed to false
+            default: null
+        },
+        user: {
+            type: mongoose.Schema.Types.ObjectId,
+            required: false, // ✅ Changed to false
+            default: null
         },
         items: {
             type: [cartItemSchema],
@@ -57,6 +62,15 @@ const cartSchema = new Schema(
     { timestamps: true }
 );
 
+// ✅ Add validation: At least one of clinic or user must be present
+cartSchema.pre("save", function (next) {
+    if (!this.clinic && !this.user) {
+        next(new Error("Either clinic or user is required"));
+    } else {
+        next();
+    }
+});
+
 // Auto-calculate totals before saving
 cartSchema.pre("save", function (next) {
     this.totalItems = this.items.reduce((sum, item) => sum + item.quantity, 0);
@@ -66,6 +80,7 @@ cartSchema.pre("save", function (next) {
 
 // Index for faster queries
 cartSchema.index({ clinic: 1 });
+cartSchema.index({ user: 1 });
 
 const Cart = mongoose.model("Cart", cartSchema);
 export default Cart;

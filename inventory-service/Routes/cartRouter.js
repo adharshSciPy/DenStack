@@ -3,7 +3,7 @@
 // ============================================
 
 import express from "express";
-import { verifyAuthToken, canPlaceOrder } from "../middlewares/authmiddleware.js";
+import { verifyAuthToken, canPlaceOrder } from "../middlewares/authMiddleware.js";
 import {
     addToCart,
     getCart,
@@ -16,8 +16,8 @@ import {
 const cartRouter = express.Router();
 
 // ✅ All routes protected - only clinics & clinic-doctors
-cartRouter.post("/add", verifyAuthToken, canPlaceOrder, addToCart);
-cartRouter.get("/get", verifyAuthToken, canPlaceOrder, getCart);
+cartRouter.post("/add", verifyAuthToken, addToCart);
+cartRouter.get("/get", verifyAuthToken, getCart);
 cartRouter.put("/item/:itemId", verifyAuthToken, canPlaceOrder, updateCartItemQuantity);
 cartRouter.delete("/item/:itemId", verifyAuthToken, canPlaceOrder, removeCartItem);
 cartRouter.delete("/clear", verifyAuthToken, canPlaceOrder, clearCart);

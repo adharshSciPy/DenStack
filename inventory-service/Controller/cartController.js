@@ -90,15 +90,7 @@ const getClinicRoleInfo = async (clinicId) => {
 // ============= ADD TO CART (UPDATED WITH PRICING) =============
 export const addToCart = async (req, res) => {
   try {
-    const { clinicId, userId, productId, variantId, quantity = 1 } = req.body;
-
-    // ✅ Validate: clinicId OR userId
-    if (!clinicId && !userId) {
-      return res.status(400).json({
-        success: false,
-        message: "Either clinicId or userId is required"
-      });
-    }
+    const { productId, variantId, quantity = 1 } = req.body;
 
     if (!productId) {
       return res.status(400).json({
@@ -115,22 +107,35 @@ export const addToCart = async (req, res) => {
       });
     }
 
-    // ✅ Get user role info for pricing
-    let userRole, isClinicDoctor, hasActiveSubscription;
+    // ✅ Get user info from JWT token (set by middleware)
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentication required"
+      });
+    }
+
+    const { id: userId, clinicId, role, isClinicDoctor } = req.user;
+
+    // ✅ Determine cart owner and get role info
+    let userRole, hasActiveSubscription;
     let cartOwnerId;
+    let cartQuery;
     
     if (clinicId) {
+      // User is a Clinic
       const roleInfo = await getClinicRoleInfo(clinicId);
       userRole = roleInfo.role;
-      isClinicDoctor = roleInfo.isClinicDoctor;
       hasActiveSubscription = roleInfo.hasActiveSubscription;
       cartOwnerId = clinicId;
+      cartQuery = { clinic: clinicId };
     } else {
+      // User is a Doctor or Normal User
       const roleInfo = await getUserRoleInfo(userId);
       userRole = roleInfo.role;
-      isClinicDoctor = roleInfo.isClinicDoctor;
       hasActiveSubscription = roleInfo.hasActiveSubscription;
       cartOwnerId = userId;
+      cartQuery = { user: userId };
     }
 
     // Fetch product
@@ -171,7 +176,7 @@ export const addToCart = async (req, res) => {
           doctorDiscountPercentage: product.doctorDiscountPercentage,
         },
         userRole,
-        isClinicDoctor,
+        isClinicDoctor || false,
         hasActiveSubscription
       );
 
@@ -193,7 +198,7 @@ export const addToCart = async (req, res) => {
       const pricing = getPriceForUser(
         variant,
         userRole,
-        isClinicDoctor,
+        isClinicDoctor || false,
         hasActiveSubscription
       );
 
@@ -217,13 +222,8 @@ export const addToCart = async (req, res) => {
       });
     }
 
-    // ✅ Find or create cart (use clinicId or userId)
-    let cart = await Cart.findOne({ 
-      $or: [
-        { clinic: clinicId },
-        { user: userId }
-      ]
-    });
+    // ✅ Find or create cart
+    let cart = await Cart.findOne(cartQuery);
 
     if (!cart) {
       cart = new Cart({
@@ -287,12 +287,24 @@ export const addToCart = async (req, res) => {
 // ============= GET CART =============
 export const getCart = async (req, res) => {
   try {
-    const { id: userId, clinicId } = req.user;
+    let query;
 
-    // 🔹 Decide cart owner automatically
-    const query = clinicId
-      ? { clinic: clinicId }   // Clinic account
-      : { user: userId };      // Normal user
+    // ✅ Check what type of user is logged in
+    if (req.user) {
+      // User authenticated via JWT token (Clinic or Doctor)
+      const { id: userId, clinicId } = req.user;
+      
+      // Decide cart owner based on JWT data
+      query = clinicId
+        ? { clinic: clinicId }   // Clinic account
+        : { user: userId };      // Doctor account
+    } else {
+      // ❌ No user found - should not happen if middleware works correctly
+      return res.status(401).json({
+        success: false,
+        message: "Authentication required"
+      });
+    }
 
     const cart = await Cart.findOne(query)
       .populate({
@@ -317,7 +329,7 @@ export const getCart = async (req, res) => {
       });
     }
 
-    // 🔹 Calculate totals
+    // Calculate totals
     let subtotal = 0;
     let totalItems = 0;
 
@@ -331,7 +343,7 @@ export const getCart = async (req, res) => {
       message: "Cart retrieved successfully",
       data: {
         _id: cart._id,
-        owner: clinicId || userId,
+        owner: query.clinic || query.user,
         items: cart.items,
         totalItems,
         subtotal
@@ -351,8 +363,9 @@ export const getCart = async (req, res) => {
 // ============= UPDATE CART ITEM QUANTITY =============
 export const updateCartItemQuantity = async (req, res) => {
     try {
-        const { clinicId, itemId } = req.params;
+        const { itemId } = req.params;
         const { quantity } = req.body;
+        const { id: userId, clinicId } = req.user;
 
         const parsedQuantity = parseInt(quantity);
         if (isNaN(parsedQuantity) || parsedQuantity < 1) {
@@ -362,7 +375,9 @@ export const updateCartItemQuantity = async (req, res) => {
             });
         }
 
-        const cart = await Cart.findOne({ clinic: clinicId });
+        // Find cart by clinicId or userId
+        const query = clinicId ? { clinic: clinicId } : { user: userId };
+        const cart = await Cart.findOne(query);
 
         if (!cart) {
             return res.status(404).json({
@@ -383,13 +398,9 @@ export const updateCartItemQuantity = async (req, res) => {
         const product = await Product.findById(item.product);
         
         let stockAvailable;
-        
-        // ✅ Handle products WITHOUT variants
         if (!item.variant.variantId) {
             stockAvailable = product.stock || 0;
-        } 
-        // ✅ Handle products WITH variants
-        else {
+        } else {
             const variant = product.variants.id(item.variant.variantId);
             if (!variant) {
                 return res.status(404).json({
@@ -409,7 +420,6 @@ export const updateCartItemQuantity = async (req, res) => {
 
         item.quantity = parsedQuantity;
         await cart.save();
-
         await cart.populate('items.product', 'name image');
 
         res.status(200).json({
@@ -430,9 +440,11 @@ export const updateCartItemQuantity = async (req, res) => {
 // ============= REMOVE ITEM FROM CART =============
 export const removeCartItem = async (req, res) => {
     try {
-        const { clinicId, itemId } = req.params;
+        const { itemId } = req.params;
+        const { id: userId, clinicId } = req.user;
 
-        const cart = await Cart.findOne({ clinic: clinicId });
+        const query = clinicId ? { clinic: clinicId } : { user: userId };
+        const cart = await Cart.findOne(query);
 
         if (!cart) {
             return res.status(404).json({
@@ -441,10 +453,8 @@ export const removeCartItem = async (req, res) => {
             });
         }
 
-        // Remove item using pull
         cart.items.pull(itemId);
         await cart.save();
-
         await cart.populate('items.product', 'name image');
 
         res.status(200).json({
@@ -465,9 +475,10 @@ export const removeCartItem = async (req, res) => {
 // ============= CLEAR CART =============
 export const clearCart = async (req, res) => {
     try {
-        const { clinicId } = req.params;
+        const { id: userId, clinicId } = req.user;
 
-        const cart = await Cart.findOne({ clinic: clinicId });
+        const query = clinicId ? { clinic: clinicId } : { user: userId };
+        const cart = await Cart.findOne(query);
 
         if (!cart) {
             return res.status(404).json({
@@ -493,7 +504,6 @@ export const clearCart = async (req, res) => {
         });
     }
 };
-
 // ============= MOVE CART TO ORDER (Helper function) =============
 export const moveCartToOrder = async (clinicId) => {
     try {
