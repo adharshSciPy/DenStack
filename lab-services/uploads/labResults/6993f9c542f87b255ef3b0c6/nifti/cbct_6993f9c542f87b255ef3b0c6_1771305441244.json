@@ -1,0 +1,28 @@
+{
+	"Modality": "CT",
+	"Manufacturer": "Canon",
+	"ManufacturersModelName": "CS 8200 3D Access",
+	"DeviceSerialNumber": "MJIW431",
+	"BodyPart": "JAW",
+	"PatientPosition": "HFS",
+	"SoftwareVersions": "AcqChennai.dll##2.7.1.2##19/06/24\\TaskVolumizer.dll##13.3.16##14/",
+	"SeriesDescription": "3D CBCT Image Set",
+	"ProtocolName": "3D CBCT Image Set",
+	"ImageType": ["ORIGINAL", "PRIMARY", "AXIAL"],
+	"SeriesNumber": 1,
+	"AcquisitionTime": "13:26:3.000010",
+	"AcquisitionNumber": 1,
+	"ExposureTime": 14.994,
+	"XRayTubeCurrent": 8,
+	"SliceThickness": 0.15,
+	"ImageOrientationPatientDICOM": [
+		1,
+		0,
+		0,
+		0,
+		1,
+		0	],
+	"BidsGuess": ["CT","CT"],
+	"ConversionSoftware": "dcm2niix",
+	"ConversionSoftwareVersion": "v1.0.20250505"
+}
