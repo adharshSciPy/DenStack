@@ -18,7 +18,8 @@ import clinicSubscriptionCron from "./utils/clinicSubscriptionCron.js";
 import staffShiftCron from "./utils/staffShiftCron.js";
 import permissionRoutes from "./routes/permissionRoutes.js";
 import EcommerceUserRoutes from "./routes/ecommerceuserRouter.js";
-import feedbackRouter from "./routes/feedbackRouter.js";
+import salaryRouter from "./routes/salaryRouter.js";
+import expenseRouter from "./routes/expenseRouter.js";import feedbackRouter from "./routes/feedbackRouter.js";
 import adminFeedbackRouter from "./routes/adminFeedbackRouter.js";
 
 dotenv.config();
@@ -58,7 +59,8 @@ app.use("/api/v1/auth/assistant", assistantRouter);
 app.use("/api/v1/auth/roles", permissionRoutes);
 app.use("/api/v1/super-admin", superAdminDashboardRouter);
 app.use("/api/v1/ecommerceuser", EcommerceUserRoutes);
-app.use("/api/v1/feedback",feedbackRouter);
+app.use("/api/v1/salary", salaryRouter);
+app.use("/api/v1/expense", expenseRouter);app.use("/api/v1/feedback",feedbackRouter);
 app.use("/api/v1/admin/feedback",adminFeedbackRouter);
 
 

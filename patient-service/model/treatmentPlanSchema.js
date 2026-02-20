@@ -1,9 +1,23 @@
 import mongoose, { Schema } from "mongoose";
-import { TOOTH_CONDITIONS, TOOTH_SURFACES } from "../middleware/toothSurfaceAndConditions.js";
+import { TOOTH_SURFACES } from "../middleware/toothSurfaceAndConditions.js";
 
+// Schema for clinical entries (examination, diagnosis, treatment)
+const clinicalEntrySchema = new Schema(
+  {
+    id: { type: String, required: true },
+    name: { type: String, required: true },
+    code: String,
+    category: String,
+    isCustom: { type: Boolean, default: false },
+    selectedAt: Date,
+  },
+  { _id: false }
+);
+
+// Planned procedure schema (for treatments that become procedures)
 const plannedProcedureSchema = new Schema({
   name: { type: String, required: true },
-  surface: { type: String, enum: TOOTH_SURFACES, required: true },
+  surface: { type: String, enum: [...TOOTH_SURFACES, "entire"], required: true },
   status: {
     type: String,
     enum: ['planned', 'in-progress', 'completed'],
@@ -11,9 +25,7 @@ const plannedProcedureSchema = new Schema({
   },
   estimatedCost: { type: Number, default: 0 },
   notes: String,
-  
   stage: { type: Number, required: true, default: 1 },
-  
   completedAt: Date,
   completedInVisitId: {
     type: Schema.Types.ObjectId,
@@ -22,30 +34,47 @@ const plannedProcedureSchema = new Schema({
   performedBy: { type: Schema.Types.ObjectId, ref: "Doctor" }
 });
 
+// Updated tooth plan schema to match frontend structure
 const toothPlanSchema = new Schema({
   toothNumber: { type: Number, required: true },
+  
+  // Clinical findings from frontend
+  onExamination: [clinicalEntrySchema],
+  diagnosis: [clinicalEntrySchema],
+  treatment: [clinicalEntrySchema],
+  
+  // Procedures derived from treatments
   procedures: [plannedProcedureSchema],
+  
   priority: {
     type: String,
     enum: ['urgent', 'high', 'medium', 'low'],
     default: 'medium'
   },
+  notes: String,
   isCompleted: { type: Boolean, default: false },
   completedAt: Date
 });
 
+// Treatment stage schema
 const treatmentStageSchema = new Schema({
   stageNumber: { type: Number, required: true },
   stageName: { type: String, required: true },
   description: String,
   
-  // ✅ FIXED: Track surface-procedure pairs properly
+  // Track surface-procedure pairs properly
   toothSurfaceProcedures: [{
     toothNumber: { type: Number, required: true },
     surfaceProcedures: [{
-      surface: { type: String, enum: TOOTH_SURFACES, required: true },
+      surface: { type: String, enum: [...TOOTH_SURFACES, "entire"], required: true },
       procedureNames: [{ type: String }] // Multiple procedures on same surface
     }]
+  }],
+  
+  // Simple references for backward compatibility
+  procedureRefs: [{
+    toothNumber: Number,
+    procedureName: String
   }],
   
   status: {
@@ -65,6 +94,7 @@ const treatmentStageSchema = new Schema({
   }
 });
 
+// Main treatment plan schema
 const treatmentPlanSchema = new Schema(
   {
     patientId: { type: Schema.Types.ObjectId, ref: "Patient", required: true },
@@ -73,6 +103,7 @@ const treatmentPlanSchema = new Schema(
     planName: { type: String, required: true },
     description: { type: String },
     
+    // Teeth plans with clinical findings
     teeth: [toothPlanSchema],
     stages: [treatmentStageSchema],
     
@@ -86,7 +117,7 @@ const treatmentPlanSchema = new Schema(
     startedAt: { type: Date },
     completedAt: { type: Date },
     conflictChecked: { type: Boolean, default: false },
-       cancellationReason: { type: String },
+    cancellationReason: { type: String },
     cancelledAt: { type: Date },
     cancelledBy: { type: Schema.Types.ObjectId, ref: "Doctor" },
     totalEstimatedCost: { type: Number, default: 0 },
@@ -96,8 +127,8 @@ const treatmentPlanSchema = new Schema(
 );
 
 // ========== HELPER METHODS ==========
-// Method to update overall plan status
 
+// Method to update overall plan status
 treatmentPlanSchema.methods.updatePlanStatus = function() {
   // Calculate based on stages first (priority)
   if (this.stages && this.stages.length > 0) {
@@ -127,7 +158,7 @@ treatmentPlanSchema.methods.updatePlanStatus = function() {
     return;
   }
   
-  // Fallback to old logic if no stages
+  // Fallback to procedure-based logic if no stages
   const totalProcedures = this.teeth.reduce((sum, tooth) => sum + tooth.procedures.length, 0);
   const completedProcedures = this.teeth.reduce((sum, tooth) => 
     sum + tooth.procedures.filter(p => p.status === 'completed').length, 0
@@ -149,7 +180,6 @@ treatmentPlanSchema.methods.updatePlanStatus = function() {
 };
 
 // Method to mark stage as completed
-
 treatmentPlanSchema.methods.completeStage = function(stageNumber, visitId, doctorId) {
   const stage = this.stages.find(s => s.stageNumber === stageNumber);
   
@@ -214,6 +244,7 @@ treatmentPlanSchema.methods.addProceduresToStage = function(stageNumber, procedu
       stageNumber: stageNumber,
       stageName: `Stage ${stageNumber}`,
       toothSurfaceProcedures: [],
+      procedureRefs: [],
       status: 'pending'
     };
     this.stages.push(stage);
@@ -225,7 +256,7 @@ treatmentPlanSchema.methods.addProceduresToStage = function(stageNumber, procedu
   
   proceduresData.forEach(procData => {
     const toothKey = procData.toothNumber;
-    const surfaceKey = procData.surface || 'occlusal';
+    const surfaceKey = procData.surface || 'entire';
     
     if (!proceduresByToothAndSurface[toothKey]) {
       proceduresByToothAndSurface[toothKey] = {};
@@ -242,11 +273,23 @@ treatmentPlanSchema.methods.addProceduresToStage = function(stageNumber, procedu
     if (!tooth) {
       tooth = {
         toothNumber: procData.toothNumber,
+        onExamination: [],
+        diagnosis: [],
+        treatment: [],
         procedures: [],
         priority: procData.priority || 'medium',
         isCompleted: false
       };
       this.teeth.push(tooth);
+    }
+    
+    // Add to treatment findings (clinical)
+    if (!tooth.treatment.some(t => t.name === procData.name)) {
+      tooth.treatment.push({
+        id: `treatment_${Date.now()}_${Math.random()}`,
+        name: procData.name,
+        isCustom: false
+      });
     }
     
     // Check if procedure already exists
@@ -264,6 +307,17 @@ treatmentPlanSchema.methods.addProceduresToStage = function(stageNumber, procedu
         estimatedCost: procData.estimatedCost || 0,
         notes: procData.notes || '',
         status: 'planned'
+      });
+    }
+    
+    // Add to procedure refs
+    if (!stage.procedureRefs.some(ref => 
+      ref.toothNumber === procData.toothNumber && 
+      ref.procedureName === procData.name
+    )) {
+      stage.procedureRefs.push({
+        toothNumber: procData.toothNumber,
+        procedureName: procData.name
       });
     }
   });
@@ -357,6 +411,12 @@ treatmentPlanSchema.methods.getStageOverview = function(stageNumber) {
           totalProcedures: surfaces.reduce((sum, s) => sum + s.totalProcedures, 0),
           completedProcedures: surfaces.reduce((sum, s) => sum + s.completedProcedures, 0),
           totalSurfaces: surfaces.length
+        },
+        // Include clinical findings
+        clinicalFindings: {
+          onExamination: tooth?.onExamination || [],
+          diagnosis: tooth?.diagnosis || [],
+          treatment: tooth?.treatment || []
         }
       };
     })
@@ -383,5 +443,9 @@ treatmentPlanSchema.pre("save", function (next) {
   next();
 });
 
+// Indexes for better query performance
 treatmentPlanSchema.index({ patientId: 1, clinicId: 1 });
+treatmentPlanSchema.index({ patientId: 1, status: 1 });
+treatmentPlanSchema.index({ clinicId: 1, createdAt: -1 });
+
 export default mongoose.model("TreatmentPlan", treatmentPlanSchema);

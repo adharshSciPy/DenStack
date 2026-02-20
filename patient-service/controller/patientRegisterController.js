@@ -10,6 +10,7 @@ import jwt from "jsonwebtoken";
 import PatientHistory from "../model/patientHistorySchema.js";
 import Appointment from "../model/appointmentSchema.js";
 import TreatmentPlan from "../model/treatmentPlanSchema.js";
+import {generateSecurePatientLink,decodePatientLink} from "../utils/encryption.js";
 
 dotenv.config();
 const AUTH_SERVICE_BASE_URL = process.env.AUTH_SERVICE_BASE_URL;
@@ -1017,5 +1018,123 @@ const getVisitHistory = async (req, res) => {
   }
 };
 
+const getPatientEncryptedLink = async (req, res) => {
+  try {
+    const { patientId } = req.params;
+    console.log('Generating encrypted link for patientId:', patientId);
+    
+    const secureLink = generateSecurePatientLink(patientId);
+    console.log('Generated secureLink:', secureLink);
+    
+    res.status(200).json({
+      success: true,
+      data: { secureLink }
+    });
+  } catch (error) {
+    console.error('Error generating encrypted link:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+const verifyPatientWithEncryptedId = async (req, res) => {
+  try {
+    const { encryptedId, lastFourDigits } = req.body;
+    const { clinicId } = req.query;
 
-export { registerPatient, getPatientWithUniqueId, getAllPatients, patientCheck, getPatientsByClinic, getPatientById, sendSMSLink, setPassword, login,getPatientByRandomId ,addLabOrderToPatient,getPatientFullCRM,updatePatientDetails,getAllPatientsWithBirthdays,getPatientDentalChart,getVisitHistory }
+    console.log('=== VERIFY PATIENT DEBUG ===');
+    console.log('Received encryptedId:', encryptedId);
+    console.log('Received lastFourDigits:', lastFourDigits);
+    console.log('Received clinicId:', clinicId);
+
+    if (!encryptedId || !lastFourDigits || lastFourDigits.length !== 4) {
+      return res.status(400).json({
+        success: false,
+        message: 'Encrypted ID and 4-digit code are required'
+      });
+    }
+
+    // Decrypt the patient ID
+    let patientId;
+    try {
+      patientId = decodePatientLink(encryptedId);
+      console.log('Decrypted patientId:', patientId);
+    } catch (error) {
+      console.error('Decryption error:', error);
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or tampered access link'
+      });
+    }
+
+    // First, try to find patient by ID only (without clinicId)
+    console.log('Searching for patient with ID:', patientId);
+    const patientById = await Patient.findById(patientId);
+    console.log('Patient found by ID only:', patientById ? 'YES' : 'NO');
+    
+    if (patientById) {
+      console.log('Patient details:', {
+        id: patientById._id,
+        uniqueId: patientById.patientUniqueId,
+        lastFour: patientById.patientUniqueId?.slice(-4),
+        clinicId: patientById.clinicId
+      });
+    }
+
+    // Now try with clinicId if provided
+    const query = { _id: patientId };
+    if (clinicId) {
+      query.clinicId = clinicId;
+    }
+    
+    console.log('Final query:', query);
+    const patient = await Patient.findOne(query).select('-__v -createdBy -linkedPatients -treatmentPlans');
+
+    if (!patient) {
+      console.log('No patient found with query:', query);
+      
+      // If clinicId was provided but no patient found, try without clinicId
+      if (clinicId) {
+        console.log('Trying without clinicId filter...');
+        const patientWithoutClinic = await Patient.findById(patientId);
+        if (patientWithoutClinic) {
+          console.log('Found patient without clinicId filter. Their clinicId:', patientWithoutClinic.clinicId);
+          console.log('Your provided clinicId:', clinicId);
+        }
+      }
+      
+      return res.status(404).json({
+        success: false,
+        message: 'Patient not found'
+      });
+    }
+
+    console.log('Patient found:', {
+      id: patient._id,
+      uniqueId: patient.patientUniqueId,
+      lastFourFromDB: patient.patientUniqueId?.slice(-4),
+      providedLastFour: lastFourDigits
+    });
+
+    // Verify last 4 digits of patientUniqueId
+    const patientLastFourDigits = patient.patientUniqueId?.slice(-4);
+    if (patientLastFourDigits !== lastFourDigits) {
+      console.log('Last four digits mismatch!');
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid verification code'
+      });
+    }
+
+    console.log('Verification successful!');
+    res.status(200).json({
+      success: true,
+      data: patient
+    });
+  } catch (error) {
+    console.error('Verification error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error verifying patient access'
+    });
+  }
+};
+export { registerPatient, getPatientWithUniqueId, getAllPatients, patientCheck, getPatientsByClinic, getPatientById, sendSMSLink, setPassword, login,getPatientByRandomId ,addLabOrderToPatient,getPatientFullCRM,updatePatientDetails,getAllPatientsWithBirthdays,getPatientDentalChart,getVisitHistory, getPatientEncryptedLink,verifyPatientWithEncryptedId }

@@ -3,7 +3,7 @@ import axios from "axios";
 import dotenv from "dotenv";
 // import { TOOTH_CONDITIONS } from "../middleware/toothSurfaceAndConditions";
 import { Schema } from "mongoose";
-import { TOOTH_CONDITIONS, TOOTH_SURFACES} from "../middleware/toothSurfaceAndConditions.js";
+import {  TOOTH_SURFACES} from "../middleware/toothSurfaceAndConditions.js";
 
 dotenv.config();
 const AUTH_SERVICE_BASE_URL = process.env.AUTH_SERVICE_BASE_URL;
@@ -42,13 +42,13 @@ const dentalChartEntrySchema = new mongoose.Schema({
     // For conditions
     conditionType: {
       type: String,
-      enum: TOOTH_CONDITIONS
+
     },
     
     // For treatments
     procedureType: {
       type: String,
-      enum: ["filling", "extraction", "root-canal", "crown", "denture", "cleaning", "other"]
+      // enum: ["filling", "extraction", "root-canal", "crown", "denture", "cleaning", "other"]
     },
     
     // Cost information

@@ -1,7 +1,7 @@
 export const canReadAppointments = (req, res, next) => {        //Read Permission - Appointments
   // ⭐ SUPERADMIN → FULL ACCESS
   console.log("scsd",req.user)
-  if (req.user?.isSuperAdmin || req.user?.permissions?.all) {
+  if (req.user?.isSuperAdmin || req.user?.permissions?.all ||req.user?.isHybrid) {
     return next();
   }
   if (!req.user?.permissions?.appointments?.read) {
@@ -16,7 +16,7 @@ export const canReadAppointments = (req, res, next) => {        //Read Permissio
 export const canWriteAppointments = (req, res, next) => {
 
   // ⭐ SUPER ADMIN → FULL ACCESS
-  if (req.user?.isSuperAdmin || req.user?.permissions?.all) {
+  if (req.user?.isSuperAdmin || req.user?.permissions?.all ||req.user?.isHybrid) {
     return next();
   }
 

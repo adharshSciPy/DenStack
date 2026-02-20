@@ -15,6 +15,7 @@ import Receptionist from "../models/receptionSchema.js";
 import Accountant from "../models/accountantSchema.js";
 import Technician from "../models/technicianSchema.js";
 import jwt from "jsonwebtoken";
+import Doctor from "../models/doctorSchema.js";
 config();
 const CLINIC_SERVICE_BASE_URL = process.env.CLINIC_SERVICE_BASE_URL || "http://localhost:8003/api/v1/clinic-service";
 const PATIENT_SERVICE_BASE_URL = process.env.PATIENT_SERVICE_BASE_URL || "http://localhost:8002/api/v1/patient-service";
@@ -24,7 +25,11 @@ const formatDate = (dateStr) => {
   return new Date(`${year}-${month}-${day}`);
 };
 const registerClinic = async (req, res) => {
+  const session = await mongoose.startSession();
+  
   try {
+    session.startTransaction();
+
     const {
       name,
       type,
@@ -38,42 +43,60 @@ const registerClinic = async (req, res) => {
       isMultipleClinic = false,
       isOwnLab = false,
       googlePlaceId,
+      isClinicAdminDoctor = false,
+      doctorDetails
     } = req.body;
 
-
+    // Validation
     if (!name || !nameValidator(name)) {
+      await session.abortTransaction();
+      session.endSession();
       return res.status(400).json({ success: false, message: "Invalid name" });
     }
     if (!email || !emailValidator(email)) {
+      await session.abortTransaction();
+      session.endSession();
       return res.status(400).json({ success: false, message: "Invalid email" });
     }
     if (!phoneNumber || !phoneValidator(phoneNumber)) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Invalid phone number" });
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(400).json({ success: false, message: "Invalid phone number" });
     }
     if (!password || !passwordValidator(password)) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Invalid password" });
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(400).json({ success: false, message: "Invalid password" });
     }
 
-    const [existingEmail, existingPhone] = await Promise.all([
-      Clinic.findOne({ email }),
-      Clinic.findOne({ phoneNumber }),
-    ]);
-    if (existingEmail)
-      return res.status(400).json({
-        success: false,
-        message: "Email already exists",
-      });
-    if (existingPhone)
-      return res.status(400).json({
-        success: false,
-        message: "Phone number already exists",
-      });
+    // Check existing clinic
+    const existingClinicByEmail = await Clinic.findOne({ email }).session(session);
+    const existingClinicByPhone = await Clinic.findOne({ phoneNumber }).session(session);
 
+    if (existingClinicByEmail) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(400).json({ success: false, message: "Email already exists" });
+    }
+    
+    if (existingClinicByPhone) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(400).json({ success: false, message: "Phone number already exists" });
+    }
 
+    // Check if doctor with same email or phone exists
+    let existingDoctor = null;
+    if (isClinicAdminDoctor) {
+      existingDoctor = await Doctor.findOne({
+        $or: [
+          { email: email },
+          { phoneNumber: phoneNumber }
+        ]
+      }).session(session);
+    }
+
+    // Create new clinic
     const newClinic = new Clinic({
       name,
       type,
@@ -85,27 +108,22 @@ const registerClinic = async (req, res) => {
       theme,
       isMultipleClinic,
       isOwnLab,
-      googlePlaceId
+      googlePlaceId,
+      isClinicAdminDoctor
     });
 
-    // 🔹 Default subscription on registration (basic/monthly)
+    // Set default subscription
     newClinic.activateSubscription("annual", "starter", 0);
-
-    // 🔹 Apply features based on default package
     newClinic.applySubscriptionFeatures();
 
-    // 🔹 Optionally override feature toggles from request (on/off)
+    // Override features if provided
     if (features && typeof features === "object") {
       Object.entries(features).forEach(([key, value]) => {
         if (key in newClinic.features) {
           if (typeof value === "object") {
-            // nested object (like canAddStaff)
             Object.entries(value).forEach(([subKey, subVal]) => {
-              if (
-                newClinic.features[key] &&
-                subKey in newClinic.features[key]
-              ) {
-                newClinic.features[key][subKey] = !!subVal; // enforce boolean
+              if (newClinic.features[key] && subKey in newClinic.features[key]) {
+                newClinic.features[key][subKey] = !!subVal;
               }
             });
           } else {
@@ -115,30 +133,226 @@ const registerClinic = async (req, res) => {
       });
     }
 
-    await newClinic.save();
-    const accessToken = newClinic.generateAccessToken();
-    const refreshToken = newClinic.generateRefreshToken();
+    // Save clinic first
+    await newClinic.save({ session });
+
+    let doctorData = null;
+    let onboardingResult = null;
+    let doctorUniqueId = null;
+
+    // Handle hybrid doctor-clinic admin
+    if (isClinicAdminDoctor && doctorDetails) {
+      try {
+        if (!existingDoctor) {
+          // Create new doctor
+          const newDoctor = new Doctor({
+            name: name,
+            email: email,
+            phoneNumber: phoneNumber,
+            password: password,
+            specialization: Array.isArray(doctorDetails.specialization) 
+              ? doctorDetails.specialization[0] 
+              : doctorDetails.specialization || "General Dentistry",
+            licenseNumber: doctorDetails.licenseNumber || `TEMP-${Date.now()}`,
+            isClinicDoctor: true,
+            isClinicAdmin: true,
+            status: "Active",
+            approve: true
+          });
+
+          await newDoctor.save({ session });
+          doctorData = newDoctor;
+          doctorUniqueId = newDoctor.uniqueId;
+          
+          console.log("✅ Created new doctor:", {
+            id: doctorData._id,
+            uniqueId: doctorData.uniqueId,
+            name: doctorData.name
+          });
+        } else {
+          // Update existing doctor
+          existingDoctor.isClinicAdmin = true;
+          existingDoctor.isClinicDoctor = true;
+          
+          if (!existingDoctor.clinicOnboardingDetails) {
+            existingDoctor.clinicOnboardingDetails = [];
+          }
+          
+          await existingDoctor.save({ session });
+          doctorData = existingDoctor;
+          doctorUniqueId = existingDoctor.uniqueId;
+          
+          console.log("✅ Updated existing doctor:", {
+            id: doctorData._id,
+            uniqueId: doctorData.uniqueId,
+            name: doctorData.name
+          });
+        }
+
+        // Now onboard to clinic service with hybrid flag
+        if (doctorUniqueId) {
+          // Make sure doctorData has _id before sending
+          if (!doctorData._id) {
+            console.error("❌ doctorData missing _id before sending to clinic service");
+            throw new Error("Doctor ID is missing");
+          }
+          
+          console.log("📤 Sending to clinic service:", {
+            clinicId: newClinic._id.toString(),
+            doctorUniqueId: doctorUniqueId,
+            doctorId: doctorData._id.toString()
+          });
+          
+          const onboardResponse = await axios.post(
+                `${process.env.CLINIC_SERVICE_BASE_URL}/onboard-doctor`,
+                {
+                  clinicId: newClinic._id.toString(),
+                  doctorUniqueId: doctorUniqueId,
+                  // Use 'consultant' or whatever role is allowed in your enum
+                  // If you want admin role, make sure it's in the enum
+                  roleInClinic: "consultant", // Changed from "admin" to "consultant"
+                  standardConsultationFee: doctorDetails.consultationFee || 0,
+                  specialization: Array.isArray(doctorDetails.specialization) 
+                    ? doctorDetails.specialization 
+                    : [doctorDetails.specialization || "General Dentistry"],
+                  createdBy: newClinic._id.toString(),
+                  isHybridOnboarding: true,
+                  doctorData: {
+                    _id: doctorData._id.toString(),
+                    name: doctorData.name,
+                    email: doctorData.email,
+                    uniqueId: doctorData.uniqueId,
+                    isClinicAdmin: doctorData.isClinicAdmin
+                  }
+                },
+                {
+                  timeout: 10000,
+                  headers: {
+                    'Content-Type': 'application/json'
+                  }
+                }
+              );
+
+          console.log("✅ Onboard response status:", onboardResponse.status);
+          console.log("✅ Onboard response data:", onboardResponse.data);
+          
+          if (onboardResponse.data?.success) {
+            onboardingResult = onboardResponse.data.data;
+            
+            // Add availability if provided
+            if (doctorDetails.availability && doctorDetails.availability.length > 0) {
+              try {
+                const availResponse = await axios.post(
+                  `${process.env.CLINIC_SERVICE_BASE_URL}/availability-doctor/${doctorUniqueId}`,
+                  {
+                    clinicId: newClinic._id.toString(),
+                    availability: doctorDetails.availability,
+                    createdBy: newClinic._id.toString()
+                  }
+                );
+                console.log("✅ Availability response:", availResponse.data);
+              } catch (availError) {
+                console.error("⚠️ Error adding doctor availability:", availError.response?.data || availError.message);
+              }
+            }
+          }
+        }
+      } catch (doctorError) {
+        console.error("❌ Detailed doctor error:", {
+          message: doctorError.message,
+          response: doctorError.response?.data,
+          status: doctorError.response?.status,
+          stack: doctorError.stack
+        });
+        
+        await session.abortTransaction();
+        session.endSession();
+        
+        return res.status(500).json({
+          success: false,
+          message: "Failed to create/onboard doctor",
+          details: doctorError.response?.data?.message || doctorError.message
+        });
+      }
+    }
+
+    // Generate tokens
+    let accessToken, refreshToken;
+    if (isClinicAdminDoctor && doctorUniqueId) {
+      const hybridRole = process.env.HYBRID_ROLE || "760";
+      
+      accessToken = jwt.sign(
+        {
+          _id: newClinic._id,
+          clinicId: newClinic._id,
+          doctorUniqueId: doctorUniqueId,
+          name: newClinic.name,
+          email: newClinic.email,
+          role: hybridRole,
+          isHybrid: true
+        },
+        process.env.ACCESS_TOKEN_SECRET,
+        { expiresIn: process.env.ACCESS_TOKEN_EXPIRY }
+      );
+
+      refreshToken = jwt.sign(
+        {
+          clinicId: newClinic._id,
+          doctorUniqueId: doctorUniqueId,
+          role: hybridRole,
+          isHybrid: true
+        },
+        process.env.REFRESH_TOKEN_SECRET,
+        { expiresIn: process.env.REFRESH_TOKEN_EXPIRY }
+      );
+    } else {
+      accessToken = newClinic.generateAccessToken();
+      refreshToken = newClinic.generateRefreshToken();
+    }
+
+    await session.commitTransaction();
+    session.endSession();
+
     return res.status(201).json({
       success: true,
-      message: "Clinic registered successfully",
+      message: isClinicAdminDoctor 
+        ? "Clinic registered successfully with doctor onboarded" 
+        : "Clinic registered successfully",
       clinic: {
         id: newClinic._id,
         name: newClinic.name,
         email: newClinic.email,
         phoneNumber: newClinic.phoneNumber,
         type: newClinic.type,
-        role: newClinic.role,
+        role: isClinicAdminDoctor ? (process.env.HYBRID_ROLE || "760") : newClinic.role,
         subscription: newClinic.subscription,
         features: newClinic.features,
         theme: newClinic.theme,
         isMultipleClinic: newClinic.isMultipleClinic,
         isOwnLab: newClinic.isOwnLab,
         googlePlaceId: newClinic.googlePlaceId,
+        isClinicAdminDoctor: newClinic.isClinicAdminDoctor
       },
+      doctor: doctorData ? {
+        id: doctorData._id,
+        name: doctorData.name,
+        email: doctorData.email,
+        uniqueId: doctorData.uniqueId,
+        specialization: doctorData.specialization,
+        isClinicAdmin: doctorData.isClinicAdmin,
+        licenseNumber: doctorData.licenseNumber
+      } : null,
+      doctorOnboarding: onboardingResult,
       accessToken,
-      refreshToken,
+      refreshToken
     });
+
   } catch (error) {
+    if (session.inTransaction()) {
+      await session.abortTransaction();
+    }
+    session.endSession();
+    
     console.error("❌ Error in registerClinic:", error);
     return res.status(500).json({
       success: false,
@@ -147,12 +361,10 @@ const registerClinic = async (req, res) => {
     });
   }
 };
-
 const loginClinic = async (req, res) => {
   const { email, password } = req.body;
 
   try {
-
     // ====== VALIDATIONS ======
     if (!email || !emailValidator(email)) {
       return res.status(400).json({ message: "Invalid email" });
@@ -179,9 +391,85 @@ const loginClinic = async (req, res) => {
       });
     }
 
-    // ====== GENERATE TOKENS ======
-    const accessToken = clinic.generateAccessToken();
-    const refreshToken = clinic.generateRefreshToken();
+    // ====== CHECK IF HYBRID USER ======
+    let doctor = null;
+    let hybridRole = null;
+    
+    // Check if this clinic has a doctor with isClinicAdmin = true
+    // This is the key change - find doctor by clinic email/phone instead of linkedDoctorId
+    if (clinic.isClinicAdminDoctor) {
+      // Find doctor with matching email OR phone number (since they share credentials)
+      doctor = await Doctor.findOne({
+        $or: [
+          { email: clinic.email },
+          { phoneNumber: clinic.phoneNumber }
+        ],
+        isClinicAdmin: true
+      }).select('-password');
+      
+      if (doctor) {
+        hybridRole = process.env.HYBRID_ROLE || "760";
+        console.log(`✅ Hybrid user detected: Clinic ${clinic._id} with Doctor ${doctor._id}`);
+        
+        // Optionally update the clinic with linkedDoctorId for future reference
+        if (!clinic.linkedDoctorId) {
+          clinic.linkedDoctorId = doctor._id;
+          await clinic.save();
+        }
+      } else {
+        // Also check DoctorClinic mapping as a fallback
+        const doctorClinicMapping = await DoctorClinic.findOne({
+          clinicId: clinic._id,
+          roleInClinic: "admin" // or "consultant" depending on your schema
+        }).populate('doctorId');
+        
+        if (doctorClinicMapping?.doctorId) {
+          doctor = doctorClinicMapping.doctorId;
+          hybridRole = process.env.HYBRID_ROLE || "760";
+          console.log(`✅ Hybrid user detected via DoctorClinic: Clinic ${clinic._id} with Doctor ${doctor._id}`);
+        }
+      }
+    }
+
+    // ====== GENERATE TOKENS BASED ON USER TYPE ======
+    let accessToken, refreshToken;
+
+    if (hybridRole && doctor) {
+      // 🔥 HYBRID USER - Generate token with both IDs
+      accessToken = jwt.sign(
+        {
+          _id: clinic._id,
+          clinicId: clinic._id,
+          doctorId: doctor._id,
+          doctorUniqueId: doctor.uniqueId,
+          name: clinic.name,
+          email: clinic.email,
+          role: hybridRole,  // 760
+          isHybrid: true,
+          subscription: clinic.subscription.package
+        },
+        process.env.ACCESS_TOKEN_SECRET,
+        { expiresIn: process.env.ACCESS_TOKEN_EXPIRY }
+      );
+
+      refreshToken = jwt.sign(
+        {
+          clinicId: clinic._id,
+          doctorId: doctor._id,
+          doctorUniqueId: doctor.uniqueId,
+          role: hybridRole,
+          isHybrid: true
+        },
+        process.env.REFRESH_TOKEN_SECRET,
+        { expiresIn: process.env.REFRESH_TOKEN_EXPIRY }
+      );
+    } else {
+      // 🔥 REGULAR CLINIC USER
+      accessToken = clinic.generateAccessToken();
+      refreshToken = clinic.generateRefreshToken();
+    }
+
+    // ====== GET SUB CLINICS IF MULTIPLE ======
     let subClinics = [];
     if (clinic.isMultipleClinic) {
       subClinics = await Clinic.find({ parentClinicId: clinic._id })
@@ -189,21 +477,44 @@ const loginClinic = async (req, res) => {
         .lean();
     }
 
-    res.status(200).json({
-      message: "Login successful",
+    // ====== PREPARE RESPONSE ======
+    const response = {
+      message: hybridRole ? "Hybrid login successful" : "Login successful",
       clinic: {
         id: clinic._id,
         name: clinic.name,
         email: clinic.email,
         phoneNumber: clinic.phoneNumber,
         type: clinic.type,
-        role: clinic.role,
+        role: hybridRole || clinic.role,  // This will now be 760 for hybrid users
+        isHybrid: !!hybridRole,
         subscription: clinic.subscription,
         subClinics,
+        isClinicAdminDoctor: clinic.isClinicAdminDoctor,
+        linkedDoctorId: clinic.linkedDoctorId || (doctor ? doctor._id : null)
       },
       accessToken,
       refreshToken,
-    });
+    };
+
+    // 🔥 Add doctor info if hybrid
+    if (hybridRole && doctor) {
+      response.doctor = {
+        id: doctor._id,
+        name: doctor.name,
+        email: doctor.email,
+        specialization: doctor.specialization,
+        licenseNumber: doctor.licenseNumber,
+        uniqueId: doctor.uniqueId,
+        isClinicAdmin: doctor.isClinicAdmin,
+        role: hybridRole
+      };
+      
+      response.message = "Clinic login successful (with doctor privileges)";
+    }
+
+    res.status(200).json(response);
+
   } catch (error) {
     console.error("❌ Error in loginClinic:", error);
     res.status(500).json({ message: "Server error" });

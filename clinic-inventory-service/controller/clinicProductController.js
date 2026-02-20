@@ -241,3 +241,24 @@ export const updateClinicProduct = async (req, res) => {
     });
   }
 };
+
+export const getlabProducts = async (req, res) => {
+  const { labId } = req.params;
+  try {    const products = await ClinicInventory.find({
+      assignedTo: labId,
+      inventoryType:"lab",
+    }); 
+    return res.status(200).json({
+      message: "Lab products fetched successfully",
+      data: products,
+    });
+  }
+    catch (error) {
+
+    console.error("Error fetching lab products:", error);
+    return res.status(500).json({
+      message: "Error fetching lab products",
+      error: error.message,
+    });
+  }
+};

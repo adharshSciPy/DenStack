@@ -3,7 +3,7 @@ import {
   createProduct, productDetails, getProduct, productsByCategory, getProductsByBrand, updateProduct, deleteProduct, getProductsByIds, getProductDashboardMetrics, getProductInventoryList,
   getFavorites, addFavorite, removeFavoriteById, checkFavorite
 } from "../Controller/productController.js";
-import { verifyAuthToken, authorizeRoles } from "../middlewares/authmiddleware.js";
+import { verifyAuthToken, authorizeRoles } from "../middlewares/authMiddleware.js";
 import upload from "../middlewares/upload.js";
 import { authMiddleware } from "../../auth-services/utils/auth.js";
 

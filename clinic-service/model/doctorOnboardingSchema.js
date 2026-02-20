@@ -16,7 +16,7 @@ const doctorClinicSchema = new Schema({
   },
   roleInClinic: {
     type: String,
-    enum: ["consultant", "visiting", "permanent"],
+    enum: ["consultant", "visiting", "permanent","admin"],
     default: "consultant"
   },
   status: {

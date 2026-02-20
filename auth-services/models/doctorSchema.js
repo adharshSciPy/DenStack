@@ -50,7 +50,7 @@ const doctorSchema = new Schema(
     },
     uniqueId: {
       type: String,
-      required: true,
+      // required: true,
       unique: true
     },
     role: {
@@ -62,11 +62,25 @@ const doctorSchema = new Schema(
       enum: ["Active", "Inactive", "Pending"],
       default: "Pending",
     },
-    // ✅ NEW FIELDS ADDED BELOW
+   // ✅ NEW FIELDS (already in your schema, ensure they're there)
     isClinicDoctor: {
       type: Boolean,
       default: false,
     },
+    
+    // ✅ ADD THIS FIELD if missing
+    isClinicAdmin: {
+      type: Boolean,
+      default: false,  // Is this doctor also a clinic admin?
+    },
+
+    // Link to clinic if doctor is also admin
+    linkedClinicId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Clinic',
+      default: null,
+    },
+
     clinicOnboardingDetails: [{
       clinicId: {
         type: Schema.Types.ObjectId,
@@ -86,13 +100,33 @@ const doctorSchema = new Schema(
   { timestamps: true }
 );
 
-// ====== Password hashing ======
-doctorSchema.pre("save", async function (next) {
-  if (!this.isModified("password")) return next();
-  this.password = await bcrypt.hash(this.password, 10);
-  next();
-});
+// 🔥 PRE-SAVE HOOK for automatic ID generation
+doctorSchema.pre("save", async function(next) {
+  try {
+    if (this.isNew && !this.uniqueId) {
+      let uniqueId;
+      let exists = true;
+      
+      while (exists) {
+        const randomNum = Math.floor(100000 + Math.random() * 900000);
+        uniqueId = `DCS-DR-${randomNum}`;
+        exists = await mongoose.model('Doctor').exists({ uniqueId });
+      }
+      
+      this.uniqueId = uniqueId;
+      console.log(`✅ Generated uniqueId for new doctor: ${this.uniqueId}`);
+    }
 
+    // Hash password if modified
+    if (this.isModified("password")) {
+      this.password = await bcrypt.hash(this.password, 10);
+    }
+    
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
 // ====== Methods ======
 doctorSchema.methods.isPasswordCorrect = async function (password) {
   return bcrypt.compare(password, this.password);

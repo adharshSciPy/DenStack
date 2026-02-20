@@ -3,7 +3,7 @@
 // ============================================
 
 import express from "express";
-import { verifyAuthToken, canPlaceOrder } from "../middlewares/authmiddleware.js";
+import { verifyAuthToken, canPlaceOrder } from "../middlewares/authMiddleware.js";
 import {
     createEcomOrder,
     getAllEcomOrders,
@@ -30,6 +30,8 @@ ecomOrderRouter.get("/recent", verifyAuthToken, getRecentEcomOrders);
 ecomOrderRouter.get("/analytics", verifyAuthToken, getEcomOrderAnalytics);
 ecomOrderRouter.get("/getById/:orderId", verifyAuthToken, getEcomOrderById);
 ecomOrderRouter.get("/clinic/:clinicId", verifyAuthToken, getClinicEcomOrders);
+ecomOrderRouter.get("/clinic/deliver/:clinicId", verifyAuthToken, getDeliveredProducts);
+
 
 // ✅ Manage orders - any authenticated user (for now)
 ecomOrderRouter.put("/updateStatus/:orderId", verifyAuthToken, updateEcomOrderStatus);

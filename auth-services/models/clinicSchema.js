@@ -160,6 +160,31 @@ const clinicSchema = new Schema(
         ref: "Clinic",
       },
     ],
+     // ===== NEW: Hybrid Doctor Fields =====
+    isClinicAdminDoctor: {
+      type: Boolean,
+      default: false,  // Flag: Is this clinic admin also a doctor?
+    },
+    
+    // Link to doctor record if hybrid
+    linkedDoctorId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Doctor',
+      default: null,
+    },
+
+    // Doctor-specific details for hybrid admins
+    doctorDetails: {
+      specialization: { type: String, default: '' },
+      licenseNumber: { type: String, default: '' },
+      consultationFee: { type: Number, default: 0 },
+      availability: [{
+        dayOfWeek: String,
+        startTime: String,
+        endTime: String,
+        isActive: { type: Boolean, default: true }
+      }]
+    },
   },
   { timestamps: true },
 );
