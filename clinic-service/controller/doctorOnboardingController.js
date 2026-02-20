@@ -12,65 +12,135 @@ const AUTH_SERVICE_BASE_URL = process.env.AUTH_SERVICE_BASE_URL;
 const PATIENT_SERVICE_BASE_URL = process.env.PATIENT_SERVICE_BASE_URL;
 const onboardDoctor = async (req, res) => {
   try {
-    const { clinicId, doctorUniqueId, roleInClinic, standardConsultationFee, specialization, createdBy } = req.body;
+    console.log("========== ONBOARD DOCTOR REQUEST RECEIVED ==========");
+    console.log("Request Body:", JSON.stringify(req.body, null, 2));
+
+    const { 
+      clinicId, 
+      doctorUniqueId, 
+      roleInClinic, 
+      standardConsultationFee, 
+      specialization, 
+      createdBy,
+      isHybridOnboarding = false,
+      doctorData 
+    } = req.body;
 
     // ===== Validations =====
-    if (!mongoose.Types.ObjectId.isValid(clinicId))
+    // Validate clinicId
+    if (!mongoose.Types.ObjectId.isValid(clinicId)) {
       return res.status(400).json({ success: false, message: "Invalid clinicId" });
+    }
 
-    if (!doctorUniqueId)
+    if (!doctorUniqueId) {
       return res.status(400).json({ success: false, message: "doctorUniqueId is required" });
+    }
 
-    if (!standardConsultationFee || standardConsultationFee < 0)
+    // Validate standardConsultationFee
+    if (standardConsultationFee === undefined || standardConsultationFee === null) {
+      return res.status(400).json({ success: false, message: "standardConsultationFee is required" });
+    }
+    
+    if (typeof standardConsultationFee !== 'number' || standardConsultationFee < 0) {
       return res.status(400).json({ success: false, message: "Invalid standardConsultationFee" });
+    }
 
-    if (!specialization || !Array.isArray(specialization) || specialization.length === 0)
+    // Validate specialization
+    if (!specialization) {
+      return res.status(400).json({ success: false, message: "specialization is required" });
+    }
+
+    // Convert specialization to array if it's a string
+    let specializationsArray = specialization;
+    if (typeof specialization === 'string') {
+      specializationsArray = [specialization];
+    }
+    
+    if (!Array.isArray(specializationsArray) || specializationsArray.length === 0) {
       return res.status(400).json({ success: false, message: "At least one specialization is required" });
+    }
 
-    // ===== Fetch doctor from auth-service =====
+    // Validate roleInClinic - IMPORTANT: Check if 'admin' is allowed
+    const allowedRoles = ['consultant', 'doctor', 'admin', 'staff']; // Update this based on your schema
+    if (roleInClinic && !allowedRoles.includes(roleInClinic)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: `Invalid roleInClinic. Allowed values: ${allowedRoles.join(', ')}` 
+      });
+    }
+
+    // ===== Get doctor details based on onboarding type =====
     let doctor;
-    try {
-      const url = `${AUTH_SERVICE_BASE_URL}/doctor/details-uniqueid/${doctorUniqueId}`;
-      const response = await axios.get(url);
-      if (response.data?.success && response.data.doctor) {
-        doctor = response.data.doctor;
-      } else {
-        return res.status(404).json({ success: false, message: "Doctor not found in auth-service" });
+    
+    if (isHybridOnboarding && doctorData) {
+      console.log("✅ Hybrid onboarding mode");
+      console.log("Doctor Data received:", doctorData);
+      
+      // Validate doctorData
+      if (!doctorData._id) {
+        return res.status(400).json({ 
+          success: false, 
+          message: "Invalid doctor data: missing _id" 
+        });
       }
-    } catch (err) {
-      console.error(err.response?.data || err.message);
-      return res.status(500).json({ success: false, message: "Error communicating with auth-service" });
+
+      // Create doctor object
+      doctor = {
+        _id: doctorData._id,
+        name: doctorData.name || "Unknown",
+        email: doctorData.email,
+        uniqueId: doctorData.uniqueId,
+        isClinicAdmin: doctorData.isClinicAdmin || false
+      };
+    } else {
+      // For regular onboarding, fetch from auth-service
+      try {
+        const url = `${process.env.AUTH_SERVICE_BASE_URL}/doctor/details-uniqueid/${doctorUniqueId}`;
+        const response = await axios.get(url);
+        if (response.data?.success && response.data.doctor) {
+          doctor = response.data.doctor;
+        } else {
+          return res.status(404).json({ success: false, message: "Doctor not found in auth-service" });
+        }
+      } catch (err) {
+        console.error("Error communicating with auth-service:", err.message);
+        return res.status(500).json({ success: false, message: "Error communicating with auth-service" });
+      }
     }
 
     // ===== Prevent duplicate onboarding =====
-    const exists = await DoctorClinic.findOne({ doctorId: doctor._id, clinicId });
-    if (exists)
-      return res.status(400).json({ success: false, message: "Doctor already onboarded in this clinic" });
-
-    // ===== Create new doctor-clinic mapping =====
-    const newMapping = new DoctorClinic({
-      doctorId: doctor._id,
-      clinicId,
-      roleInClinic: roleInClinic || "consultant",
-      standardConsultationFee,
-      specializations: specialization,
-      createdBy: createdBy || undefined,
+    const exists = await DoctorClinic.findOne({ 
+      doctorId: doctor._id, 
+      clinicId: clinicId 
     });
-
-    await newMapping.save();
-
-    // ✅ NEW: Update doctor status in auth service
-    try {
-      await axios.put(`${AUTH_SERVICE_BASE_URL}/doctor/update-clinic-status`, {
-        doctorId: doctor._id,
-        clinicId,
-        action: 'onboard'
-      });
-    } catch (authError) {
-      console.error("⚠️ Error updating doctor clinic status:", authError.response?.data || authError.message);
-      // Continue even if this fails - the onboarding is still valid
+    
+    if (exists) {
+      return res.status(400).json({ success: false, message: "Doctor already onboarded in this clinic" });
     }
 
+    // ===== Create new doctor-clinic mapping =====
+    const newMappingData = {
+      doctorId: doctor._id,
+      clinicId: clinicId,
+      roleInClinic: roleInClinic || "consultant", // Default to consultant if not specified
+      standardConsultationFee: standardConsultationFee,
+      specializations: specializationsArray,
+      status: "active"
+    };
+
+    // Add createdBy if provided and valid
+    if (createdBy && mongoose.Types.ObjectId.isValid(createdBy)) {
+      newMappingData.createdBy = createdBy;
+    }
+
+    console.log("Creating mapping with data:", newMappingData);
+
+    const newMapping = new DoctorClinic(newMappingData);
+    await newMapping.save();
+    
+    console.log("✅ Doctor-clinic mapping created:", newMapping._id);
+
+    // ===== Return success response =====
     res.status(201).json({
       success: true,
       message: "Doctor onboarded successfully to clinic",
@@ -81,12 +151,39 @@ const onboardDoctor = async (req, res) => {
         roleInClinic: newMapping.roleInClinic,
         status: newMapping.status,
         specializations: newMapping.specializations,
-        standardConsultationFee: newMapping.standardConsultationFee,
-      },
+        standardConsultationFee: newMapping.standardConsultationFee
+      }
     });
+
   } catch (error) {
-    console.error("❌ Error in onboardDoctor:", error);
-    res.status(500).json({ success: false, message: "Server error" });
+    console.error("========== ERROR IN ONBOARD DOCTOR ==========");
+    console.error("Error name:", error.name);
+    console.error("Error message:", error.message);
+    console.error("Error stack:", error.stack);
+    
+    // Check for duplicate key error
+    if (error.code === 11000) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Doctor already onboarded in this clinic" 
+      });
+    }
+    
+    // Check for validation error
+    if (error.name === 'ValidationError') {
+      const validationErrors = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({ 
+        success: false, 
+        message: "Validation error", 
+        errors: validationErrors 
+      });
+    }
+
+    res.status(500).json({ 
+      success: false, 
+      message: "Server error",
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 };
 const addDoctorAvailability = async (req, res) => {
