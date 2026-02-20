@@ -1,62 +1,155 @@
 import ClinicInventory from "../model/ClinicInventoryModel.js";
+import StockTransfer from "../model/stockTransferModel.js";
 import axios from "axios";
 import dotenv from "dotenv";
 dotenv.config();
 
-export const assignInventory = async (req, res) => {
+export const assignInventoryController = async (req, res) => {
   try {
-    const { productId, quantity, assignTo, productName, assignId, clinicId } = req.body;
+    const { orderId, clinicId, items } = req.body;
 
-    if (!assignTo)
-      return res.status(400).json({ message: "assignTo is required" });
+    console.log("✅ assignInventory hit", req.body);
 
-    // 1️⃣ Find clinic inventory item
-    const item = await ClinicInventory.findOne({ clinicId, productId });
+    if (!clinicId || !items || items.length === 0) {
+      return res.status(400).json({ success: false, message: "Missing required fields" });
+    }
 
-    if (!item)
-      return res.status(404).json({ message: "Item not found" });
+    for (const item of items) {
+      const existing = await ClinicInventory.findOne({
+        clinicId,
+        productId: item.productId,
+      });
 
-    if (item.quantity < quantity)
-      return res.status(400).json({ message: "Not enough stock" });
+      if (existing) {
+        existing.quantity += Number(item.quantity);
+        existing.isLowStock = existing.quantity <= (existing.lowStockThreshold || 20);
+        await existing.save();
+      } else {
+        await ClinicInventory.create({
+          clinicId,
+          productId: item.productId,
+          productName: item.productName,   // ✅ fixed field name
+          quantity: Number(item.quantity),
+          lowStockThreshold: 20,
+          isLowStock: Number(item.quantity) <= 20,
+          inventoryType: "general",
+          productType: "global",
+          source: "ECOM_ORDER",
+        });
+      }
+    }
 
-    // URLs for microservices
-    const LAB_URL = `${process.env.LAB_SERVICE_URL}lab-inventory/add`;
-    const PHARMACY_URL = `${process.env.PHARMACY_INVENTORY_SERVICE_URL}pharmacy/inventory/add`;
-
-    const targetURL = assignTo === "lab" ? LAB_URL : PHARMACY_URL;
-
-    // 2️⃣ SEND DATA TO MICRO SERVICE
-    const response = await axios.post(targetURL, {
-      assignId,
-      productId,
-      productName,
-      quantity,
-      clinicId,
-    });
-
-    // 3️⃣ Update main clinic inventory ONLY after microservice success
-    item.quantity -= Number(quantity);
-    const threshold = item.lowStockThreshold || 20;
-    item.isLowStock = item.quantity <= threshold;
-    await item.save();
-
-    // 4️⃣ Send response AFTER updating DB
+    // ✅ Always send a response
     return res.status(200).json({
+      success: true,
       message: "Inventory assigned successfully",
-      remainingQuantity: item.quantity,
-      isLowStock: item.isLowStock,
-      microserviceResponse: response.data,
     });
 
   } catch (err) {
-    console.error("Assign Inventory Error:", err.response?.data || err);
-
+    console.error("Assign Inventory Error:", err);
     return res.status(500).json({
-      message: "Server error",
-      error: err.response?.data || err.message,
+      success: false,
+      message: "Failed to assign inventory",
+      error: err.message,
     });
   }
 };
+
+export const assignClinicInventoryProducts = async (req, res) => {
+  try {
+    const {
+      clinicId,
+      productId,
+      productName,
+      quantity,
+      toInventoryType, // "lab" | "pharmacy"
+      toVendorId,      // 🔥 labId / pharmacyId
+    } = req.body;
+
+    if (
+      !clinicId ||
+      !productId ||
+      !quantity ||
+      !toInventoryType ||
+      !toVendorId
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing required fields",
+      });
+    }
+
+    // 1️⃣ SOURCE: General clinic inventory
+    const sourceInventory = await ClinicInventory.findOne({
+      clinicId,
+      productId,
+      inventoryType: "general",
+    });
+
+    if (!sourceInventory || sourceInventory.quantity < quantity) {
+      return res.status(400).json({
+        success: false,
+        message: "Insufficient stock in clinic inventory",
+      });
+    }
+
+    // 2️⃣ Reduce GENERAL stock
+    sourceInventory.quantity -= Number(quantity);
+    sourceInventory.isLowStock =
+      sourceInventory.quantity <= sourceInventory.lowStockThreshold;
+
+    await sourceInventory.save();
+
+    // 3️⃣ TARGET inventory (lab / pharmacy) – vendor-specific
+    let targetInventory = await ClinicInventory.findOne({
+      clinicId,
+      productId,
+      inventoryType: toInventoryType,
+      assignedTo: toVendorId, // 🔥 key change
+    });
+
+    if (targetInventory) {
+      targetInventory.quantity += Number(quantity);
+      await targetInventory.save();
+    } else {
+      await ClinicInventory.create({
+        clinicId,
+        productId,
+        productName,
+        quantity: Number(quantity),
+        inventoryType: toInventoryType,
+        assignedTo: toVendorId, // 🔥 labId / pharmacyId
+      });
+    }
+
+    // 4️⃣ LOG TRANSFER
+    await StockTransfer.create({
+      clinicId,
+      productId,
+      productName,
+      fromInventoryType: "general",
+      toInventoryType,
+      toVendorId,
+      quantity: Number(quantity),
+      source: "MANUAL",
+      assignedBy: req.user?._id,
+      assignedTo: toVendorId, 
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Inventory assigned successfully",
+    });
+  } catch (error) {
+    console.error("Assign Inventory Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to assign inventory",
+      error: error.message,
+    });
+  }
+};
+
 
 
 export const getClinicVendorIds = async (req, res) => {
@@ -69,7 +162,7 @@ export const getClinicVendorIds = async (req, res) => {
     let labs = [];
     try {
       const labRes = await axios.get(
-        `${process.env.LAB_SERVICE_URL}lab-service/labs/by-clinic/${clinicId}`
+        `${process.env.LAB_SERVICE_URL}lab/vendor-by-clinic/${clinicId}`
       );
 
       labs =

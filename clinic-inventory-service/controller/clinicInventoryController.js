@@ -1,5 +1,5 @@
 import ClinicInventoryModel from "../model/ClinicInventoryModel.js";
-import axios from "axios";;
+import axios from "axios";
 import http from "http";
 import https from "https";
 import ClinicProduct from "../model/ClinicProduct.js";
@@ -58,7 +58,7 @@ const getProducts = async (req, res) => {
     try {
       const { data } = await axios.post(
         `${PRODUCT_SERVICE_URL}product/get-by-ids`,
-        { productIds, search }
+        { productIds, search },
       );
       globalProducts = data?.data || [];
     } catch (err) {
@@ -67,7 +67,7 @@ const getProducts = async (req, res) => {
 
     // Map → globalProducts
     const productMap = new Map(
-      globalProducts.map((p) => [p._id.toString(), p])
+      globalProducts.map((p) => [p._id.toString(), p]),
     );
 
     // ----------------------------------------
@@ -100,7 +100,7 @@ const getProducts = async (req, res) => {
         if (inv.isLowStock !== isLowStock) {
           await ClinicInventoryModel.updateOne(
             { _id: inv._id },
-            { $set: { isLowStock } }
+            { $set: { isLowStock } },
           );
         }
 
@@ -110,7 +110,7 @@ const getProducts = async (req, res) => {
           isLocalProduct: product?.isLocal || false,
           isLowStock,
         };
-      })
+      }),
     );
 
     const finalData = mergedResults.filter(Boolean);
@@ -146,7 +146,7 @@ const getLowStockProducts = async (req, res) => {
       clinicId,
       quantity: { $lt: LOW_STOCK_THRESHOLD },
     }).lean();
-    
+
     return res.status(200).json({
       message: "Low stock products fetched successfully",
       data: results,
@@ -162,8 +162,8 @@ const getLowStockProducts = async (req, res) => {
 };
 
 const deleteInventoryItem = async (req, res) => {
-  const { id}  = req.params;
-  if (!id ) {
+  const { id } = req.params;
+  if (!id) {
     return res
       .status(400)
       .json({ message: "clinicId and productId are required" });
@@ -183,4 +183,34 @@ const deleteInventoryItem = async (req, res) => {
   }
 };
 
-export { getProducts, getLowStockProducts ,deleteInventoryItem};
+const getClinicProducts = async (req, res) => {
+  const { clinicId } = req.params;
+  if (!clinicId) {
+    return res.status(400).json({ message: "clinicId is required" });
+  }
+
+  try {
+    const products = await ClinicInventoryModel.find({
+      clinicId: clinicId,
+      inventoryType:"general",
+    });
+
+    return res.status(200).json({
+      message: "Clinic products fetched successfully",
+      data: products,
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(400).json({
+      message: "Error while fetching clinic products",
+      error: error.message,
+    });
+  }
+};
+
+export {
+  getProducts,
+  getLowStockProducts,
+  deleteInventoryItem,
+  getClinicProducts,
+};

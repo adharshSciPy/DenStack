@@ -55,7 +55,7 @@ const shiftSchema = new Schema(
     },
     archivedAt: { type: Date, default: null },
   },
-  { _id: false }
+  { _id: false },
 );
 shiftSchema.pre("validate", function (next) {
   if (this.endDate < this.startDate) {
@@ -127,8 +127,17 @@ const technicianSchema = new Schema(
       type: Object,
       default: {},
     },
+    clinicId: {
+      type: mongoose.Schema.Types.ObjectId,
+      required: true,
+    },
+
+    labVendorId: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null, // null = normal clinic technician
+    },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 // 🔹 Auto-generate nurseId before saving
@@ -171,7 +180,7 @@ technicianSchema.methods.generateAccessToken = function () {
       role: this.role,
     },
     process.env.ACCESS_TOKEN_SECRET,
-    { expiresIn: process.env.ACCESS_TOKEN_EXPIRY }
+    { expiresIn: process.env.ACCESS_TOKEN_EXPIRY },
   );
 };
 
@@ -184,7 +193,7 @@ technicianSchema.methods.generateRefreshToken = function () {
       role: this.role,
     },
     process.env.REFRESH_TOKEN_SECRET,
-    { expiresIn: process.env.REFRESH_TOKEN_EXPIRY }
+    { expiresIn: process.env.REFRESH_TOKEN_EXPIRY },
   );
 };
 
