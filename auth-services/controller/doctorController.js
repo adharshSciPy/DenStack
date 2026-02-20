@@ -7,6 +7,11 @@ import {
 } from "../utils/validators.js";
 
 import mongoose from "mongoose";
+import Clinic from "../models/clinicSchema.js";
+import jwt from "jsonwebtoken";
+import { config } from "dotenv";
+config();
+
 const generateDoctorId = () => {
   const randomNum = Math.floor(100000 + Math.random() * 900000); // 6-digit random
   return `DCS-DR-${randomNum}`;
@@ -52,12 +57,12 @@ const registerDoctor = async (req, res) => {
       return res.status(400).json({ message: "License number already exists" });
     }
 
-    let uniqueId;
-    let exists = true;
-    while (exists) {
-      uniqueId = generateDoctorId();
-      exists = await Doctor.findOne({ uniqueId });
-    }
+    // let uniqueId;
+    // let exists = true;
+    // while (exists) {
+    //   uniqueId = generateDoctorId();
+    //   exists = await Doctor.findOne({ uniqueId });
+    // }
 
     const newDoctor = new Doctor({
       name,
@@ -66,7 +71,7 @@ const registerDoctor = async (req, res) => {
       password,
       specialization,
       licenseNumber,
-      uniqueId,
+      // uniqueId,
       approve: true, // default approved
     });
 
@@ -104,10 +109,13 @@ const registerDoctor = async (req, res) => {
 };
 
 // ====== Login Doctor ======
+// auth-service/controller/doctorController.js
+
 const loginDoctor = async (req, res) => {
   const { email, password } = req.body;
 
   try {
+    // ====== VALIDATIONS ======
     if (!email || !emailValidator(email)) {
       return res.status(400).json({ message: "Invalid email" });
     }
@@ -116,6 +124,7 @@ const loginDoctor = async (req, res) => {
       return res.status(400).json({ message: "Password is required" });
     }
 
+    // ====== FIND DOCTOR ======
     const doctor = await Doctor.findOne({ email });
     if (!doctor) {
       return res.status(400).json({ message: "Invalid email or password" });
@@ -123,23 +132,71 @@ const loginDoctor = async (req, res) => {
 
     // ✅ Check approval status
     if (!doctor.approve) {
-      return res
-        .status(403)
-        .json({
-          message: "Your account is not approved yet. Please contact admin.",
-        });
+      return res.status(403).json({
+        message: "Your account is not approved yet. Please contact admin.",
+      });
     }
 
+    // ====== VERIFY PASSWORD ======
     const isMatch = await doctor.isPasswordCorrect(password);
     if (!isMatch) {
       return res.status(400).json({ message: "Invalid email or password" });
     }
 
-    const accessToken = doctor.generateAccessToken();
-    const refreshToken = doctor.generateRefreshToken();
+    // ====== CHECK IF DOCTOR IS ALSO CLINIC ADMIN (HYBRID) ======
+    let clinic = null;
+    let hybridRole = null;
+    
+    if (doctor.isClinicAdmin && doctor.linkedClinicId) {
+      clinic = await Clinic.findById(doctor.linkedClinicId).select('-password');
+      
+      if (clinic) {
+        hybridRole = process.env.HYBRID_ROLE || "760";
+        console.log(`✅ Hybrid doctor detected: Doctor ${doctor._id} linked to Clinic ${clinic._id}`);
+      }
+    }
 
-    res.status(200).json({
-      message: "Login successful",
+    // ====== GENERATE TOKENS BASED ON USER TYPE ======
+    let accessToken, refreshToken;
+
+    if (hybridRole && clinic) {
+      // 🔥 HYBRID DOCTOR - Generate token with both IDs
+      accessToken = jwt.sign(
+        {
+          _id: doctor._id,
+          doctorId: doctor._id,
+          clinicId: clinic._id,
+          name: doctor.name,
+          email: doctor.email,
+          role: hybridRole,  // 760
+          isHybrid: true,
+          // Include doctor-specific fields
+          specialization: doctor.specialization,
+          licenseNumber: doctor.licenseNumber
+        },
+        process.env.ACCESS_TOKEN_SECRET,
+        { expiresIn: process.env.ACCESS_TOKEN_EXPIRY }
+      );
+
+      refreshToken = jwt.sign(
+        {
+          doctorId: doctor._id,
+          clinicId: clinic._id,
+          role: hybridRole,
+          isHybrid: true
+        },
+        process.env.REFRESH_TOKEN_SECRET,
+        { expiresIn: process.env.REFRESH_TOKEN_EXPIRY }
+      );
+    } else {
+      // 🔥 REGULAR DOCTOR - Use doctor's token generation
+      accessToken = doctor.generateAccessToken();
+      refreshToken = doctor.generateRefreshToken();
+    }
+
+    // ====== PREPARE RESPONSE ======
+    const response = {
+      message: hybridRole ? "Doctor login successful (with clinic admin privileges)" : "Login successful",
       doctor: {
         id: doctor._id,
         name: doctor.name,
@@ -147,13 +204,32 @@ const loginDoctor = async (req, res) => {
         phoneNumber: doctor.phoneNumber,
         specialization: doctor.specialization,
         licenseNumber: doctor.licenseNumber,
-        role: doctor.role,
+        role: hybridRole || doctor.role,
         uniqueId: doctor.uniqueId,
         approve: doctor.approve,
+        isHybrid: !!hybridRole,
+        isClinicAdmin: doctor.isClinicAdmin
       },
       accessToken,
       refreshToken,
-    });
+    };
+
+    // 🔥 Add clinic info if hybrid
+    if (hybridRole && clinic) {
+      response.clinic = {
+        id: clinic._id,
+        name: clinic.name,
+        email: clinic.email,
+        phoneNumber: clinic.phoneNumber,
+        type: clinic.type,
+        isClinicAdminDoctor: clinic.isClinicAdminDoctor
+      };
+      
+      response.message = "Doctor login successful (with clinic admin privileges)";
+    }
+
+    res.status(200).json(response);
+
   } catch (error) {
     console.error("❌ Error in loginDoctor:", error);
     res.status(500).json({ message: "Server error" });

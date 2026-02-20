@@ -1,6 +1,5 @@
 import mongoose, { Schema } from "mongoose";
 import {
-  TOOTH_CONDITIONS,
   TOOTH_SURFACES,
 } from "../middleware/toothSurfaceAndConditions.js";
 //tooth based
