@@ -1,4 +1,6 @@
 import express from "express";
+import path from 'path';
+import { fileURLToPath } from 'url';
 import dotenv from "dotenv";
 import cors from "cors";
 import cookieParser from "cookie-parser";
@@ -19,13 +21,18 @@ import staffShiftCron from "./utils/staffShiftCron.js";
 import permissionRoutes from "./routes/permissionRoutes.js";
 import EcommerceUserRoutes from "./routes/ecommerceuserRouter.js";
 import salaryRouter from "./routes/salaryRouter.js";
-import expenseRouter from "./routes/expenseRouter.js";import feedbackRouter from "./routes/feedbackRouter.js";
+import expenseRouter from "./routes/expenseRouter.js";
+import feedbackRouter from "./routes/feedbackRouter.js";
 import adminFeedbackRouter from "./routes/adminFeedbackRouter.js";
+import whatsappRouter from "./routes/whatsappRouter.js";
 
 dotenv.config();
 connectDB();
 
 const app = express();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Middleware
 // app.use(cors());
@@ -43,6 +50,8 @@ app.use(cookieParser());
 app.get("/", (req, res) => {
   res.send("🚀 API is running...");
 });
+
+app.use('/uploads', express.static(path.join(__dirname, 'public', 'uploads')));
 //cron jobs
 clinicSubscriptionCron();
 staffShiftCron();
@@ -62,6 +71,7 @@ app.use("/api/v1/ecommerceuser", EcommerceUserRoutes);
 app.use("/api/v1/salary", salaryRouter);
 app.use("/api/v1/expense", expenseRouter);app.use("/api/v1/feedback",feedbackRouter);
 app.use("/api/v1/admin/feedback",adminFeedbackRouter);
+app.use("/api/v1/whatsapp", whatsappRouter);
 
 
 const PORT = process.env.PORT || 8001;
