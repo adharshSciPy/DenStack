@@ -37,7 +37,7 @@ const __dirname = path.dirname(__filename);
 // Middleware
 // app.use(cors());
 app.use(cors({
-  origin: ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:4000'], // Add your frontend URL
+  origin: ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:4000','http://localhost:4002'], 
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
