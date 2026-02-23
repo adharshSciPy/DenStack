@@ -164,7 +164,7 @@ const patientSchema = new mongoose.Schema({
     type: [dentalChartEntrySchema],
     default: []
   },
-  patientUniqueId: { type: String, unique: true },
+  patientUniqueId: { type: String  },
    patientRandomId: { type: String, unique: true }, 
   parentPatient: { type: mongoose.Schema.Types.ObjectId, ref: "Patient" },
   linkedPatients: [{ type: mongoose.Schema.Types.ObjectId, ref: "Patient" }],
@@ -356,7 +356,7 @@ patientSchema.pre("save", async function (next) {
 patientSchema.index({ clinicId: 1, phone: 1 }, { unique: false });
 patientSchema.index({ clinicId: 1, email: 1 }, { unique: false });
 patientSchema.index({ clinicId: 1, patientUniqueId: 1 }, { unique: true });
-
+patientSchema.index({ patientRandomId: 1 }, { unique: true, sparse: true });
 
 
 export default mongoose.model("Patient", patientSchema);
