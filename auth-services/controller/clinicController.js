@@ -16,6 +16,7 @@ import Accountant from "../models/accountantSchema.js";
 import Technician from "../models/technicianSchema.js";
 import jwt from "jsonwebtoken";
 import Doctor from "../models/doctorSchema.js";
+import { geocodeAddress } from "../utils/geocodingService.js";
 import Salary from "../models/salarySchema.js";
 config();
 const CLINIC_SERVICE_BASE_URL = process.env.CLINIC_SERVICE_BASE_URL || "http://localhost:8003/api/v1/clinic-service";
@@ -336,7 +337,20 @@ const registerClinic = async (req, res) => {
         isMultipleClinic: newClinic.isMultipleClinic,
         isOwnLab: newClinic.isOwnLab,
         googlePlaceId: newClinic.googlePlaceId,
-        isClinicAdminDoctor: newClinic.isClinicAdminDoctor
+        isClinicAdminDoctor: newClinic.isClinicAdminDoctor,
+          address: newClinic.address ? {
+      street: newClinic.address.street,
+      city: newClinic.address.city,
+      state: newClinic.address.state,
+      country: newClinic.address.country,
+      zip: newClinic.address.zip,
+      formattedAddress: newClinic.address.formattedAddress,
+      // ✅ ADD LOCATION COORDINATES
+      location: newClinic.address.location ? {
+        type: newClinic.address.location.type,
+        coordinates: newClinic.address.location.coordinates
+      } : null
+    } : null
       },
       doctor: doctorData ? {
         id: doctorData._id,
@@ -1671,6 +1685,74 @@ const loginSubClinic = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
+const getLocationBasedClinics = async (req, res) => {
+  try {
+    const { lat, lng, radius = 50 } = req.query; // radius in km
+
+    if (!lat || !lng) {
+      return res.status(400).json({
+        success: false,
+        message: "Latitude and longitude are required",
+      });
+    }
+
+    const latitude = parseFloat(lat);
+    const longitude = parseFloat(lng);
+    const radiusInMeters = radius * 1000;
+
+    const clinics = await Clinic.aggregate([
+      {
+        $geoNear: {
+          near: {
+            type: "Point",
+            coordinates: [longitude, latitude],
+          },
+          distanceField: "distance", // this field will be added
+          maxDistance: radiusInMeters,
+          spherical: true,
+          distanceMultiplier: 0.001, // convert meters → KM
+        },
+      },
+      {
+        $match: {
+          isActive: true,
+          $or: [
+            { isApproved: true },
+            { isApproved: false }, // for testing
+          ],
+        },
+      },
+      {
+        $project: {
+          name: 1,
+          address: 1,
+          phoneNumber: 1,
+          email: 1,
+          ratingAvg: 1,
+          totalReviews: 1,
+          description: 1,
+          distance: { $round: ["$distance", 2] }, // round to 2 decimals
+        },
+      },
+    ]);
+
+    res.json({
+      success: true,
+      count: clinics.length,
+      radius: radius,
+      data: clinics,
+    });
+  } catch (error) {
+    console.error("Error finding nearby clinics:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error finding nearby clinics",
+      error: error.message,
+    });
+  }
+};
+
+
 
 export const getClinicStaffSalaries = async (req, res) => {
   try {
@@ -1803,5 +1885,5 @@ export const getClinicStaffSalaries = async (req, res) => {
 };
 export {
   registerClinic, loginClinic, viewAllClinics, viewClinicById, editClinic, getClinicStaffs, getTheme, editTheme, subscribeClinic, getClinicDashboardDetails, addShiftToStaff, removeStaffFromClinic, getClinicStaffCounts, registerSubClinic, assignClinicLab, clicnicCount, allClinicsStatus,
-  getSubscriptionStats, toggleClinicAccess,upgradeSubscription,updateSubClinic,uploadClinicLogo,deleteLogo,getSubClinics,loginSubClinic
+  getSubscriptionStats, toggleClinicAccess,upgradeSubscription,updateSubClinic,uploadClinicLogo,deleteLogo,getSubClinics,loginSubClinic,getLocationBasedClinics
 }

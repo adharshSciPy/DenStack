@@ -20,7 +20,8 @@ import {
   approveRecallAppointment,
   getPatientTreatmentPlans,
   getDoctorRevenue,
-  getPatientsIncomeSummary
+  getPatientsIncomeSummary,
+  approveAppointmentFromPatinetPortal
 } from "../controller/patientAppointmentController.js";
 import { authClinicDoctor } from "../middleware/authClinicDoctor.js";
 import { authDoctor } from "../middleware/authDoctor.js";
@@ -32,6 +33,7 @@ import { canReadAppointments, canWriteAppointments } from "../middleware/checkPe
 const patientAppointmentRouter = Router();
 
 // Existing routes
+patientAppointmentRouter.route("/public/book/:id").post(createAppointment);// Public route for booking appointments without authentication
 patientAppointmentRouter.route("/book/:id").post(verifyToken,attachPermissions,canWriteAppointments,createAppointment);
 patientAppointmentRouter.route("/fetch").get(authDoctor, getTodaysAppointments);
 patientAppointmentRouter.route("/fetch/:id").get(getAppointmentById);
@@ -53,4 +55,5 @@ patientAppointmentRouter.route("/recall-approval/:id").patch(approveRecallAppoin
 patientAppointmentRouter.route("/treatment-plans/:id").get(getPatientTreatmentPlans)
 patientAppointmentRouter.route("/doctor-revenue").get(authDoctor,getDoctorRevenue)
 patientAppointmentRouter.route("/income-summary").get(getPatientsIncomeSummary);
+patientAppointmentRouter.route("/patient-portal/approve/:id").patch(approveAppointmentFromPatinetPortal);
 export default patientAppointmentRouter;
