@@ -2,6 +2,7 @@ import PendingBooking from "../model/pendingBooking.js";
 import Appointment from "../model/appointmentSchema.js";
 import mongoose from "mongoose";
 import dotenv from "dotenv";
+import Patient from "../model/patientSchema.js";
 dotenv.config()
 const submitBookingRequest = async (req, res) => {
   try {
