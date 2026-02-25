@@ -129,13 +129,18 @@ const technicianSchema = new Schema(
     },
     clinicId: {
       type: mongoose.Schema.Types.ObjectId,
-      required: true,
+      // required: true,
     },
 
     labVendorId: {
       type: mongoose.Schema.Types.ObjectId,
       default: null, // null = normal clinic technician
     },
+    labType:{
+      type: String,
+      enum: ["inHouse", "aligner", "external"],
+      default: "external",
+    }
   },
   { timestamps: true },
 );

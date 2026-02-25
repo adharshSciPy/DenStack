@@ -60,7 +60,8 @@ app.use("/api/v1/auth/roles", permissionRoutes);
 app.use("/api/v1/super-admin", superAdminDashboardRouter);
 app.use("/api/v1/ecommerceuser", EcommerceUserRoutes);
 app.use("/api/v1/salary", salaryRouter);
-app.use("/api/v1/expense", expenseRouter);app.use("/api/v1/feedback",feedbackRouter);
+app.use("/api/v1/expense", expenseRouter);
+app.use("/api/v1/feedback",feedbackRouter);
 app.use("/api/v1/admin/feedback",adminFeedbackRouter);
 
 

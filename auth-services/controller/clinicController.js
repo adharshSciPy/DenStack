@@ -16,6 +16,7 @@ import Accountant from "../models/accountantSchema.js";
 import Technician from "../models/technicianSchema.js";
 import jwt from "jsonwebtoken";
 import Doctor from "../models/doctorSchema.js";
+import Salary from "../models/salarySchema.js";
 config();
 const CLINIC_SERVICE_BASE_URL = process.env.CLINIC_SERVICE_BASE_URL || "http://localhost:8003/api/v1/clinic-service";
 const PATIENT_SERVICE_BASE_URL = process.env.PATIENT_SERVICE_BASE_URL || "http://localhost:8002/api/v1/patient-service";
@@ -23,6 +24,10 @@ const LAB_SERVICE_BASE_URL = process.env.LAB_SERVICE_BASE_URL || "http://localho
 const formatDate = (dateStr) => {
   const [day, month, year] = dateStr.split("-");
   return new Date(`${year}-${month}-${day}`);
+};
+const formatMonth = (month, year) => {
+  if (!month || !year) return null;
+  return `${year}-${String(month).padStart(2, "0")}`;
 };
 const registerClinic = async (req, res) => {
   const session = await mongoose.startSession();
@@ -1664,6 +1669,136 @@ const loginSubClinic = async (req, res) => {
   } catch (error) {
     console.error("❌ Error in loginClinic:", error);
     res.status(500).json({ message: "Server error" });
+  }
+};
+
+export const getClinicStaffSalaries = async (req, res) => {
+  try {
+    const { clinicId } = req.params;
+    let { month, year } = req.query;
+
+    if (!mongoose.Types.ObjectId.isValid(clinicId)) {
+      return res.status(400).json({ success: false, message: "Invalid clinicId" });
+    }
+
+    // 📅 Month filter
+    let monthKey = null;
+    if (month && year) {
+      monthKey = formatMonth(month, year);
+    } else if (month && month.includes("-")) {
+      monthKey = month; // already "2026-01"
+    }
+
+    if (!monthKey) {
+      return res.status(400).json({
+        success: false,
+        message: "Month & year required",
+      });
+    }
+
+    // 🔹 Fetch salaries
+    const salaries = await Salary.find({
+      clinicId,
+      month: monthKey,
+    }).lean();
+
+    if (!salaries.length) {
+      return res.status(200).json({
+        success: true,
+        data: [],
+        message: "No salary records found",
+      });
+    }
+
+    // 🔹 Group staffIds by role
+    const roleStaffMap = {
+      nurse: [],
+      receptionist: [],
+      pharmacist: [],
+      accountant: [],
+      technician: [],
+      doctor: [],
+    };
+
+    salaries.forEach((sal) => {
+      roleStaffMap[sal.role]?.push(sal.staffId);
+    });
+
+    // 🔹 Fetch staff details by role
+    const staffData = {};
+
+    if (roleStaffMap.nurse.length) {
+      staffData.nurse = await Nurse.find({
+        _id: { $in: roleStaffMap.nurse },
+      }).lean();
+    }
+
+    if (roleStaffMap.receptionist.length) {
+      staffData.receptionist = await Receptionist.find({
+        _id: { $in: roleStaffMap.receptionist },
+      }).lean();
+    }
+
+    if (roleStaffMap.pharmacist.length) {
+      staffData.pharmacist = await Pharmacist.find({
+        _id: { $in: roleStaffMap.pharmacist },
+      }).lean();
+    }
+
+    if (roleStaffMap.accountant.length) {
+      staffData.accountant = await Accountant.find({
+        _id: { $in: roleStaffMap.accountant },
+      }).lean();
+    }
+
+    if (roleStaffMap.technician.length) {
+      staffData.technician = await Technician.find({
+        _id: { $in: roleStaffMap.technician },
+      }).lean();
+    }
+
+    if (roleStaffMap.doctor.length) {
+      staffData.doctor = await Doctor.find({
+        _id: { $in: roleStaffMap.doctor },
+      }).lean();
+    }
+
+    // 🔹 Merge salary + staff info
+    const result = salaries.map((sal) => {
+      const staff = staffData[sal.role]?.find(
+        (s) => s._id.toString() === sal.staffId.toString()
+      );
+
+      return {
+        salaryId: sal._id,
+        role: sal.role,
+        month: sal.month,
+        salaryAmount: sal.salaryAmount,
+        note: sal.note,
+        staff: staff
+          ? {
+              id: staff._id,
+              name: staff.name,
+              phoneNumber: staff.phoneNumber,
+              email: staff.email,
+            }
+          : null,
+      };
+    });
+
+    res.status(200).json({
+      success: true,
+      month: monthKey,
+      count: result.length,
+      data: result,
+    });
+  } catch (error) {
+    console.error("❌ getClinicStaffSalaries error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+    });
   }
 };
 export {

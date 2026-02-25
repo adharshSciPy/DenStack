@@ -1,5 +1,5 @@
 import express from "express";
-import { createDentalLabOrder,getLabStatsUsingClinicId,getAllLabOrdersByClinicId,getDentalLabOrderById,getLabOrdersByLabVendor,getDentalLabOrders,updateDentalLabOrderStatus,uploadLabResults,getMonthlyInHouseLabRevenue,getLatestLabOrdersByClinicId} from "../controller/labOrderController.js";
+import { createDentalLabOrder,getLabStatsUsingClinicId,getMonthlyLabRevenueByVendor,getAllLabOrdersByClinicId,getAlignerLabOrdersByLabVendor,getDentalLabOrderById,getLabOrdersByLabVendor,getDentalLabOrders,updateDentalLabOrderStatus,uploadLabResults,getMonthlyInHouseLabRevenue,getLabStatsUsingLabVendorId,getLatestLabOrdersByClinicId} from "../controller/labOrderController.js";
 import uploadDentalLabFiles from "../middleware/multerDentalLab.js";
 import {uploadLabResult} from "../middleware/labResultUpload.js"
 
@@ -19,6 +19,8 @@ labOrderRouter.route("/lab/:labVendorId").get(getLabOrdersByLabVendor);
 labOrderRouter.route("/clinic-dental-orders/:clinicId").get(getAllLabOrdersByClinicId);
 labOrderRouter.route("/getLatest/clinic-dental-orders/:clinicId").get(getLatestLabOrdersByClinicId);
 labOrderRouter.route("/lab-stats/:clinicId").get(getLabStatsUsingClinicId);
+labOrderRouter.route("/lab-status/:labVendorId").get(getLabStatsUsingLabVendorId);
 labOrderRouter.route("/lab-month/:clinicId").get(getMonthlyInHouseLabRevenue)
-
+labOrderRouter.route("/aligner-orders/:labVendorId").get( getAlignerLabOrdersByLabVendor);
+labOrderRouter.route("/lab-monthly-revenue/:labVendorId").get(getMonthlyLabRevenueByVendor);
 export default labOrderRouter;
