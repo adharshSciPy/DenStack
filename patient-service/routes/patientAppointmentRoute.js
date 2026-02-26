@@ -21,7 +21,8 @@ import {
   getPatientTreatmentPlans,
   getDoctorRevenue,
   getPatientsIncomeSummary,
-  approveAppointmentFromPatinetPortal
+  approveAppointmentFromPatinetPortal,
+  updatedPatientHistoryPaymentStatus
 } from "../controller/patientAppointmentController.js";
 import { authClinicDoctor } from "../middleware/authClinicDoctor.js";
 import { authDoctor } from "../middleware/authDoctor.js";
@@ -56,4 +57,5 @@ patientAppointmentRouter.route("/treatment-plans/:id").get(getPatientTreatmentPl
 patientAppointmentRouter.route("/doctor-revenue").get(authDoctor,getDoctorRevenue)
 patientAppointmentRouter.route("/income-summary").get(getPatientsIncomeSummary);
 patientAppointmentRouter.route("/patient-portal/approve/:id").patch(approveAppointmentFromPatinetPortal);
+patientAppointmentRouter.route("/update-payment-status/:id").patch(updatedPatientHistoryPaymentStatus);
 export default patientAppointmentRouter;

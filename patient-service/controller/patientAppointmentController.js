@@ -510,7 +510,9 @@ const getPatientHistory = async (req, res) => {
         totalAmount: 1,
         isPaid: 1,
         treatmentPlanId: 1,
-        receptionBilling: 1
+        receptionBilling: 1,
+        patientId: 1,
+        clinicId: 1
       }
     )
       .sort({ visitDate: -1 })
@@ -1550,7 +1552,29 @@ const getPatientHistoryById = async (req, res) => {
     });
   }
 };
-
+const updatedPatientHistoryPaymentStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {isPaid} = req.body;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid visitHistoryId",
+      });
+    }
+    const history =await PatientHistory.findByIdAndUpdate(id, { isPaid: isPaid }, { new: true }).lean();
+    return res.status(200).json({
+      success: true,
+      data: history
+    });
+  } catch (error) {
+    console.error("❌ Update Payment Status Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
 const approveRecallAppointment = async (req, res) => {
   const session = await mongoose.startSession();
 
@@ -1858,4 +1882,4 @@ const approveAppointmentFromPatinetPortal = async (req, res) => {
 export {
   createAppointment, getTodaysAppointments, getAppointmentById, getPatientHistory, addLabOrderToPatientHistory, getAppointmentsByClinic, clearDoctorFromAppointments, appointmentReschedule, cancelAppointment, getPatientTreatmentPlans, getAppointmentsByDate, addReceptionBilling, getUnpaidBillsByClinic
   , getAllAppointments,getMonthlyAppointmentsClinicWise,getPatientHistoryById
-,approveRecallAppointment,getDoctorRevenue, getPatientsIncomeSummary,approveAppointmentFromPatinetPortal};
+,approveRecallAppointment,getDoctorRevenue, getPatientsIncomeSummary,approveAppointmentFromPatinetPortal,updatedPatientHistoryPaymentStatus};
