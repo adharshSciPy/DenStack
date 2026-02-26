@@ -510,6 +510,7 @@ const getPatientHistory = async (req, res) => {
         totalAmount: 1,
         isPaid: 1,
         treatmentPlanId: 1,
+        receptionBilling: 1
       }
     )
       .sort({ visitDate: -1 })

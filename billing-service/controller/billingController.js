@@ -47,7 +47,8 @@ export const getPatientCompleteBills = async (req, res) => {
         doctor: visit.doctor?.name,
         symptoms: visit.symptoms,
         diagnosis: visit.diagnosis,
-        isPaid: visit.isPaid || false
+        isPaid: visit.isPaid || false,
+        receptionistBilling: visit.receptionBilling || null
       }));
     } catch (error) {
       console.error("Error fetching patient history:", error.message);
@@ -854,13 +855,15 @@ export const markConsultationAsPaid = async (req, res) => {
   try {
     const { patientHistoryId } = req.params;
     const { amount, method, transactionId, receivedBy, notes } = req.body;
-
+    console.log(patientHistoryId);
+    
     // First sync to billing if not already synced
     let bill = await Billing.findOne({
       referenceId: patientHistoryId,
       billType: "consultation"
     });
-
+    console.log("jhb",bill);
+    
     if (!bill) {
       const { clinicId } = req.body;
       
@@ -870,19 +873,26 @@ export const markConsultationAsPaid = async (req, res) => {
           message: "clinicId is required in request body"
         });
       }
-
+      console.log(clinicId);
+      
       // Fetch and create billing record first
-      const response = await axios.post(
-        `${PATIENT_SERVICE_BASE_URL}/patient-service/appointment/patient-history/${patientHistoryId}`,
-        { clinicId },
-        { 
-          timeout: 10000,
-          headers: { 'Content-Type': 'application/json' }
-        }
+      try {
+        const response = await axios.post(
+        `${PATIENT_SERVICE_BASE_URL}/patient-service/appointment/patient-history/${patientHistoryId}?clinicId=${clinicId}`,
       );
+      
+      console.log("sasa",response);
+    } catch (error) {
+      console.error("Error fetching patient history:", error.message);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to fetch patient history"
+      });
+    }
+    
 
       const visit = response.data?.data || response.data;
-
+      
       if (!visit) {
         return res.status(404).json({
           success: false,
