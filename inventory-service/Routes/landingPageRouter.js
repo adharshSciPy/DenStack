@@ -3,7 +3,7 @@
 // ============================================
 
 import express from "express";
-import { optionalAuth } from "../middlewares/authmiddleware.js";
+import { optionalAuth } from "../middlewares/authMiddleware.js";
 import {
   createCarouselSlide,
   getAllCarouselSlides,
@@ -180,6 +180,13 @@ landingRouter.put("/categorySections/update/:id", updateCategorySection);
 // Add product (NO AUTH - anyone can add)
 landingRouter.post("/products/add", flexibleUpload, addProduct);
 landingRouter.get("/products", optionalAuth, getProducts);
+
+landingRouter.get("/products/top-selling", optionalAuth, getTopSellingProducts);
+landingRouter.get(
+  "/products/top-selling-simple",
+  optionalAuth,
+  getTopSellingProductsSimple,
+);
 landingRouter.get("/products/:id", optionalAuth, getProductById);
 
 // Get products with optional personalized pricing
@@ -199,12 +206,7 @@ landingRouter.get(
   optionalAuth,
   getProductsByBrand,
 );
-landingRouter.get("/products/top-selling", optionalAuth, getTopSellingProducts);
-landingRouter.get(
-  "/products/top-selling-simple",
-  optionalAuth,
-  getTopSellingProductsSimple,
-);
+
 
 // Update and delete products (NO AUTH - anyone can manage)
 landingRouter.put("/products/update/:productId", flexibleUpload, updateProduct);

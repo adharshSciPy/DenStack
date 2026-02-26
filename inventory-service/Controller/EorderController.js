@@ -2,10 +2,7 @@ import EcomOrder from "../Model/E-orderSchema.js";
 import Product from "../Model/ProductSchema.js";
 import mongoose from "mongoose";
 import axios from "axios";
-import {
-  getPriceForUser,
-  calculateOrderTotal,
-} from "../utils/pricingHelper.js";
+import { getPriceForUser, calculateOrderTotal, qualifiesForD1Discount, qualifiesForD2Discount } from "../utils/pricingHelper.js";
 
 const AUTH_BASE = process.env.AUTH_SERVICE_BASE_URL;
 
@@ -194,7 +191,9 @@ export const createEcomOrder = async (req, res) => {
 
     // Create order
     const newOrder = new EcomOrder({
-      clinic: clinicId,
+      clinic: actualClinicId,
+      user: actualUserId,
+      buyerType: buyerType,
       clinicDetails,
       items: orderItems,
       shippingAddress,
@@ -202,15 +201,16 @@ export const createEcomOrder = async (req, res) => {
         method: paymentMethod,
         status: paymentMethod === "COD" ? "PENDING" : "PENDING",
       },
-      subtotal: orderTotals.subtotal, // Original subtotal before discount
+      subtotal: orderTotals.subtotal,
       shippingCharge,
       tax,
       discount,
       totalAmount,
       orderNotes: orderNotes || "",
-      estimatedDelivery: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
+      estimatedDelivery: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       userRole: userRole,
       isClinicDoctor: isClinicDoctor,
+      hasActiveSubscription: hasActiveSubscription,
       discountPercentage: orderTotals.discountPercentage,
     });
 
@@ -220,6 +220,30 @@ export const createEcomOrder = async (req, res) => {
       success: true,
       message: "Order created successfully",
       data: newOrder,
+      pricingInfo: {
+        buyerType: buyerType,
+        role: userRole,
+        isClinicDoctor: isClinicDoctor,
+        hasActiveSubscription: hasActiveSubscription,
+        qualifiesForD1: qualifiesForD1Discount(
+          userRole,
+          isClinicDoctor,
+          hasActiveSubscription,
+        ), // ✅ Use helper function
+        qualifiesForD2: qualifiesForD2Discount(
+          userRole,
+          isClinicDoctor,
+          hasActiveSubscription,
+        ), // ✅ Add this for clarity
+        discountApplied: orderTotals.discountPercentage > 0,
+        discountType: qualifiesForD1Discount(
+          userRole,
+          isClinicDoctor,
+          hasActiveSubscription,
+        )
+          ? "D1"
+          : "D2", // ✅ Show which discount
+      },
       pricing: {
         originalSubtotal: orderTotals.subtotal,
         totalDiscount: orderTotals.totalDiscount,
@@ -385,7 +409,6 @@ export const updateEcomOrderStatus = async (req, res) => {
       "RETURNED",
     ];
 
-    // ✅ Validate status
     if (orderStatus && !validStatuses.includes(orderStatus)) {
       return res.status(400).json({
         success: false,
@@ -393,80 +416,30 @@ export const updateEcomOrderStatus = async (req, res) => {
       });
     }
 
-    // 🔍 Fetch existing order
-    const existingOrder = await EcomOrder.findById(orderId);
-    if (!existingOrder) {
+    const updateData = {};
+    if (orderStatus) updateData.orderStatus = orderStatus;
+    if (trackingNumber) updateData.trackingNumber = trackingNumber;
+
+    const order = await EcomOrder.findByIdAndUpdate(orderId, updateData, {
+      new: true,
+      runValidators: true,
+    });
+
+    if (!order) {
       return res.status(404).json({
         success: false,
         message: "Order not found",
       });
     }
 
-    // 🛑 Prevent double delivery
-    if (
-      existingOrder.orderStatus === "DELIVERED" &&
-      orderStatus === "DELIVERED"
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Order already delivered",
-      });
-    }
-
-    // 🧩 Prepare update
-    const updateData = {};
-    if (orderStatus) updateData.orderStatus = orderStatus;
-    if (trackingNumber) updateData.trackingNumber = trackingNumber;
-
-    // ✅ Update order
-    const order = await EcomOrder.findByIdAndUpdate(orderId, updateData, {
-      new: true,
-      runValidators: true,
-    });
-    console.log(order);
-    const isFirstDelivery =
-      orderStatus === "DELIVERED" &&
-      existingOrder.orderStatus !== "DELIVERED" &&
-      !existingOrder.inventorySynced;
-
-    // 🔥 INVENTORY SYNC (ONLY ON FIRST DELIVERY)
-    // 🔥 INVENTORY SYNC (ONLY ON FIRST DELIVERY)
-    if (isFirstDelivery) {
-      try {
-        const syncURL = `${process.env.CLINIC_INVENTORY_SERVICE_URL}/assign/inventory/assign`;
-
-        // ✅ Assign to variable first
-        const payload = {
-          orderId: existingOrder._id,
-          clinicId: existingOrder.clinic,
-          items: existingOrder.items.map((item) => ({
-            productId: item.product?._id || item.product,
-            productName: item.productName || item.name,
-            quantity: Number(item.quantity),
-          })),
-        };
-
-        console.log("🔄 Syncing inventory...");
-        console.log("URL:", syncURL);
-        console.log("Payload:", JSON.stringify(payload, null, 2));
-
-        await axios.post(syncURL, payload, { timeout: 5000 });
-
-        // ✅ Mark as synced
-        await EcomOrder.findByIdAndUpdate(orderId, { inventorySynced: true });
-      } catch (err) {
-        // ... your existing catch block
-        console.log(err)
-      }
-    }
-    return res.status(200).json({
+    res.status(200).json({
       success: true,
       message: "Order status updated successfully",
       data: order,
     });
   } catch (error) {
     console.error("Update Ecom Order Status Error:", error);
-    return res.status(500).json({
+    res.status(500).json({
       success: false,
       message: "Failed to update order status",
       error: error.message,
@@ -557,10 +530,18 @@ export const cancelEcomOrder = async (req, res) => {
     for (const item of order.items) {
       const product = await Product.findById(item.product);
       if (product) {
-        const variant = product.variants.id(item.variant.variantId);
-        if (variant) {
-          variant.stock += item.quantity;
+        // ✅ Handle products without variants
+        if (!item.variant.variantId) {
+          product.stock += item.quantity;
           await product.save();
+        }
+        // ✅ Handle products with variants
+        else {
+          const variant = product.variants.id(item.variant.variantId);
+          if (variant) {
+            variant.stock += item.quantity;
+            await product.save();
+          }
         }
       }
     }
@@ -718,24 +699,126 @@ export const getEcomOrderAnalytics = async (req, res) => {
   }
 };
 
-export const getDeliveredProducts = async (req, res) => {
-  const { clinicId } = req.params;
+export const updateOrderStatus = async (req, res) => {
   try {
-    const orders = await EcomOrder.find({
-      clinic: clinicId,
-      orderStatus: "DELIVERED",
-    }).populate("items.product", "name image");
-    res.status(200).json({
+    const { orderId } = req.params;
+    const { status, cancellationReason } = req.body;
+
+    // ✅ Allow only these two
+    if (!["DELIVERED", "CANCELLED"].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Only DELIVERED or CANCELLED status allowed"
+      });
+    }
+
+    const order = await EcomOrder.findById(orderId);
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found"
+      });
+    }
+
+    // 🚫 Prevent modifying final state
+    if (["DELIVERED", "CANCELLED", "RETURNED"].includes(order.orderStatus)) {
+      return res.status(400).json({
+        success: false,
+        message: `Order already ${order.orderStatus}`
+      });
+    }
+
+    // ===============================
+    // 🔴 If Cancelling
+    // ===============================
+    if (status === "CANCELLED") {
+
+      if (!cancellationReason) {
+        return res.status(400).json({
+          success: false,
+          message: "Cancellation reason is required"
+        });
+      }
+
+      order.orderStatus = "CANCELLED";
+      order.cancellationReason = cancellationReason;
+
+      // 💰 Auto refund logic (if payment was PAID)
+      if (order.paymentDetails.status === "PAID") {
+        order.paymentDetails.status = "REFUNDED";
+      }
+    }
+
+    // ===============================
+    // 🟢 If Delivering
+    // ===============================
+    if (status === "DELIVERED") {
+      order.orderStatus = "DELIVERED";
+
+      // If COD and delivered → mark as PAID
+      if (order.paymentDetails.method === "COD") {
+        order.paymentDetails.status = "PAID";
+        order.paymentDetails.paidAt = new Date();
+      }
+    }
+
+    await order.save(); // triggers your pre-save hooks
+
+    return res.status(200).json({
       success: true,
-      message: "Products for delivery retrieved successfully",
-      data: orders,
+      message: `Order marked as ${status}`,
+      data: order
     });
+
   } catch (error) {
-    console.error("Get Products for Delivery Error:", error);
-    res.status(500).json({
+    console.error("Update Order Status Error:", error);
+    return res.status(500).json({
       success: false,
-      message: "Failed to retrieve products for delivery",
-      error: error.message,
+      message: "Server error"
     });
   }
 };
+export const getDeliveredProducts = async (req, res) => {
+  const { clinicId } = req.params;
+
+  // 👉 Get page from query (default = 1)
+  const page = parseInt(req.query.page) || 1;
+  const limit = 10;
+
+  try {
+    // 👉 Count total delivered orders
+    const totalOrders = await EcomOrder.countDocuments({
+      clinic: clinicId,
+      orderStatus: "DELIVERED"
+    });
+
+    // 👉 Fetch paginated orders
+    const orders = await EcomOrder.find({
+      clinic: clinicId,
+      orderStatus: "DELIVERED"
+    })
+      .populate("items.product", "name image")
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .sort({ createdAt: -1 }); // latest first
+
+    res.status(200).json({
+      success: true,
+      message: "Delivered products retrieved successfully",
+      currentPage: page,
+      totalPages: Math.ceil(totalOrders / limit),
+      totalOrders,
+      data: orders
+    });
+
+  } catch (error) {
+    console.error("Get Delivered Products Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to retrieve delivered products",
+      error: error.message
+    });
+  }
+};
+
