@@ -148,3 +148,4 @@ export const getMonthlySalaryReport = async (req, res) => {
     });
   }
 };
+

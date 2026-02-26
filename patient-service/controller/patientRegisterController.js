@@ -21,8 +21,8 @@ const token = crypto.randomBytes(24).toString("hex");
   try {
     const { id: clinicId } = req.params;
     const {
-      userId,        // Logged-in user ID (Admin or Receptionist)
-      userRole,      // "admin" or "receptionist"
+      userId,        
+      userRole,     
       name,
       phone,
       email,
@@ -37,13 +37,15 @@ const token = crypto.randomBytes(24).toString("hex");
       return res.status(400).json({ success: false, message: "Invalid or missing clinicId" });
     }
 
-    // 2️⃣ Validate Creator Info
-    if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
-      return res.status(400).json({ success: false, message: "Invalid or missing userId" });
+    // 2️⃣ Validate Creator Info - Only validate userId for non-patient roles
+    if (userRole !== "patient") {
+      if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
+        return res.status(400).json({ success: false, message: "Invalid or missing userId" });
+      }
     }
 
-    if (!userRole || !["receptionist", "admin"].includes(userRole)) {
-      return res.status(400).json({ success: false, message: "Invalid userRole. Must be receptionist or admin." });
+    if (!userRole || !["receptionist", "admin", "patient"].includes(userRole)) {
+      return res.status(400).json({ success: false, message: "Invalid userRole. Must be receptionist, admin or patient." });
     }
 
     // 3️⃣ Validate Name and Phone
@@ -75,32 +77,34 @@ const token = crypto.randomBytes(24).toString("hex");
       return res.status(400).json({ success: false, message: "Invalid gender value." });
     }
 
-    // 5️⃣ Verify the creator based on role
-    try {
-      if (userRole === "receptionist") {
-        const staffRes = await axios.get(`${AUTH_SERVICE_BASE_URL}/clinic/all-staffs/${clinicId}`);
-        const staff = staffRes.data?.staff;
+    // 5️⃣ Verify the creator based on role (skip for patients)
+    if (userRole !== "patient") {
+      try {
+        if (userRole === "receptionist") {
+          const staffRes = await axios.get(`${AUTH_SERVICE_BASE_URL}/clinic/all-staffs/${clinicId}`);
+          const staff = staffRes.data?.staff;
 
-        if (!staff || !staff.receptionists)
-          return res.status(404).json({ success: false, message: "Clinic staff data unavailable." });
+          if (!staff || !staff.receptionists)
+            return res.status(404).json({ success: false, message: "Clinic staff data unavailable." });
 
-        const isReceptionist = staff.receptionists.some(
-          (rec) => rec._id.toString() === userId.toString()
-        );
-        if (!isReceptionist)
-          return res.status(403).json({ success: false, message: "Receptionist does not belong to this clinic." });
-      } 
+          const isReceptionist = staff.receptionists.some(
+            (rec) => rec._id.toString() === userId.toString()
+          );
+          if (!isReceptionist)
+            return res.status(403).json({ success: false, message: "Receptionist does not belong to this clinic." });
+        } 
         // else if (userRole === "admin") {
         //   const adminRes = await axios.get(`${AUTH_SERVICE_BASE_URL}/clinic-admin/details/${userId}`);
         //   if (!adminRes?.data?.success || !adminRes?.data?.admin)
         //     return res.status(404).json({ success: false, message: "Clinic admin not found." });
         // }
-    } catch (err) {
-      return res.status(500).json({
-        success: false,
-        message: "Error validating creator in Auth Service.",
-        error: err.response?.data?.message || err.message,
-      });
+      } catch (err) {
+        return res.status(500).json({
+          success: false,
+          message: "Error validating creator in Auth Service.",
+          error: err.response?.data?.message || err.message,
+        });
+      }
     }
 
     // 6️⃣ Check if patient already exists in this clinic
@@ -111,15 +115,15 @@ const token = crypto.randomBytes(24).toString("hex");
       clinicId,
       name,
       phone,
-      email,
       password,
       age,
       gender,
       medicalHistory,
-      createdBy: userId,
-      createdByRole: userRole.charAt(0).toUpperCase() + userRole.slice(1), // Admin or Receptionist
+      createdBy: userRole === "patient" ? null : userId, // Set to null for patients
+      createdByRole: userRole === "patient" ? "Patient" : (userRole.charAt(0).toUpperCase() + userRole.slice(1)), // "Patient" for self-registration
       parentPatient: parentPatient?._id || null,
-      reviewToken: token  
+      reviewToken: token,
+      ...(email ? { email: email.trim().toLowerCase() } : {})
     });
 
     await newPatient.save();

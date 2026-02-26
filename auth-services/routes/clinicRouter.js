@@ -24,7 +24,9 @@ import {
   getSubClinics,
   deleteLogo,
   updateSubClinic,
-  loginSubClinic
+  loginSubClinic,
+  getLocationBasedClinics,
+  getClinicStaffSalaries
 } from "../controller/clinicController.js";
 import clinicAuth from "../middleware/clinicAuth.js"
 import upload from "../middleware/upload.js";
@@ -84,4 +86,6 @@ clinicAuthRoutes.post(
   loginSubClinic
 );
 clinicAuthRoutes.route("/delete-logo").delete(clinicAuth,deleteLogo)
+clinicAuthRoutes.route("/location-based-clinics").get(getLocationBasedClinics)
+clinicAuthRoutes.route("/staff-salaries/:clinicId").get(clinicAuth,getClinicStaffSalaries)
 export default clinicAuthRoutes;

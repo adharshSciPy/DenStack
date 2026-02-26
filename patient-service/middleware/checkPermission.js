@@ -19,7 +19,9 @@ export const canWriteAppointments = (req, res, next) => {
   if (req.user?.isSuperAdmin || req.user?.permissions?.all ||req.user?.isHybrid) {
     return next();
   }
-
+  if (req.user?.role === "patient") {
+    return next();
+  }
   // ✅ REAL PERMISSION CHECK
   if (!req.user?.permissions?.appointments?.write) {
     return res.status(403).json({

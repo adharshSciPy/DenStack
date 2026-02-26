@@ -16,6 +16,8 @@ import Accountant from "../models/accountantSchema.js";
 import Technician from "../models/technicianSchema.js";
 import jwt from "jsonwebtoken";
 import Doctor from "../models/doctorSchema.js";
+import { geocodeAddress } from "../utils/geocodingService.js";
+import Salary from "../models/salarySchema.js";
 config();
 const CLINIC_SERVICE_BASE_URL = process.env.CLINIC_SERVICE_BASE_URL || "http://localhost:8003/api/v1/clinic-service";
 const PATIENT_SERVICE_BASE_URL = process.env.PATIENT_SERVICE_BASE_URL || "http://localhost:8002/api/v1/patient-service";
@@ -23,6 +25,10 @@ const LAB_SERVICE_BASE_URL = process.env.LAB_SERVICE_BASE_URL || "http://localho
 const formatDate = (dateStr) => {
   const [day, month, year] = dateStr.split("-");
   return new Date(`${year}-${month}-${day}`);
+};
+const formatMonth = (month, year) => {
+  if (!month || !year) return null;
+  return `${year}-${String(month).padStart(2, "0")}`;
 };
 const registerClinic = async (req, res) => {
   const session = await mongoose.startSession();
@@ -331,7 +337,20 @@ const registerClinic = async (req, res) => {
         isMultipleClinic: newClinic.isMultipleClinic,
         isOwnLab: newClinic.isOwnLab,
         googlePlaceId: newClinic.googlePlaceId,
-        isClinicAdminDoctor: newClinic.isClinicAdminDoctor
+        isClinicAdminDoctor: newClinic.isClinicAdminDoctor,
+          address: newClinic.address ? {
+      street: newClinic.address.street,
+      city: newClinic.address.city,
+      state: newClinic.address.state,
+      country: newClinic.address.country,
+      zip: newClinic.address.zip,
+      formattedAddress: newClinic.address.formattedAddress,
+      // ✅ ADD LOCATION COORDINATES
+      location: newClinic.address.location ? {
+        type: newClinic.address.location.type,
+        coordinates: newClinic.address.location.coordinates
+      } : null
+    } : null
       },
       doctor: doctorData ? {
         id: doctorData._id,
@@ -1668,7 +1687,205 @@ const loginSubClinic = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
+const getLocationBasedClinics = async (req, res) => {
+  try {
+    const { lat, lng, radius = 50 } = req.query; // radius in km
+
+    if (!lat || !lng) {
+      return res.status(400).json({
+        success: false,
+        message: "Latitude and longitude are required",
+      });
+    }
+
+    const latitude = parseFloat(lat);
+    const longitude = parseFloat(lng);
+    const radiusInMeters = radius * 1000;
+
+    const clinics = await Clinic.aggregate([
+      {
+        $geoNear: {
+          near: {
+            type: "Point",
+            coordinates: [longitude, latitude],
+          },
+          distanceField: "distance", // this field will be added
+          maxDistance: radiusInMeters,
+          spherical: true,
+          distanceMultiplier: 0.001, // convert meters → KM
+        },
+      },
+      {
+        $match: {
+          isActive: true,
+          $or: [
+            { isApproved: true },
+            { isApproved: false }, // for testing
+          ],
+        },
+      },
+      {
+        $project: {
+          name: 1,
+          address: 1,
+          phoneNumber: 1,
+          email: 1,
+          ratingAvg: 1,
+          totalReviews: 1,
+          description: 1,
+          distance: { $round: ["$distance", 2] }, // round to 2 decimals
+        },
+      },
+    ]);
+
+    res.json({
+      success: true,
+      count: clinics.length,
+      radius: radius,
+      data: clinics,
+    });
+  } catch (error) {
+    console.error("Error finding nearby clinics:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error finding nearby clinics",
+      error: error.message,
+    });
+  }
+};
+
+
+
+export const getClinicStaffSalaries = async (req, res) => {
+  try {
+    const { clinicId } = req.params;
+    let { month, year } = req.query;
+
+    if (!mongoose.Types.ObjectId.isValid(clinicId)) {
+      return res.status(400).json({ success: false, message: "Invalid clinicId" });
+    }
+
+    // 📅 Month filter
+    let monthKey = null;
+    if (month && year) {
+      monthKey = formatMonth(month, year);
+    } else if (month && month.includes("-")) {
+      monthKey = month; // already "2026-01"
+    }
+
+    if (!monthKey) {
+      return res.status(400).json({
+        success: false,
+        message: "Month & year required",
+      });
+    }
+
+    // 🔹 Fetch salaries
+    const salaries = await Salary.find({
+      clinicId,
+      month: monthKey,
+    }).lean();
+
+    if (!salaries.length) {
+      return res.status(200).json({
+        success: true,
+        data: [],
+        message: "No salary records found",
+      });
+    }
+
+    // 🔹 Group staffIds by role
+    const roleStaffMap = {
+      nurse: [],
+      receptionist: [],
+      pharmacist: [],
+      accountant: [],
+      technician: [],
+      doctor: [],
+    };
+
+    salaries.forEach((sal) => {
+      roleStaffMap[sal.role]?.push(sal.staffId);
+    });
+
+    // 🔹 Fetch staff details by role
+    const staffData = {};
+
+    if (roleStaffMap.nurse.length) {
+      staffData.nurse = await Nurse.find({
+        _id: { $in: roleStaffMap.nurse },
+      }).lean();
+    }
+
+    if (roleStaffMap.receptionist.length) {
+      staffData.receptionist = await Receptionist.find({
+        _id: { $in: roleStaffMap.receptionist },
+      }).lean();
+    }
+
+    if (roleStaffMap.pharmacist.length) {
+      staffData.pharmacist = await Pharmacist.find({
+        _id: { $in: roleStaffMap.pharmacist },
+      }).lean();
+    }
+
+    if (roleStaffMap.accountant.length) {
+      staffData.accountant = await Accountant.find({
+        _id: { $in: roleStaffMap.accountant },
+      }).lean();
+    }
+
+    if (roleStaffMap.technician.length) {
+      staffData.technician = await Technician.find({
+        _id: { $in: roleStaffMap.technician },
+      }).lean();
+    }
+
+    if (roleStaffMap.doctor.length) {
+      staffData.doctor = await Doctor.find({
+        _id: { $in: roleStaffMap.doctor },
+      }).lean();
+    }
+
+    // 🔹 Merge salary + staff info
+    const result = salaries.map((sal) => {
+      const staff = staffData[sal.role]?.find(
+        (s) => s._id.toString() === sal.staffId.toString()
+      );
+
+      return {
+        salaryId: sal._id,
+        role: sal.role,
+        month: sal.month,
+        salaryAmount: sal.salaryAmount,
+        note: sal.note,
+        staff: staff
+          ? {
+              id: staff._id,
+              name: staff.name,
+              phoneNumber: staff.phoneNumber,
+              email: staff.email,
+            }
+          : null,
+      };
+    });
+
+    res.status(200).json({
+      success: true,
+      month: monthKey,
+      count: result.length,
+      data: result,
+    });
+  } catch (error) {
+    console.error("❌ getClinicStaffSalaries error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+    });
+  }
+};
 export {
   registerClinic, loginClinic, viewAllClinics, viewClinicById, editClinic, getClinicStaffs, getTheme, editTheme, subscribeClinic, getClinicDashboardDetails, addShiftToStaff, removeStaffFromClinic, getClinicStaffCounts, registerSubClinic, assignClinicLab, clicnicCount, allClinicsStatus,
-  getSubscriptionStats, toggleClinicAccess,upgradeSubscription,updateSubClinic,uploadClinicLogo,deleteLogo,getSubClinics,loginSubClinic
+  getSubscriptionStats, toggleClinicAccess,upgradeSubscription,updateSubClinic,uploadClinicLogo,deleteLogo,getSubClinics,loginSubClinic,getLocationBasedClinics
 }

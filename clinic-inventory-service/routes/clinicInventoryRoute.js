@@ -1,4 +1,4 @@
-import { getProducts,getLowStockProducts,deleteInventoryItem,getClinicProducts} from "../controller/clinicInventoryController.js"
+import { getProducts,getLowStockProducts,deleteInventoryItem,getClinicProducts,getLabProductsByLabVendorId} from "../controller/clinicInventoryController.js"
 
 
 import { Router } from "express";
@@ -8,5 +8,6 @@ clinicInventoryRouter.route("/products/:clinicId").get(getProducts);
 clinicInventoryRouter.route("/products/low-stock/:clinicId").get(getLowStockProducts);
 clinicInventoryRouter.route("/inventory/delete/:id").delete(deleteInventoryItem);
 clinicInventoryRouter.route("/clinicProduct/:clinicId").get(getClinicProducts)
+clinicInventoryRouter.route("/labProducts/:labVendorId").get(getLabProductsByLabVendorId)
 
 export default clinicInventoryRouter;
