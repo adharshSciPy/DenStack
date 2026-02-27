@@ -9,32 +9,34 @@ dotenv.config();
 
 // ✅ UPDATED: Now handles BOTH Bearer tokens AND cookies
 export const verifyAuthToken = (req, res, next) => {
-    // Step 1: Check if token is in Authorization header (Clinic/Doctor)
     const authHeader = req.headers.authorization;
-    
-    // Step 2: Check if token is in cookies (Normal User)
     const cookieToken = req.cookies?.accessToken;
     
     let token;
     
-    // Try to get token from either place
-    if (authHeader && authHeader.startsWith("Bearer ")) {
-        token = authHeader.split(" ")[1]; // Get token from header (Clinic/Doctor)
-    } else if (cookieToken) {
-        token = cookieToken; // Get token from cookie (Normal User)
+    // ✅ Only use header token if it's actually a real value
+    if (authHeader && authHeader.startsWith("Bearer ") ) {
+        const headerToken = authHeader.split(" ")[1];
+        if (headerToken && headerToken !== 'null' && headerToken !== 'undefined') {
+            token = headerToken;
+        }
     }
     
-    // If no token found anywhere
+    // Fall back to cookie
+    if (!token && cookieToken) {
+        token = cookieToken;
+    }
+    
     if (!token) {
         return res.status(401).json({ message: "Access token missing or invalid" });
     }
 
-    // Verify the token
     try {
         const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
-        req.user = decoded; // Save user info (role, isClinicDoctor, etc.)
+        req.user = decoded;
         next();
     } catch (err) {
+        console.log("JWT VERIFY ERROR:", err.message);
         return res.status(403).json({ message: "Invalid or expired token" });
     }
 };
