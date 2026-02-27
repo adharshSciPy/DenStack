@@ -625,7 +625,8 @@ const editClinic = async (req, res) => {
       email,
       phoneNumber,
       address,
-      description } = req.body
+      description,
+    googlePlaceId } = req.body
     const editRes = await Clinic.findByIdAndUpdate(id, {
       name,
       type,
@@ -633,6 +634,7 @@ const editClinic = async (req, res) => {
       phoneNumber,
       address,
       description,
+      googlePlaceId: googlePlaceId || null,
     }, { new: true })
     res.status(200).json({ message: "Clinic updated successfully", data: editRes })
   } catch (error) {

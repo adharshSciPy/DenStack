@@ -9,18 +9,13 @@ import { authReceptionist } from "../middleware/feedbackAuth.js";
 
 const feedbackRouter = Router();
 
-// Receptionist — generate a unique feedback link for a patient (manual sharing)
-feedbackRouter.post(
-  "/generate",
-  authReceptionist,
-  resolveTenant,   // 🔥 THIS IS MISSING
-  generateFeedbackLink
-);
+// Receptionist — generate a unique feedback link
+feedbackRouter.post("/generate", authReceptionist, resolveTenant, generateFeedbackLink);
 
-// Public — patient opens the link, page loads their context (doctor name, etc.)
-feedbackRouter.route("/:token").get(getFeedbackContext);
+// Public — patient submits their rating
+feedbackRouter.post("/submit", submitFeedback);
 
-// Public — patient submits their star rating + optional text
-feedbackRouter.route("/submit").post(submitFeedback);
+// Public — patient opens the link (dynamic route always last)
+feedbackRouter.get("/:token", getFeedbackContext);
 
 export default feedbackRouter;

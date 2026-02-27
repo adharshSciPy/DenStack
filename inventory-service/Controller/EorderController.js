@@ -2,21 +2,31 @@ import EcomOrder from "../Model/E-orderSchema.js";
 import Product from "../Model/ProductSchema.js";
 import mongoose from "mongoose";
 import axios from "axios";
-import {
-  getPriceForUser,
-  calculateOrderTotal,
-} from "../utils/pricingHelper.js";
+import { getPriceForUser, calculateOrderTotal, qualifiesForD1Discount, qualifiesForD2Discount } from "../utils/pricingHelper.js";
 
 const AUTH_BASE = process.env.AUTH_SERVICE_BASE_URL;
 
-// Helper function to fetch clinic details
 const fetchClinicDetails = async (clinicId) => {
   try {
-    // Change from /clinic/${clinicId} to /view-clinic/${clinicId}
     const response = await axios.get(
       `${AUTH_BASE}/clinic/view-clinic/${clinicId}`,
     );
-    const clinicData = response.data;
+
+    // ✅ Your auth service returns: { success: true, data: { clinic object } }
+    const clinicData = response.data.data; // Extract from response.data.data
+
+    if (!clinicData) {
+      throw new Error("Clinic data not found in response");
+    }
+
+    console.log("📋 Clinic Data Retrieved:");
+    console.log(`   - Name: ${clinicData.name}`);
+    console.log(`   - Email: ${clinicData.email}`);
+    console.log(`   - Is Active: ${clinicData.isActive}`);
+    console.log(`   - Role: ${clinicData.role}`);
+    console.log(
+      `   - Subscription: ${JSON.stringify(clinicData.subscription)}`,
+    );
 
     return {
       name: clinicData.name,
@@ -28,94 +38,277 @@ const fetchClinicDetails = async (clinicId) => {
             "",
           )
         : "",
+      subscription: clinicData.subscription,
+      role: clinicData.role,
+      isActive: clinicData.isActive,
+      type: clinicData.type,
     };
   } catch (error) {
-    console.error("Error fetching clinic details:", error.message);
+    console.error(
+      "❌ Error fetching clinic details:",
+      error.response?.data || error.message,
+    );
     throw new Error("Failed to fetch clinic details");
   }
 };
 
-// Helper function to get user role and clinic-doctor status
+// ✅ Update getUserRoleInfo to fetch complete doctor info with clinic details
 const getUserRoleInfo = async (userId) => {
   try {
-    // Try multiple possible endpoints
     let response;
     try {
+      // Try as regular user first
       response = await axios.get(`${AUTH_BASE}/user/${userId}`);
     } catch (err) {
-      // Try alternate endpoint if first one fails
+      // If not found, try as doctor
       response = await axios.get(`${AUTH_BASE}/doctor/details/${userId}`);
     }
 
     const userData = response.data?.data || response.data;
 
+    // ✅ Check if doctor is associated with a clinic
+    let hasActiveSubscription = false;
+    let associatedClinicId = null;
+
+    if (
+      userData.isClinicDoctor &&
+      userData.clinicOnboardingDetails &&
+      userData.clinicOnboardingDetails.length > 0
+    ) {
+      // Find active clinic
+      const activeClinic = userData.clinicOnboardingDetails.find(
+        (detail) => detail.status === "active" && detail.clinicId,
+      );
+
+      if (activeClinic) {
+        associatedClinicId = activeClinic.clinicId._id || activeClinic.clinicId;
+
+        // ✅ Fetch the clinic details to check subscription
+        try {
+          const clinicResponse = await axios.get(
+            `${AUTH_BASE}/clinic/view-clinic/${associatedClinicId}`,
+          );
+          const clinicData = clinicResponse.data;
+
+          // Check if subscription is active and not expired
+          if (clinicData.subscription) {
+            const subscriptionEndDate = new Date(
+              clinicData.subscription.endDate,
+            );
+            const now = new Date();
+            hasActiveSubscription =
+              clinicData.subscription.isActive && subscriptionEndDate > now;
+          }
+        } catch (clinicError) {
+          console.warn(
+            "⚠️ Could not fetch clinic subscription:",
+            clinicError.message,
+          );
+        }
+      }
+    }
+
     return {
       role: userData.role || userData.roleId || "600",
       isClinicDoctor: userData.isClinicDoctor || false,
+      hasActiveSubscription: hasActiveSubscription,
+      associatedClinicId: associatedClinicId,
+      doctorDetails: {
+        name: userData.name,
+        email: userData.email,
+        phoneNumber: userData.phoneNumber,
+        specialization: userData.specialization,
+        status: userData.status,
+      },
     };
   } catch (error) {
     console.error("Error fetching user role:", error.message);
-    // Default to a standard user role if fetch fails
     return {
-      role: "600", // Default to doctor role
+      role: "600",
       isClinicDoctor: false,
+      hasActiveSubscription: false,
+      associatedClinicId: null,
+      doctorDetails: null,
     };
   }
 };
 
-// ============= CREATE ECOM ORDER =============
 export const createEcomOrder = async (req, res) => {
   try {
     const {
       clinicId,
-      userId, // User placing the order (to determine pricing)
-      items, // [{ productId, variantId, quantity }]
+      userId,
+      items,
       shippingAddress,
       paymentMethod,
       orderNotes,
     } = req.body;
 
+    // ✅ Validate: At least ONE of clinicId or userId must be provided
+    if (!clinicId && !userId) {
+      return res.status(400).json({
+        success: false,
+        message: "Either clinicId or userId is required",
+      });
+    }
+
     // Validate required fields
-    if (
-      !clinicId ||
-      !items ||
-      !items.length ||
-      !shippingAddress ||
-      !paymentMethod
-    ) {
+    if (!items || !items.length || !shippingAddress || !paymentMethod) {
       return res.status(400).json({
         success: false,
         message:
-          "Missing required fields: clinicId, items, shippingAddress, paymentMethod",
+          "Missing required fields: items, shippingAddress, paymentMethod",
       });
     }
 
-    // Fetch clinic details from auth microservice
-    let clinicDetails;
-    try {
-      clinicDetails = await fetchClinicDetails(clinicId);
-    } catch (error) {
-      return res.status(404).json({
-        success: false,
-        message: "Clinic not found or unable to fetch clinic details",
+    // ✅ VALIDATE AND SANITIZE ITEMS ARRAY
+    const sanitizedItems = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+
+      if (!item.productId) {
+        return res.status(400).json({
+          success: false,
+          message: `Item at index ${i}: productId is required`,
+        });
+      }
+
+      const quantity = parseInt(item.quantity);
+      if (isNaN(quantity) || quantity < 1) {
+        return res.status(400).json({
+          success: false,
+          message: `Item at index ${i}: quantity must be a valid number greater than 0 (received: ${item.quantity})`,
+        });
+      }
+
+      sanitizedItems.push({
+        productId: item.productId,
+        variantId: item.variantId || null,
+        quantity: quantity,
       });
     }
 
-    // Get user role information for pricing
-    let userRole = "600"; // Default to doctor role
+    // ✅ Determine buyer and pricing
+    let clinicDetails = null;
+    let userRole = "600";
     let isClinicDoctor = false;
+    let hasActiveSubscription = false;
+    let buyerType = null;
+    let actualClinicId = null;
+    let actualUserId = null;
 
-    if (userId) {
-      const roleInfo = await getUserRoleInfo(userId);
-      userRole = roleInfo.role;
-      isClinicDoctor = roleInfo.isClinicDoctor;
+    // OPTION 1: Clinic ID provided
+    if (clinicId) {
+      try {
+        clinicDetails = await fetchClinicDetails(clinicId);
+
+        if (!clinicDetails.isActive) {
+          return res.status(400).json({
+            success: false,
+            message: "Clinic is inactive and cannot place orders",
+          });
+        }
+
+        actualClinicId = clinicId;
+        buyerType = "clinic";
+        userRole = clinicDetails.role || "700";
+
+        // ✅ Check clinic subscription
+        if (clinicDetails.subscription) {
+          const subscriptionEndDate = new Date(
+            clinicDetails.subscription.endDate,
+          );
+          const now = new Date();
+          hasActiveSubscription =
+            clinicDetails.subscription.isActive && subscriptionEndDate > now;
+        }
+
+        console.log("\n💰 PRICING DETERMINED FROM CLINIC:");
+        console.log(`   - Clinic: ${clinicDetails.name}`);
+        console.log(`   - Role: ${userRole}`);
+        console.log(
+          `   - Subscription Package: ${clinicDetails.subscription?.package}`,
+        );
+        console.log(
+          `   - Subscription Active: ${clinicDetails.subscription?.isActive}`,
+        );
+        console.log(
+          `   - Subscription Valid Until: ${clinicDetails.subscription?.endDate}`,
+        );
+        console.log(`   - Has Active Subscription: ${hasActiveSubscription}`);
+        console.log(
+          `   - Will get: ${hasActiveSubscription ? "D1 DISCOUNT (Clinic with Subscription)" : "D2 DISCOUNT (Clinic without Subscription)"}`,
+        );
+      } catch (error) {
+        return res.status(404).json({
+          success: false,
+          message: "Clinic not found or unable to fetch clinic details",
+        });
+      }
+    }
+
+    // OPTION 2: User/Doctor ID provided
+    else if (userId) {
+      try {
+        const roleInfo = await getUserRoleInfo(userId);
+
+        if (!roleInfo.doctorDetails) {
+          return res.status(404).json({
+            success: false,
+            message: "User/Doctor not found",
+          });
+        }
+
+        if (roleInfo.doctorDetails.status !== "Active") {
+          return res.status(400).json({
+            success: false,
+            message: `Doctor account is ${roleInfo.doctorDetails.status} and cannot place orders`,
+          });
+        }
+
+        actualUserId = userId;
+        buyerType = "doctor";
+        userRole = roleInfo.role;
+        isClinicDoctor = roleInfo.isClinicDoctor;
+        hasActiveSubscription = roleInfo.hasActiveSubscription;
+        actualClinicId = roleInfo.associatedClinicId;
+
+        // For display purposes, create minimal clinic details
+        clinicDetails = {
+          name: roleInfo.doctorDetails.name,
+          email: roleInfo.doctorDetails.email,
+          phone: roleInfo.doctorDetails.phoneNumber,
+          address: "",
+        };
+
+        console.log("\n💰 PRICING DETERMINED FROM DOCTOR:");
+        console.log(`   - Doctor: ${roleInfo.doctorDetails.name}`);
+        console.log(`   - Role: ${userRole}`);
+        console.log(`   - Is Clinic Doctor: ${isClinicDoctor}`);
+        console.log(
+          `   - Has Active Clinic Subscription: ${hasActiveSubscription}`,
+        );
+        if (isClinicDoctor) {
+          console.log(
+            `   - Will get: D1 DISCOUNT (Clinic Doctor${hasActiveSubscription ? " with active subscription" : ""})`,
+          );
+        } else {
+          console.log(`   - Will get: D2 DISCOUNT (Individual Doctor)`);
+        }
+      } catch (error) {
+        console.warn("Error fetching user role:", error.message);
+        return res.status(404).json({
+          success: false,
+          message: "User/Doctor not found or unable to fetch details",
+        });
+      }
     }
 
     // Process items and calculate totals with role-based pricing
     let orderItems = [];
     let cartItems = [];
 
-    for (const item of items) {
+    for (const item of sanitizedItems) {
       const product = await Product.findById(item.productId);
       if (!product) {
         return res.status(404).json({
@@ -124,41 +317,143 @@ export const createEcomOrder = async (req, res) => {
         });
       }
 
-      // Find the variant
-      const variant = product.variants.id(item.variantId);
-      if (!variant) {
-        return res.status(404).json({
-          success: false,
-          message: `Variant not found for product: ${product.name}`,
+      // Handle products WITHOUT variants
+      if (!item.variantId) {
+        if (!product.originalPrice) {
+          return res.status(400).json({
+            success: false,
+            message: `Product ${product.name} has no pricing configured`,
+          });
+        }
+
+        const currentStock = product.stock || 0;
+
+        if (currentStock < item.quantity) {
+          return res.status(400).json({
+            success: false,
+            message: `Insufficient stock for ${product.name}. Available: ${currentStock}, Requested: ${item.quantity}`,
+          });
+        }
+
+        // ✅ Atomic stock update
+        const updatedProduct = await Product.findByIdAndUpdate(
+          item.productId,
+          { $inc: { stock: -item.quantity } },
+          { new: true, runValidators: true },
+        );
+
+        if (!updatedProduct) {
+          return res.status(500).json({
+            success: false,
+            message: `Failed to update stock for ${product.name}`,
+          });
+        }
+
+        if (updatedProduct.stock < 0) {
+          await Product.findByIdAndUpdate(item.productId, {
+            $inc: { stock: item.quantity },
+          });
+          return res.status(400).json({
+            success: false,
+            message: `Insufficient stock for ${product.name}. Please try again.`,
+          });
+        }
+
+        cartItems.push({
+          variant: {
+            originalPrice: product.originalPrice,
+            clinicDiscountPrice: product.clinicDiscountPrice,
+            doctorDiscountPrice: product.doctorDiscountPrice,
+            clinicDiscountPercentage: product.clinicDiscountPercentage,
+            doctorDiscountPercentage: product.doctorDiscountPercentage,
+            stock: currentStock,
+            _id: null,
+            size: null,
+            color: null,
+            material: null,
+          },
+          quantity: item.quantity,
+          product: product,
         });
       }
+      // Handle products WITH variants
+      else {
+        const variant = product.variants.id(item.variantId);
+        if (!variant) {
+          return res.status(404).json({
+            success: false,
+            message: `Variant not found for product: ${product.name}`,
+          });
+        }
 
-      // Check stock
-      if (variant.stock < item.quantity) {
-        return res.status(400).json({
-          success: false,
-          message: `Insufficient stock for ${product.name}. Available: ${variant.stock}`,
+        const variantStock = variant.stock || 0;
+
+        if (variantStock < item.quantity) {
+          return res.status(400).json({
+            success: false,
+            message: `Insufficient stock for ${product.name}. Available: ${variantStock}, Requested: ${item.quantity}`,
+          });
+        }
+
+        // ✅ Atomic variant stock update
+        const updatedProduct = await Product.findOneAndUpdate(
+          {
+            _id: item.productId,
+            "variants._id": item.variantId,
+          },
+          {
+            $inc: { "variants.$.stock": -item.quantity },
+          },
+          { new: true, runValidators: true },
+        );
+
+        if (!updatedProduct) {
+          return res.status(500).json({
+            success: false,
+            message: `Failed to update variant stock for ${product.name}`,
+          });
+        }
+
+        const updatedVariant = updatedProduct.variants.id(item.variantId);
+
+        if (updatedVariant.stock < 0) {
+          await Product.findOneAndUpdate(
+            {
+              _id: item.productId,
+              "variants._id": item.variantId,
+            },
+            {
+              $inc: { "variants.$.stock": item.quantity },
+            },
+          );
+          return res.status(400).json({
+            success: false,
+            message: `Insufficient stock for ${product.name}. Please try again.`,
+          });
+        }
+
+        cartItems.push({
+          variant: updatedVariant,
+          quantity: item.quantity,
+          product: product,
         });
       }
-
-      // Add to cart items for pricing calculation
-      cartItems.push({
-        variant: variant,
-        quantity: item.quantity,
-        product: product,
-      });
-
-      // Reduce stock
-      variant.stock -= item.quantity;
-      await product.save();
     }
 
-    // Calculate order total with role-based pricing
+    // ✅ Calculate order total with role-based pricing
     const orderTotals = calculateOrderTotal(
       cartItems,
       userRole,
       isClinicDoctor,
+      hasActiveSubscription,
     );
+
+    console.log("\n💵 FINAL PRICING:");
+    console.log(`   - Original Subtotal: ₹${orderTotals.subtotal}`);
+    console.log(
+      `   - Total Discount: ₹${orderTotals.totalDiscount} (${orderTotals.discountPercentage}%)`,
+    );
+    console.log(`   - Discounted Subtotal: ₹${orderTotals.finalTotal}`);
 
     // Build order items with pricing details
     for (let i = 0; i < cartItems.length; i++) {
@@ -169,7 +464,7 @@ export const createEcomOrder = async (req, res) => {
         product: new mongoose.Types.ObjectId(item.product._id),
         productName: item.product.name,
         variant: {
-          variantId: item.variant._id,
+          variantId: item.variant._id || null,
           size: item.variant.size,
           color: item.variant.color,
           material: item.variant.material,
@@ -186,15 +481,17 @@ export const createEcomOrder = async (req, res) => {
     }
 
     // Calculate additional charges
-    const subtotal = orderTotals.finalTotal; // Use discounted total as subtotal
-    const shippingCharge = subtotal > 500 ? 0 : 50; // Free shipping above 500
-    const tax = parseFloat((subtotal * 0.18).toFixed(2)); // 18% GST
-    const discount = orderTotals.totalDiscount; // Total discount from role-based pricing
+    const subtotal = orderTotals.finalTotal;
+    const shippingCharge = subtotal > 500 ? 0 : 50;
+    const tax = parseFloat((subtotal * 0.18).toFixed(2));
+    const discount = orderTotals.totalDiscount;
     const totalAmount = subtotal + shippingCharge + tax;
 
     // Create order
     const newOrder = new EcomOrder({
-      clinic: clinicId,
+      clinic: actualClinicId,
+      user: actualUserId,
+      buyerType: buyerType,
       clinicDetails,
       items: orderItems,
       shippingAddress,
@@ -202,15 +499,16 @@ export const createEcomOrder = async (req, res) => {
         method: paymentMethod,
         status: paymentMethod === "COD" ? "PENDING" : "PENDING",
       },
-      subtotal: orderTotals.subtotal, // Original subtotal before discount
+      subtotal: orderTotals.subtotal,
       shippingCharge,
       tax,
       discount,
       totalAmount,
       orderNotes: orderNotes || "",
-      estimatedDelivery: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
+      estimatedDelivery: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       userRole: userRole,
       isClinicDoctor: isClinicDoctor,
+      hasActiveSubscription: hasActiveSubscription,
       discountPercentage: orderTotals.discountPercentage,
     });
 
@@ -220,6 +518,30 @@ export const createEcomOrder = async (req, res) => {
       success: true,
       message: "Order created successfully",
       data: newOrder,
+      pricingInfo: {
+        buyerType: buyerType,
+        role: userRole,
+        isClinicDoctor: isClinicDoctor,
+        hasActiveSubscription: hasActiveSubscription,
+        qualifiesForD1: qualifiesForD1Discount(
+          userRole,
+          isClinicDoctor,
+          hasActiveSubscription,
+        ), // ✅ Use helper function
+        qualifiesForD2: qualifiesForD2Discount(
+          userRole,
+          isClinicDoctor,
+          hasActiveSubscription,
+        ), // ✅ Add this for clarity
+        discountApplied: orderTotals.discountPercentage > 0,
+        discountType: qualifiesForD1Discount(
+          userRole,
+          isClinicDoctor,
+          hasActiveSubscription,
+        )
+          ? "D1"
+          : "D2", // ✅ Show which discount
+      },
       pricing: {
         originalSubtotal: orderTotals.subtotal,
         totalDiscount: orderTotals.totalDiscount,
@@ -385,7 +707,6 @@ export const updateEcomOrderStatus = async (req, res) => {
       "RETURNED",
     ];
 
-    // ✅ Validate status
     if (orderStatus && !validStatuses.includes(orderStatus)) {
       return res.status(400).json({
         success: false,
@@ -393,80 +714,30 @@ export const updateEcomOrderStatus = async (req, res) => {
       });
     }
 
-    // 🔍 Fetch existing order
-    const existingOrder = await EcomOrder.findById(orderId);
-    if (!existingOrder) {
+    const updateData = {};
+    if (orderStatus) updateData.orderStatus = orderStatus;
+    if (trackingNumber) updateData.trackingNumber = trackingNumber;
+
+    const order = await EcomOrder.findByIdAndUpdate(orderId, updateData, {
+      new: true,
+      runValidators: true,
+    });
+
+    if (!order) {
       return res.status(404).json({
         success: false,
         message: "Order not found",
       });
     }
 
-    // 🛑 Prevent double delivery
-    if (
-      existingOrder.orderStatus === "DELIVERED" &&
-      orderStatus === "DELIVERED"
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Order already delivered",
-      });
-    }
-
-    // 🧩 Prepare update
-    const updateData = {};
-    if (orderStatus) updateData.orderStatus = orderStatus;
-    if (trackingNumber) updateData.trackingNumber = trackingNumber;
-
-    // ✅ Update order
-    const order = await EcomOrder.findByIdAndUpdate(orderId, updateData, {
-      new: true,
-      runValidators: true,
-    });
-    console.log(order);
-    const isFirstDelivery =
-      orderStatus === "DELIVERED" &&
-      existingOrder.orderStatus !== "DELIVERED" &&
-      !existingOrder.inventorySynced;
-
-    // 🔥 INVENTORY SYNC (ONLY ON FIRST DELIVERY)
-    // 🔥 INVENTORY SYNC (ONLY ON FIRST DELIVERY)
-    if (isFirstDelivery) {
-      try {
-        const syncURL = `${process.env.CLINIC_INVENTORY_SERVICE_URL}/assign/inventory/assign`;
-
-        // ✅ Assign to variable first
-        const payload = {
-          orderId: existingOrder._id,
-          clinicId: existingOrder.clinic,
-          items: existingOrder.items.map((item) => ({
-            productId: item.product?._id || item.product,
-            productName: item.productName || item.name,
-            quantity: Number(item.quantity),
-          })),
-        };
-
-        console.log("🔄 Syncing inventory...");
-        console.log("URL:", syncURL);
-        console.log("Payload:", JSON.stringify(payload, null, 2));
-
-        await axios.post(syncURL, payload, { timeout: 5000 });
-
-        // ✅ Mark as synced
-        await EcomOrder.findByIdAndUpdate(orderId, { inventorySynced: true });
-      } catch (err) {
-        // ... your existing catch block
-        console.log(err)
-      }
-    }
-    return res.status(200).json({
+    res.status(200).json({
       success: true,
       message: "Order status updated successfully",
       data: order,
     });
   } catch (error) {
     console.error("Update Ecom Order Status Error:", error);
-    return res.status(500).json({
+    res.status(500).json({
       success: false,
       message: "Failed to update order status",
       error: error.message,
@@ -557,10 +828,18 @@ export const cancelEcomOrder = async (req, res) => {
     for (const item of order.items) {
       const product = await Product.findById(item.product);
       if (product) {
-        const variant = product.variants.id(item.variant.variantId);
-        if (variant) {
-          variant.stock += item.quantity;
+        // ✅ Handle products without variants
+        if (!item.variant.variantId) {
+          product.stock += item.quantity;
           await product.save();
+        }
+        // ✅ Handle products with variants
+        else {
+          const variant = product.variants.id(item.variant.variantId);
+          if (variant) {
+            variant.stock += item.quantity;
+            await product.save();
+          }
         }
       }
     }
@@ -718,24 +997,126 @@ export const getEcomOrderAnalytics = async (req, res) => {
   }
 };
 
-export const getDeliveredProducts = async (req, res) => {
-  const { clinicId } = req.params;
+export const updateOrderStatus = async (req, res) => {
   try {
-    const orders = await EcomOrder.find({
-      clinic: clinicId,
-      orderStatus: "DELIVERED",
-    }).populate("items.product", "name image");
-    res.status(200).json({
+    const { orderId } = req.params;
+    const { status, cancellationReason } = req.body;
+
+    // ✅ Allow only these two
+    if (!["DELIVERED", "CANCELLED"].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Only DELIVERED or CANCELLED status allowed"
+      });
+    }
+
+    const order = await EcomOrder.findById(orderId);
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found"
+      });
+    }
+
+    // 🚫 Prevent modifying final state
+    if (["DELIVERED", "CANCELLED", "RETURNED"].includes(order.orderStatus)) {
+      return res.status(400).json({
+        success: false,
+        message: `Order already ${order.orderStatus}`
+      });
+    }
+
+    // ===============================
+    // 🔴 If Cancelling
+    // ===============================
+    if (status === "CANCELLED") {
+
+      if (!cancellationReason) {
+        return res.status(400).json({
+          success: false,
+          message: "Cancellation reason is required"
+        });
+      }
+
+      order.orderStatus = "CANCELLED";
+      order.cancellationReason = cancellationReason;
+
+      // 💰 Auto refund logic (if payment was PAID)
+      if (order.paymentDetails.status === "PAID") {
+        order.paymentDetails.status = "REFUNDED";
+      }
+    }
+
+    // ===============================
+    // 🟢 If Delivering
+    // ===============================
+    if (status === "DELIVERED") {
+      order.orderStatus = "DELIVERED";
+
+      // If COD and delivered → mark as PAID
+      if (order.paymentDetails.method === "COD") {
+        order.paymentDetails.status = "PAID";
+        order.paymentDetails.paidAt = new Date();
+      }
+    }
+
+    await order.save(); // triggers your pre-save hooks
+
+    return res.status(200).json({
       success: true,
-      message: "Products for delivery retrieved successfully",
-      data: orders,
+      message: `Order marked as ${status}`,
+      data: order
     });
+
   } catch (error) {
-    console.error("Get Products for Delivery Error:", error);
-    res.status(500).json({
+    console.error("Update Order Status Error:", error);
+    return res.status(500).json({
       success: false,
-      message: "Failed to retrieve products for delivery",
-      error: error.message,
+      message: "Server error"
     });
   }
 };
+export const getDeliveredProducts = async (req, res) => {
+  const { clinicId } = req.params;
+
+  // 👉 Get page from query (default = 1)
+  const page = parseInt(req.query.page) || 1;
+  const limit = 10;
+
+  try {
+    // 👉 Count total delivered orders
+    const totalOrders = await EcomOrder.countDocuments({
+      clinic: clinicId,
+      orderStatus: "DELIVERED"
+    });
+
+    // 👉 Fetch paginated orders
+    const orders = await EcomOrder.find({
+      clinic: clinicId,
+      orderStatus: "DELIVERED"
+    })
+      .populate("items.product", "name image")
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .sort({ createdAt: -1 }); // latest first
+
+    res.status(200).json({
+      success: true,
+      message: "Delivered products retrieved successfully",
+      currentPage: page,
+      totalPages: Math.ceil(totalOrders / limit),
+      totalOrders,
+      data: orders
+    });
+
+  } catch (error) {
+    console.error("Get Delivered Products Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to retrieve delivered products",
+      error: error.message
+    });
+  }
+};
+
