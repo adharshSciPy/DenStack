@@ -109,7 +109,15 @@ const token = crypto.randomBytes(24).toString("hex");
 
     // 6️⃣ Check if patient already exists in this clinic
     let parentPatient = await Patient.findOne({ clinicId, phone });
-
+if (
+  parentPatient &&
+  parentPatient.name.trim().toLowerCase() === name.trim().toLowerCase()
+) {
+  return res.status(400).json({
+    success: false,
+    message: "Patient already exists with same name and phone in this clinic."
+  });
+}
     // 7️⃣ Create new patient
     const newPatient = new Patient({
       clinicId,

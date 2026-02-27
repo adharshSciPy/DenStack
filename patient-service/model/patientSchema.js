@@ -4,6 +4,8 @@ import dotenv from "dotenv";
 // import { TOOTH_CONDITIONS } from "../middleware/toothSurfaceAndConditions";
 import { Schema } from "mongoose";
 import {  TOOTH_SURFACES} from "../middleware/toothSurfaceAndConditions.js";
+import ClinicCounter from "./clinicCounterSchema.js";
+
 
 dotenv.config();
 const AUTH_SERVICE_BASE_URL = process.env.AUTH_SERVICE_BASE_URL;
@@ -340,6 +342,16 @@ patientSchema.pre("save", async function (next) {
 
       const count = await Patient.countDocuments({ clinicId: this.clinicId });
       this.patientUniqueId = `${prefix}-${String(count + 1).padStart(5, "0")}`;
+// const counter = await ClinicCounter.findOneAndUpdate(
+//   { clinicId: this.clinicId },
+//   { $inc: { seq: 1 } },
+//   { new: true, upsert: true }
+// );
+
+// const nextNumber = counter.seq;
+
+// this.patientUniqueId = `${prefix}-${String(nextNumber).padStart(5, "0")}`;
+
     }
 
   } catch (err) {
