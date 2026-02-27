@@ -170,7 +170,7 @@ const createProduct = async (req, res) => {
       brand: brandId,
       image: imagePath,
       expiryDate: expiryDate ? new Date(expiryDate) : undefined,
-      addedById: req.user.id, // Use req.user.id instead of req.user._id
+      addedById: req.user.id,
       addedByType
     });
 
@@ -191,7 +191,6 @@ const createProduct = async (req, res) => {
   } catch (error) {
     console.error("Create Product Error:", error);
 
-    // Handle validation errors from pre-save hooks
     if (error.message.includes("Invalid Sub Category") ||
       error.message.includes("Sub Category has no parent") ||
       error.message.includes("does not belong to selected Main Category")) {
@@ -337,7 +336,6 @@ const updateProduct = async (req, res) => {
           message: "Provided sub category has no parent",
         });
 
-      // Ensure subcategory belongs to mainCategory (new if updated, else old)
       const finalMain = mainCategory || product.mainCategory;
 
       if (String(subCat.parentCategory) !== String(finalMain)) {
@@ -351,17 +349,14 @@ const updateProduct = async (req, res) => {
 
     let imagePaths = [];
 
-    // If single image uploaded using "image"
     if (req.files?.image && req.files.image.length > 0) {
       imagePaths = [`/uploads/${req.files.image[0].filename}`];
     }
 
-    // If multiple images uploaded using "images"
     if (req.files?.images && req.files.images.length > 0) {
       imagePaths = req.files.images.map((file) => `/uploads/${file.filename}`);
     }
 
-    // Replace old images only if new ones provided
     if (imagePaths.length > 0) {
       product.image = imagePaths;
     }
@@ -404,16 +399,11 @@ const getProductsByIds = async (req, res) => {
   try {
     const { productIds, search } = req.body;
 
-    // Base filter
     let filter = { _id: { $in: productIds } };
 
-    // Add search filter if provided
     if (search && search.trim() !== "") {
       filter.$or = [
         { name: { $regex: search, $options: "i" } },
-
-        // Search by brand name
-        // (brand is an ObjectId so we use populate + match)
       ];
     }
 
@@ -422,15 +412,14 @@ const getProductsByIds = async (req, res) => {
         path: "brand",
         match: search
           ? { name: { $regex: search, $options: "i" } }
-          : {}, // apply search to brand name
+          : {},
       })
       .populate("mainCategory")
       .populate("subCategory");
 
-    // ❗ Remove products whose brand did NOT match search
     const filteredProducts = products.filter((p) => {
-      if (!search) return true; // if no search, return all
-      if (p.brand) return true; // brand matched
+      if (!search) return true;
+      if (p.brand) return true;
       if (p.name?.toLowerCase().includes(search.toLowerCase())) return true;
       return false;
     });
@@ -443,19 +432,15 @@ const getProductsByIds = async (req, res) => {
 
 const getProductDashboardMetrics = async (req, res) => {
   try {
-    // Total Products
     const totalProducts = await Product.countDocuments();
 
-    // Avg Rating
     const avgRatingData = await Product.aggregate([
       { $group: { _id: null, avg: { $avg: "$rating" } } }
     ]);
     const avgRating = avgRatingData[0]?.avg || 0;
 
-    // Low stock (<10)
     const lowStockCount = await Product.countDocuments({ stock: { $lt: 10 } });
 
-    // Inventory Value
     const inventoryValueData = await Product.aggregate([
       {
         $group: {
@@ -493,20 +478,15 @@ const getProductInventoryList = async (req, res) => {
       productId: item.productId,
       name: item.name,
       image: item.image?.[0] || "",
-
       brand: item.brand?.name,
       mainCategory: item.mainCategory?.name,
       subCategory: item.subCategory?.name || null,
-
       price: item.price,
       stock: item.stock,
       status: item.status,
-
-      // Margin only works if cost exists (optional)
       margin: item.cost
         ? Math.round(((item.price - item.cost) / item.price) * 100)
         : null,
-
       rating: item.rating || 0,
       isLowStock: item.isLowStock,
     }));
@@ -521,7 +501,9 @@ const getProductInventoryList = async (req, res) => {
   }
 };
 
-// favorites
+// ============================================
+// FAVORITES
+// ============================================
 
 /**
  * @route   GET /api/favorites
@@ -530,9 +512,12 @@ const getProductInventoryList = async (req, res) => {
  */
 const getFavorites = async (req, res) => {
   try {
-    const userId = req.user.clinicId;
-    console.log(userId);
-    
+    const userId = req.user.id || req.user.clinicId;
+
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "User not identified" });
+    }
+
     const favorites = await Favourite.find({ user: userId })
       .populate({
         path: "product",
@@ -545,13 +530,14 @@ const getFavorites = async (req, res) => {
       })
       .sort({ addedAt: -1 });
 
-    // Transform the response
-    const formattedFavorites = favorites.map(fav => ({
-      _id: fav._id,
-      product: fav.product,
-      variantId: fav.variantId,
-      addedAt: fav.addedAt
-    }));
+    const formattedFavorites = favorites
+      .filter(fav => fav.product !== null) // ✅ skip deleted products
+      .map(fav => ({
+        _id: fav._id,
+        product: fav.product,
+        variantId: fav.variantId,
+        addedAt: fav.addedAt
+      }));
 
     res.status(200).json({
       success: true,
@@ -569,20 +555,20 @@ const getFavorites = async (req, res) => {
 
 /**
  * @route   POST /api/favorites/:productId
- * @desc    Add product to favorites
+ * @desc    Add product to favorites (toggles like/unlike)
  * @access  Private
  */
 const addFavorite = async (req, res) => {
   try {
- 
-    if (!req.user || !req.user.clinicId) {
+    const userId = req.user.id || req.user.clinicId; // ✅ fixed
+
+    if (!userId) {
       return res.status(401).json({
         success: false,
         message: "Unauthorized",
       });
     }
 
-    const userId = req.user.clinicId;
     const { productId } = req.params;
     const { variantId } = req.body || {};
 
@@ -647,8 +633,6 @@ const addFavorite = async (req, res) => {
   }
 };
 
-
-
 /**
  * @route   DELETE /api/favorites/id/:favoriteId
  * @desc    Remove favorite by its ID
@@ -656,7 +640,12 @@ const addFavorite = async (req, res) => {
  */
 const removeFavoriteById = async (req, res) => {
   try {
-    const userId = req.user.clinicId;
+    const userId = req.user.id || req.user.clinicId; // ✅ fixed
+
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "User not identified" });
+    }
+
     const { favoriteId } = req.params;
 
     const favorite = await Favourite.findOneAndDelete({
@@ -692,7 +681,12 @@ const removeFavoriteById = async (req, res) => {
  */
 const checkFavorite = async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user.id || req.user.clinicId; // ✅ fixed
+
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "User not identified" });
+    }
+
     const { productId } = req.params;
 
     const favorite = await Favourite.findOne({
@@ -718,9 +712,6 @@ const checkFavorite = async (req, res) => {
   }
 };
 
-
-
-
 export {
   createProduct,
   productDetails,
@@ -729,6 +720,11 @@ export {
   getProductsByBrand,
   updateProduct,
   deleteProduct,
-  getProductsByIds, getProductDashboardMetrics, getProductInventoryList,
-  getFavorites, addFavorite, removeFavoriteById, checkFavorite
+  getProductsByIds,
+  getProductDashboardMetrics,
+  getProductInventoryList,
+  getFavorites,
+  addFavorite,
+  removeFavoriteById,
+  checkFavorite
 };
