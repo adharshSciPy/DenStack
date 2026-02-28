@@ -735,17 +735,47 @@ const getTheme = async (req, res) => {
 
 const editTheme = async (req, res) => {
   try {
-    const { startColor, endColor, primaryForeground, sidebarForeground, secondary } = req.body;
+    const {
+      key,
+      primaryForeground,
+      sidebarForeground,
+      secondary,
+    } = req.body;
+
+    const allowedThemes = [
+      "light1","light2","light3","light4","light5",
+      "dark1","dark2",
+    ];
+
+    if (!allowedThemes.includes(key)) {
+      return res.status(400).json({ message: "Invalid theme key" });
+    }
+
     const clinic = await Clinic.findByIdAndUpdate(
       req.params.clinicId,
-      { theme: { startColor, endColor, primaryForeground, sidebarForeground, secondary } },
+      {
+        theme: {
+          key,
+          primaryForeground,
+          sidebarForeground,
+          secondary,
+        },
+      },
       { new: true }
     );
-    res.json({ message: "Theme updated successfully", theme: clinic.theme });
+
+    if (!clinic) {
+      return res.status(404).json({ message: "Clinic not found" });
+    }
+
+    res.json({
+      message: "Theme updated successfully",
+      theme: clinic.theme,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
-}
+};
 const subscribeClinic = async (req, res) => {
   try {
     const { id } = req.params;
