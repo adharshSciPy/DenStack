@@ -11,71 +11,107 @@ import bcrypt from "bcrypt";
 // ====== Register Nurse ======
 // ====== Register Nurse ======
 const registerTechnician = async (req, res) => {
-  const { name, email, phoneNumber, password, clinicId, labVendorId } =
-    req.body;
+  const {
+    name,
+    email,
+    phoneNumber,
+    password,
+    clinicId,
+    labVendorId,
+    labType: incomingLabType, // ALIGNER / EXTERNAL comes from frontend
+  } = req.body;
+
   console.log("this", req.body);
 
   try {
-    // Validate required fields
+    // 🔹 Basic validations
     if (!name || !nameValidator(name)) {
       return res.status(400).json({ message: "Invalid name" });
     }
+
     if (!email || !emailValidator(email)) {
       return res.status(400).json({ message: "Invalid email" });
     }
+
     if (!phoneNumber || !phoneValidator(phoneNumber)) {
       return res.status(400).json({ message: "Invalid phone number" });
     }
+
     if (!password || !passwordValidator(password)) {
       return res.status(400).json({ message: "Invalid password" });
     }
-    if (!clinicId) {
-      return res.status(400).json({ message: "Clinic ID is required" });
-    }
 
-    // Check if clinic exists
-    const clinic = await Clinic.findById(clinicId);
-    if (!clinic) {
-      return res.status(404).json({ message: "Clinic not found" });
-    }
-    if (!clinic.features?.canAddStaff?.technicians) {
-      return res.status(403).json({
-        message:
-          "This clinic’s current plan does not allow adding technicians.",
-      });
-    }
-    // Check if nurse email/phone already exists
-    const existingTechnicianEmail = await Technician.findOne({ email });
-    if (existingTechnicianEmail) {
+    // 🔹 Duplicate checks
+    if (await Technician.findOne({ email })) {
       return res.status(400).json({ message: "Email already exists" });
     }
 
-    const existingTechnicianPhone = await Technician.findOne({ phoneNumber });
-    if (existingTechnicianPhone) {
+    if (await Technician.findOne({ phoneNumber })) {
       return res.status(400).json({ message: "Phone number already exists" });
     }
 
-    // Create nurse
+    let clinic = null;
+    let labType = null;
+
+    // 🔹 CASE 1: Clinic technician → INHOUSE
+    if (clinicId) {
+      clinic = await Clinic.findById(clinicId);
+
+      if (!clinic) {
+        return res.status(404).json({ message: "Clinic not found" });
+      }
+
+      if (!clinic.features?.canAddStaff?.technicians) {
+        return res.status(403).json({
+          message:
+            "This clinic’s current plan does not allow adding technicians.",
+        });
+      }
+
+      labType = "inHouse";
+    }
+
+    // 🔹 CASE 2: No clinic → ALIGNER / EXTERNAL
+    if (!clinicId) {
+      if (
+        !incomingLabType ||
+        !["aligner", "external"].includes(incomingLabType)
+      ) {
+        return res.status(400).json({
+          message:
+            "labType must be ALIGNER or EXTERNAL for non-clinic technicians",
+        });
+      }
+
+      labType = incomingLabType;
+    }
+
+    // 🔹 Create technician
     const newTechnician = new Technician({
       name,
       email,
       phoneNumber,
       password,
-      clinicId,
+      clinicId: clinicId || null,
       labVendorId: labVendorId || null,
+      labType, // ✅ derived strictly by backend
     });
 
     await newTechnician.save();
 
-    // Push nurse _id into clinic.staffs.nurses
-    clinic.staffs.technicians.push(newTechnician._id);
-    await clinic.save();
+    // 🔹 Push technician into clinic staff
+    if (clinicId) {
+      await Clinic.updateOne(
+        { _id: clinicId },
+        { $push: { "staffs.technicians": newTechnician._id } },
+      );
+    }
 
-    // Generate tokens
+    // 🔹 Tokens
     const accessToken = newTechnician.generateAccessToken();
     const refreshToken = newTechnician.generateRefreshToken();
 
-    res.status(200).json({
+    return res.status(200).json({
       message: "Technician registered successfully",
       Technician: {
         id: newTechnician._id,
@@ -84,24 +120,31 @@ const registerTechnician = async (req, res) => {
         phoneNumber: newTechnician.phoneNumber,
         role: newTechnician.role,
         technicianId: newTechnician.technicianId,
+        clinicId: newTechnician.clinicId,
+        labVendorId: newTechnician.labVendorId,
+        labType: newTechnician.labType,
       },
-      clinic: {
-        id: clinic._id,
-        name: clinic.name,
-        staffs: clinic.staffs,
-      },
+      clinic: clinic
+        ? {
+            id: clinic._id,
+            name: clinic.name,
+          }
+        : null,
       accessToken,
       refreshToken,
     });
   } catch (error) {
-    console.error("❌ Error in registerNurse:", error);
+    console.error("❌ Error in registerTechnician:", error);
 
     if (error.code === 11000) {
       const field = Object.keys(error.keyPattern)[0];
       return res.status(400).json({ message: `${field} already exists` });
     }
 
-    res.status(500).json({ message: "Server error", error: error.message });
+    return res.status(500).json({
+      message: "Server error",
+      error: error.message,
+    });
   }
 };
 
@@ -142,6 +185,7 @@ const loginTechnician = async (req, res) => {
         nurseId: technician.nurseId,
         clinicId: technician.clinicId,
         labVendorId: technician.labVendorId,
+        labType: technician.labType,
       },
       accessToken,
       refreshToken,

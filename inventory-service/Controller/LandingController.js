@@ -2357,17 +2357,30 @@ export const addProduct = async (req, res) => {
         });
       }
 
-      // Handle image upload
+      // ✅ Handle MAIN PRODUCT image upload
+      // Expected field names: "image" or "images"
       let imageUrls = [];
       if (req.files) {
-        if (req.files.image && req.files.image.length > 0) {
-          imageUrls = req.files.image.map(
-            (file) => `/uploads/landing/${file.filename}`,
-          );
-        } else if (req.files.images && req.files.images.length > 0) {
-          imageUrls = req.files.images.map(
-            (file) => `/uploads/landing/${file.filename}`,
-          );
+        const allFiles = Array.isArray(req.files) ? req.files : [];
+
+        if (!Array.isArray(req.files)) {
+          // req.files is an object (fields-based multer)
+          if (req.files.image && req.files.image.length > 0) {
+            imageUrls = req.files.image.map(
+              (file) => `/uploads/landing/${file.filename}`
+            );
+          } else if (req.files.images && req.files.images.length > 0) {
+            imageUrls = req.files.images.map(
+              (file) => `/uploads/landing/${file.filename}`
+            );
+          }
+        } else {
+          // req.files is a flat array (upload.any())
+          imageUrls = req.files
+            .filter(
+              (f) => f.fieldname === "image" || f.fieldname === "images"
+            )
+            .map((file) => `/uploads/landing/${file.filename}`);
         }
       }
 
@@ -2377,7 +2390,7 @@ export const addProduct = async (req, res) => {
           .json({ message: "At least one product image is required" });
       }
 
-      // ✅ Calculate MAIN PRODUCT pricing (ALWAYS STORE THIS)
+      // ✅ Calculate MAIN PRODUCT pricing
       const original = parseFloat(originalPrice);
       const clinicDiscount = clinicDiscountPrice
         ? parseFloat(clinicDiscountPrice)
@@ -2393,11 +2406,11 @@ export const addProduct = async (req, res) => {
         ? (((original - doctorDiscount) / original) * 100).toFixed(2)
         : null;
 
-      // ✅ Process variants (if provided)
+      // ✅ Process variants with per-variant images
       let processedVariants = [];
 
       if (variants && Array.isArray(variants) && variants.length > 0) {
-        processedVariants = variants.map((variant) => {
+        processedVariants = variants.map((variant, index) => {
           const variantOriginal = parseFloat(variant.originalPrice);
           const variantClinicDiscount = variant.clinicDiscountPrice
             ? parseFloat(variant.clinicDiscountPrice)
@@ -2420,10 +2433,30 @@ export const addProduct = async (req, res) => {
               ).toFixed(2)
             : null;
 
+          // ✅ Pick images for this variant by index
+          // Frontend should send files with field name: "variantImages_0", "variantImages_1", etc.
+          let variantImageUrls = [];
+          const variantImageKey = `variantImages_${index}`;
+
+          if (req.files) {
+            if (Array.isArray(req.files)) {
+              // upload.any() — flat array
+              variantImageUrls = req.files
+                .filter((f) => f.fieldname === variantImageKey)
+                .map((f) => `/uploads/landing/${f.filename}`);
+            } else if (req.files[variantImageKey]) {
+              // upload.fields() — object keyed by fieldname
+              variantImageUrls = req.files[variantImageKey].map(
+                (f) => `/uploads/landing/${f.filename}`
+              );
+            }
+          }
+
           return {
             size: variant.size || null,
             color: variant.color || null,
             material: variant.material || null,
+            image: variantImageUrls, // ✅ Variant images
             originalPrice: variantOriginal,
             clinicDiscountPrice: variantClinicDiscount,
             doctorDiscountPrice: variantDoctorDiscount,
@@ -2438,14 +2471,14 @@ export const addProduct = async (req, res) => {
         });
       }
 
-      // ✅ Parse stock properly - handle undefined, null, empty string, and NaN
-      let parsedStock = 0; // Default to 0
-      if (stock !== undefined && stock !== null && stock !== '') {
+      // ✅ Parse stock properly
+      let parsedStock = 0;
+      if (stock !== undefined && stock !== null && stock !== "") {
         const stockNum = parseInt(stock);
         parsedStock = isNaN(stockNum) ? 0 : stockNum;
       }
 
-      // ✅ Create new product - ALWAYS store main product pricing
+      // ✅ Create new product
       const newProduct = new Product({
         name,
         description: description || "",
@@ -2453,7 +2486,7 @@ export const addProduct = async (req, res) => {
         subCategory: subCategoryId,
         brand: brandId,
 
-        // ✅ Main product pricing (ALWAYS STORED - admin can set discounts here)
+        // Main product pricing
         originalPrice: original,
         clinicDiscountPrice: clinicDiscount,
         doctorDiscountPrice: doctorDiscount,
@@ -2463,9 +2496,9 @@ export const addProduct = async (req, res) => {
         doctorDiscountPercentage: doctorDiscountPercentage
           ? parseFloat(doctorDiscountPercentage)
           : null,
-        stock: parsedStock, // ✅ Fixed - now properly handles all edge cases
+        stock: parsedStock,
 
-        // ✅ Variants (can be empty array if product has no variants)
+        // Variants
         variants: processedVariants,
 
         image: imageUrls,

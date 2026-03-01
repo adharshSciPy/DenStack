@@ -192,7 +192,7 @@ const getClinicProducts = async (req, res) => {
   try {
     const products = await ClinicInventoryModel.find({
       clinicId: clinicId,
-      inventoryType:"general",
+      inventoryType: "general",
     });
 
     return res.status(200).json({
@@ -207,10 +207,28 @@ const getClinicProducts = async (req, res) => {
     });
   }
 };
-
+const getLabProductsByLabVendorId = async (req, res) => {
+  const { labVendorId } = req.params;
+  try {
+    const products = await ClinicInventoryModel.find({
+      assignedTo: labVendorId,
+    });
+    return res.status(200).json({
+      message: "Lab products fetched successfully",
+      data: products,
+    });
+  } catch (error) {
+    console.error("Error fetching lab products:", error);
+    return res.status(500).json({
+      message: "Error fetching lab products",
+      error: error.message,
+    });
+  }
+};
 export {
   getProducts,
   getLowStockProducts,
   deleteInventoryItem,
   getClinicProducts,
+  getLabProductsByLabVendorId,
 };

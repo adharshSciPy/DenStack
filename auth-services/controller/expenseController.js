@@ -147,3 +147,67 @@ export const getMonthlyExpenseReport = async (req, res) => {
     return res.status(500).json({ success: false, error: error.message });
   }
 };
+
+export const getClinicExpensesByMonth = async (req, res) => {
+  try {
+    const { clinicId } = req.params;
+    let { month, year } = req.query;
+
+    // 🔹 Validate clinicId
+    if (!mongoose.Types.ObjectId.isValid(clinicId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid clinicId",
+      });
+    }
+
+    // 🔹 Validate month & year
+    month = Number(month);
+    year = Number(year);
+
+    if (!month || !year || month < 1 || month > 12) {
+      return res.status(400).json({
+        success: false,
+        message: "Valid month and year are required",
+      });
+    }
+
+    // 📅 Date range
+    const startDate = new Date(year, month - 1, 1, 0, 0, 0);
+    const endDate = new Date(year, month, 0, 23, 59, 59);
+
+    // 🔹 Fetch expenses
+    const expenses = await Expense.find({
+      clinicId,
+      paymentDate: {
+        $gte: startDate,
+        $lte: endDate,
+      },
+    })
+      .sort({ paymentDate: -1 })
+      .lean();
+
+    // 🔹 Total amount
+    const totalAmount = expenses.reduce(
+      (sum, exp) => sum + exp.amount,
+      0
+    );
+
+    res.status(200).json({
+      success: true,
+      clinicId,
+      month,
+      year,
+      totalAmount,
+      count: expenses.length,
+      data: expenses,
+    });
+  } catch (error) {
+    console.error("❌ getClinicExpensesByMonth error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while fetching expenses",
+      error: error.message,
+    });
+  }
+};

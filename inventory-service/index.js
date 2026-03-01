@@ -20,6 +20,7 @@ import userAccountRouter from "./Routes/userAccountRouter.js";
 import tokenCheckRouter from "./Controller/tokenCheck.js";
 
 import lowStockAlertsCron from "./middlewares/lowStockCron.js";
+import paymentRouter from "./Routes/paymentRoutes.js";
 
 dotenv.config();
 connectDB();
@@ -71,6 +72,7 @@ app.use("/api/v1/cart", cartRouter);
 app.use("/api/v1/event", eventRouter);
 app.use("/api/v1/userAccount", userAccountRouter);
 app.use("/api/v1/auth",tokenCheckRouter); 
+app.use('/api/v1/payment', paymentRouter);
 const PORT = process.env.PORT || 8004;
 app.listen(PORT, () => {
   console.log(`✅ Server running on port:${PORT}`);

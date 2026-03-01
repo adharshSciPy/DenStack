@@ -44,7 +44,8 @@ const alignerOrderSchema = new mongoose.Schema(
         "manufacturing",
         "shipped",
         "in-treatment",
-        "completed"
+        "completed",
+        "cancelled"
       ],
       default: "draft"
     },

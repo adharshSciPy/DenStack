@@ -8,7 +8,8 @@ import {
   convertDicomToNifti,
 } from "../utils/dicomConverter.js";
 dotenv.config();
-
+import mongoose from "mongoose";
+import AlignerLabOrder from "../model/aligerModel.js";
 const { DOCTOR_SERVICE_URL, PATIENT_SERVICE_URL } = process.env;
 export const createDentalLabOrder = async (req, res) => {
   try {
@@ -268,13 +269,98 @@ export const uploadLabResults = async (req, res) => {
 export const getLabOrdersByLabVendor = async (req, res) => {
   try {
     const { labVendorId } = req.params;
-    const orders = await DentalLabOrder.find({ vendor: labVendorId });
-    res.status(200).json({ orders });
+    const { cursor, limit = 10, status, search } = req.query;
+
+    // Step 1: Base match condition
+    let matchCondition = {
+      vendor: labVendorId,
+    };
+
+    if (status && status !== "all") {
+      matchCondition.status = status;
+    }
+
+    if (search) {
+      matchCondition.$or = [
+        { patientname: { $regex: search, $options: "i" } },
+        { doctorName: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    if (cursor) {
+      matchCondition.createdAt = { $lte: new Date(cursor) };
+    }
+    
+    // Step 2: Fetch orders (cursor pagination)
+    let orders = await DentalLabOrder.find(matchCondition)
+      .sort({ createdAt: -1 })
+      .limit(Number(limit) + 1);
+
+    let hasNextPage = orders.length > limit;
+    let nextCursor = null;
+
+    if (hasNextPage) {
+      nextCursor = orders[limit].createdAt.toISOString();
+      orders.pop();
+    }
+
+    // Step 3: Collect unique doctor & patient IDs
+    const uniqueDoctorIds = [
+      ...new Set(orders.map((o) => o.dentist).filter(Boolean)),
+    ];
+
+    const uniquePatientIds = [
+      ...new Set(orders.map((o) => o.patientName).filter(Boolean)),
+    ];
+
+    const doctorCache = {};
+    const patientCache = {};
+  console.log(uniqueDoctorIds);
+
+    // Step 4: Fetch doctor details
+    for (let id of uniqueDoctorIds) {
+      try {
+        const resp = await axios.get(
+          `${DOCTOR_SERVICE_URL}/api/v1/auth/doctor/details/${id}`
+        );
+        doctorCache[id] = resp.data?.data?.name || null;
+      } catch {
+        doctorCache[id] = null;
+      }
+    }
+
+    // Step 5: Fetch patient details
+    for (let id of uniquePatientIds) {
+      try {
+        const resp = await axios.get(
+          `${PATIENT_SERVICE_URL}/api/v1/patient-service/patient/details/${id}`
+        );
+        patientCache[id] = resp.data?.data?.name || null;
+      } catch {
+        patientCache[id] = null;
+      }
+    }
+
+    // Step 6: Merge names into orders
+    const finalOrders = orders.map((order) => ({
+      ...order.toObject(),
+      doctorName: doctorCache[order.dentist] || "",
+      patientname: patientCache[order.patientName] || "",
+    }));
+
+    return res.status(200).json({
+      count: finalOrders.length,
+      labOrders: finalOrders,
+      hasNextPage,
+      nextCursor,
+      message: "Lab orders fetched successfully",
+    });
   } catch (error) {
     console.error("Error fetching lab orders by vendor:", error);
-    res
-      .status(500)
-      .json({ message: "Internal server error", error: error.message });
+    return res.status(500).json({
+      message: "Internal server error",
+      error: error.message,
+    });
   }
 };
 
@@ -429,7 +515,69 @@ export const getLabStatsUsingClinicId = async (req, res) => {
     });
   }
 };
+export const getLabStatsUsingLabVendorId = async (req, res) => {
+  try {
+    const { labVendorId } = req.params;
 
+    if (!mongoose.Types.ObjectId.isValid(labVendorId)) {
+      return res.status(400).json({ message: "Invalid labVendorId" });
+    }
+
+    const [result] = await DentalLabOrder.aggregate([
+      {
+        $match: {
+          vendor: new mongoose.Types.ObjectId(labVendorId),
+        },
+      },
+      {
+        $facet: {
+          // 🔹 Latest 5 lab orders
+          latestOrders: [
+            { $sort: { createdAt: -1 } },
+            { $limit: 5 },
+          ],
+
+          // 🔹 Order stats
+          stats: [
+            {
+              $group: {
+                _id: null,
+                totalOrders: { $sum: 1 },
+                pendingCount: {
+                  $sum: {
+                    $cond: [{ $eq: ["$status", "pending"] }, 1, 0],
+                  },
+                },
+                completedCount: {
+                  $sum: {
+                    $cond: [{ $eq: ["$status", "ready"] }, 1, 0],
+                  },
+                },
+              },
+            },
+          ],
+        },
+      },
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      labVendorId,
+      latestOrders: result.latestOrders,
+      stats: result.stats[0] || {
+        totalOrders: 0,
+        pendingCount: 0,
+        completedCount: 0,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching lab stats by lab vendor ID:", error);
+    return res.status(500).json({
+      message: "Internal server error",
+      error: error.message,
+    });
+  }
+};
 export const getMonthlyInHouseLabRevenue = async (req, res) => {
   try {
     const { clinicId } = req.params;
@@ -542,6 +690,158 @@ export const getLatestLabOrdersByClinicId = async (req, res) => {
     return res.status(500).json({
       message: "Internal server error",
       error: error.message,
+    });
+  }
+};
+
+export const getAlignerLabOrdersByLabVendor = async (req, res) => {
+  try {
+    const { labVendorId } = req.params;
+    const { cursor, limit = 10, status } = req.query;
+
+    if (!labVendorId) {
+      return res.status(400).json({
+        message: "labVendorId is required",
+      });
+    }
+
+    // 🔹 Base filter
+    const matchCondition = {
+      vendorId: labVendorId,
+    };
+
+    if (status && status !== "all") {
+      matchCondition.status = status;
+    }
+
+    if (cursor) {
+      matchCondition.createdAt = { $lt: new Date(cursor) };
+    }
+
+    // 🔹 Fetch orders (cursor pagination)
+    let orders = await AlignerLabOrder.find(matchCondition)
+      .sort({ createdAt: -1 })
+      .limit(Number(limit) + 1);
+
+    const hasNextPage = orders.length > limit;
+    let nextCursor = null;
+
+    if (hasNextPage) {
+      nextCursor = orders[limit].createdAt.toISOString();
+      orders.pop();
+    }
+
+    // 🔹 Collect unique IDs
+    const doctorIds = [
+      ...new Set(orders.map(o => o.doctorName).filter(Boolean)),
+    ];
+
+    const patientIds = [
+      ...new Set(orders.map(o => o.patientId).filter(Boolean)),
+    ];
+
+    const doctorCache = {};
+    const patientCache = {};
+
+    // 🔹 Fetch doctors (parallel)
+    await Promise.all(
+      doctorIds.map(async (id) => {
+        try {
+          const resp = await axios.get(
+            `${DOCTOR_SERVICE_URL}/api/v1/auth/doctor/details/${id}`
+          );
+          doctorCache[id] = resp.data?.data?.name || "";
+        } catch {
+          doctorCache[id] = "";
+        }
+      })
+    );
+
+    // 🔹 Fetch patients (parallel)
+    await Promise.all(
+      patientIds.map(async (id) => {
+        try {
+          const resp = await axios.get(
+            `${PATIENT_SERVICE_URL}/api/v1/patient-service/patient/details/${id}`
+          );
+          patientCache[id] = resp.data?.data?.name || "";
+        } catch {
+          patientCache[id] = "";
+        }
+      })
+    );
+
+    // 🔹 Merge resolved names
+    const finalOrders = orders.map(order => ({
+      ...order.toObject(),
+      doctorName: doctorCache[order.doctorName] || "",
+      patientName: patientCache[order.patientId] || "",
+    }));
+
+    return res.status(200).json({
+      count: finalOrders.length,
+      labOrders: finalOrders,
+      hasNextPage,
+      nextCursor,
+      message: "Lab orders fetched successfully",
+    });
+  } catch (error) {
+    console.error("Error fetching lab orders by vendor:", error);
+    return res.status(500).json({
+      message: "Internal server error",
+      error: error.message,
+    });
+  }
+};
+
+export const getMonthlyLabRevenueByVendor = async (req, res) => {
+  try {
+    const { labVendorId } = req.params;
+    let { month, year } = req.query;
+
+    if (!mongoose.Types.ObjectId.isValid(labVendorId)) {
+      return res.status(400).json({ message: "Invalid labVendorId" });
+    }
+
+    const now = new Date();
+    month = month ? Number(month) : now.getMonth() + 1;
+    year = year ? Number(year) : now.getFullYear();
+
+    // 📅 Month range
+    const startDate = new Date(year, month - 1, 1);
+    const endDate = new Date(year, month, 1);
+
+    const stats = await DentalLabOrder.aggregate([
+      {
+        $match: {
+          vendor: new mongoose.Types.ObjectId(labVendorId),
+          createdAt: { $gte: startDate, $lt: endDate },
+          status: { $ne: "cancelled" }, // optional but recommended
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalPrice: { $sum: "$price" },
+          totalOrders: { $sum: 1 },
+        },
+      },
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        totalPrice: stats[0]?.totalPrice || 0,
+        totalOrders: stats[0]?.totalOrders || 0,
+        month,
+        year,
+      },
+    });
+  } catch (error) {
+    console.error("Monthly lab revenue error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
     });
   }
 };

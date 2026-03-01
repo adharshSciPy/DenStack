@@ -47,7 +47,8 @@ export const getPatientCompleteBills = async (req, res) => {
         doctor: visit.doctor?.name,
         symptoms: visit.symptoms,
         diagnosis: visit.diagnosis,
-        isPaid: visit.isPaid || false
+        isPaid: visit.isPaid || false,
+        receptionistBilling: visit.receptionBilling || null
       }));
     } catch (error) {
       console.error("Error fetching patient history:", error.message);
@@ -853,35 +854,56 @@ export const syncConsultationToBilling = async (req, res) => {
 export const markConsultationAsPaid = async (req, res) => {
   try {
     const { patientHistoryId } = req.params;
-    const { amount, method, transactionId, receivedBy, notes } = req.body;
+    const {
+      amount,
+      method,
+      transactionId,
+      receivedBy,
+      notes,
+      patientId,
+      clinicId
+    } = req.body;
 
-    // First sync to billing if not already synced
+    if (!patientHistoryId) {
+      return res.status(400).json({
+        success: false,
+        message: "patientHistoryId is required"
+      });
+    }
+
+    // 🔹 Check if bill already exists
     let bill = await Billing.findOne({
       referenceId: patientHistoryId,
       billType: "consultation"
     });
 
+    // 🔹 If bill does NOT exist → sync from patient service
     if (!bill) {
-      const { clinicId } = req.body;
-      
-      if (!clinicId) {
+      if (!clinicId || !patientId) {
         return res.status(400).json({
           success: false,
-          message: "clinicId is required in request body"
+          message: "clinicId and patientId are required"
         });
       }
 
-      // Fetch and create billing record first
+      // 🔹 Fetch patient history (returns ARRAY)
       const response = await axios.post(
-        `${PATIENT_SERVICE_BASE_URL}/patient-service/appointment/patient-history/${patientHistoryId}`,
-        { clinicId },
-        { 
-          timeout: 10000,
-          headers: { 'Content-Type': 'application/json' }
-        }
+        `${PATIENT_SERVICE_BASE_URL}/patient-service/appointment/patient-history/${patientId}?clinicId=${clinicId}`
       );
 
-      const visit = response.data?.data || response.data;
+      const visits = response.data?.data || response.data;
+
+      if (!Array.isArray(visits)) {
+        return res.status(500).json({
+          success: false,
+          message: "Invalid visit data format"
+        });
+      }
+
+      // 🔹 Find the correct visit
+      const visit = visits.find(
+        v => String(v._id) === String(patientHistoryId)
+      );
 
       if (!visit) {
         return res.status(404).json({
@@ -889,10 +911,18 @@ export const markConsultationAsPaid = async (req, res) => {
           message: "Patient history not found"
         });
       }
-
-      // Create billing record (similar to syncConsultationToBilling)
-      const items = [];
+      console.log("Found visit:", visit);
       
+      if (!visit.patientId || !visit.clinicId) {
+        return res.status(400).json({
+          success: false,
+          message: "Visit data missing patientId or clinicId"
+        });
+      }
+
+      // 🔹 Build bill items
+      const items = [];
+
       if (visit.consultationFee > 0) {
         items.push({
           name: "Consultation Fee",
@@ -903,7 +933,7 @@ export const markConsultationAsPaid = async (req, res) => {
         });
       }
 
-      if (visit.procedures && visit.procedures.length > 0) {
+      if (Array.isArray(visit.procedures)) {
         visit.procedures.forEach(proc => {
           items.push({
             name: proc.name,
@@ -916,11 +946,16 @@ export const markConsultationAsPaid = async (req, res) => {
       }
 
       const subtotal = visit.totalAmount || visit.consultationFee || 0;
-      const count = await Billing.countDocuments({ clinicId: visit.clinicId });
+
+      // 🔹 Generate bill number
+      const count = await Billing.countDocuments({
+        clinicId: visit.clinicId
+      });
+
       const date = new Date();
       const year = date.getFullYear().toString().slice(-2);
       const month = String(date.getMonth() + 1).padStart(2, "0");
-      
+
       bill = new Billing({
         patientId: visit.patientId,
         clinicId: visit.clinicId,
@@ -936,11 +971,13 @@ export const markConsultationAsPaid = async (req, res) => {
         paidAmount: 0,
         pendingAmount: subtotal
       });
+
+      await bill.save(); // 🔥 REQUIRED
     }
 
-    // Add payment
+    // 🔹 Add payment
     const paymentAmount = amount || bill.pendingAmount;
-    
+
     await bill.addPayment({
       amount: paymentAmount,
       method: method || "cash",
@@ -949,17 +986,20 @@ export const markConsultationAsPaid = async (req, res) => {
       notes
     });
 
-    // Update PatientHistory isPaid flag
+    // 🔹 Update patient history payment flag
     try {
       await axios.patch(
-        `${PATIENT_SERVICE_BASE_URL}/patients/history/${patientHistoryId}/mark-paid`,
-        { isPaid: bill.paymentStatus === "paid" }
+        `${PATIENT_SERVICE_BASE_URL}/patient-service/appointment/update-payment-status/${patientHistoryId}`,
+        { isPaid: bill.paymentStatus === "paid"}
       );
     } catch (err) {
-      console.error("Warning: Could not update PatientHistory isPaid flag:", err.message);
+      console.warn(
+        "Warning: Failed to update PatientHistory isPaid:",
+        err.message
+      );
     }
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       message: "Payment recorded successfully",
       data: {
@@ -974,8 +1014,8 @@ export const markConsultationAsPaid = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("Error marking consultation as paid:", error.message);
-    res.status(500).json({
+    console.error("Error marking consultation as paid:", error);
+    return res.status(500).json({
       success: false,
       message: "Failed to record payment",
       error: error.message

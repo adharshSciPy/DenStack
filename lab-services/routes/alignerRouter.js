@@ -3,6 +3,8 @@ import {
   getAlignerOrderById,
   updateAlignerOrderStatus,
   getAlignerOrdersByPatientId,
+  getLatestAlignerOrdersByVendorId,
+  getMonthlyLabRevenueByVendor
   
 } from "../controller/alignerController.js";
 import express from "express";
@@ -18,4 +20,6 @@ alignerRouter.post("/create-order",  uploadDentalLabFiles.fields([
 alignerRouter.get("/order/:orderId", getAlignerOrderById);
 alignerRouter.patch("/order/:orderId/update-status", updateAlignerOrderStatus);
 alignerRouter.get("/patient/:patientId/orders", getAlignerOrdersByPatientId);
+alignerRouter.get("/vendor/latest-orders/:vendorId", getLatestAlignerOrdersByVendorId);
+alignerRouter.get("/vendor/monthly-revenue/:labVendorId", getMonthlyLabRevenueByVendor);
 export default alignerRouter;

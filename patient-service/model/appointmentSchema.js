@@ -24,12 +24,12 @@ const appointmentSchema = new mongoose.Schema({
   appointmentTime: { type: String, required: true }, 
   status: { 
     type: String, 
-    enum: ["scheduled", "cancelled", "completed","needs_reschedule","recall"],
+    enum: ["scheduled", "cancelled", "completed","needs_reschedule","recall","pending_approval"],
     default: "scheduled"
   },
   createdBy: { 
     type: mongoose.Schema.Types.ObjectId,
-    required: true
+    // required: true
   },
   updatedBy: {
     type: mongoose.Schema.Types.ObjectId,

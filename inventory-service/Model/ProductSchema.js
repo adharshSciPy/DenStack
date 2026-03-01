@@ -14,6 +14,7 @@ const variantSchema = new Schema({
         type: String,
         default: null
     },
+    image: [{ type: String, default: [] }],
     originalPrice: {
         type: Number,
         required: true,

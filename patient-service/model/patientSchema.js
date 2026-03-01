@@ -4,6 +4,8 @@ import dotenv from "dotenv";
 // import { TOOTH_CONDITIONS } from "../middleware/toothSurfaceAndConditions";
 import { Schema } from "mongoose";
 import {  TOOTH_SURFACES} from "../middleware/toothSurfaceAndConditions.js";
+import ClinicCounter from "./clinicCounterSchema.js";
+
 
 dotenv.config();
 const AUTH_SERVICE_BASE_URL = process.env.AUTH_SERVICE_BASE_URL;
@@ -164,7 +166,7 @@ const patientSchema = new mongoose.Schema({
     type: [dentalChartEntrySchema],
     default: []
   },
-  patientUniqueId: { type: String, unique: true },
+  patientUniqueId: { type: String  },
    patientRandomId: { type: String, unique: true }, 
   parentPatient: { type: mongoose.Schema.Types.ObjectId, ref: "Patient" },
   linkedPatients: [{ type: mongoose.Schema.Types.ObjectId, ref: "Patient" }],
@@ -340,6 +342,16 @@ patientSchema.pre("save", async function (next) {
 
       const count = await Patient.countDocuments({ clinicId: this.clinicId });
       this.patientUniqueId = `${prefix}-${String(count + 1).padStart(5, "0")}`;
+// const counter = await ClinicCounter.findOneAndUpdate(
+//   { clinicId: this.clinicId },
+//   { $inc: { seq: 1 } },
+//   { new: true, upsert: true }
+// );
+
+// const nextNumber = counter.seq;
+
+// this.patientUniqueId = `${prefix}-${String(nextNumber).padStart(5, "0")}`;
+
     }
 
   } catch (err) {
@@ -356,7 +368,7 @@ patientSchema.pre("save", async function (next) {
 patientSchema.index({ clinicId: 1, phone: 1 }, { unique: false });
 patientSchema.index({ clinicId: 1, email: 1 }, { unique: false });
 patientSchema.index({ clinicId: 1, patientUniqueId: 1 }, { unique: true });
-
+patientSchema.index({ patientRandomId: 1 }, { unique: true, sparse: true });
 
 
 export default mongoose.model("Patient", patientSchema);

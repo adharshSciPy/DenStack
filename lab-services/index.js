@@ -30,7 +30,7 @@ app.use("/api/v1/lab-inventory",labInventoryRouter)
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 app.use("/api/v1/aligners", alignerRouter);
 
-const PORT = process.env.PORT || 8005;
+const PORT = process.env.PORT || 8006;
 app.listen(PORT, () => {
   console.log(`✅ Server running on port:${PORT}`);
 });
