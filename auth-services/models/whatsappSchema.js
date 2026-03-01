@@ -119,3 +119,4 @@ whatsAppSettingsSchema.pre('save', function(next) {
 
 const WhatsAppSettings = mongoose.model('WhatsAppSettings', whatsAppSettingsSchema);
 export default WhatsAppSettings;
+

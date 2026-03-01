@@ -52,3 +52,4 @@ messageHistorySchema.index({ clinicId: 1, type: 1 });
 
 const MessageHistory = mongoose.model('MessageHistory', messageHistorySchema);
 export default MessageHistory;
+
