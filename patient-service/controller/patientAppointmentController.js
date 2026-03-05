@@ -479,7 +479,7 @@ const getAppointmentById = async (req, res) => {
 const getPatientHistory = async (req, res) => {
   try {
     const { id: patientId } = req.params;
-    const { clinicId } = req.query;
+    const { clinicId, page = 1, limit = 20 } = req.query;
 
     // ✅ 1. Validate IDs
     if (!mongoose.Types.ObjectId.isValid(patientId)) {
@@ -488,39 +488,26 @@ const getPatientHistory = async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(clinicId)) {
       return res.status(400).json({ success: false, message: "Invalid clinicId" });
     }
+     const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
+      const totalCount = await PatientHistory.countDocuments({ patientId, clinicId });
+
+    if (totalCount === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "No patient history found" 
+      });
+    }
 
     // ✅ 2. Fetch patient history
     const history = await PatientHistory.find(
       { patientId, clinicId },
-      {
-        _id: 1,
-        visitDate: 1,
-        doctorId: 1,
-        appointmentId: 1,
-        symptoms: 1,
-        diagnosis: 1,
-        prescriptions: 1,
-        notes: 1,
-        files: 1,
-        referrals: 1,
-        status: 1,
-        createdAt: 1,
-        consultationFee: 1,
-        procedures: 1,
-        totalAmount: 1,
-        isPaid: 1,
-        treatmentPlanId: 1,
-        receptionBilling: 1,
-        patientId: 1,
-        clinicId: 1
-      }
     )
       .sort({ visitDate: -1 })
+      .skip(skip)
+      .limit(limitNum)
       .lean();
-
-    if (!history.length) {
-      return res.status(404).json({ success: false, message: "No patient history found" });
-    }
 
     // ✅ 3. Extract unique doctor & treatment plan IDs
     const doctorIds = [...new Set(history.map(h => h.doctorId?.toString()).filter(Boolean))];
@@ -566,12 +553,24 @@ const getPatientHistory = async (req, res) => {
         ? treatmentPlanMap[h.treatmentPlanId.toString()] || null
         : null,
     }));
+     const totalPages = Math.ceil(totalCount / limitNum);
+    const hasNextPage = pageNum < totalPages;
+    const hasPrevPage = pageNum > 1;
 
     // ✅ 7. Respond
     return res.status(200).json({
       success: true,
       count: enrichedHistory.length,
       data: enrichedHistory,
+       pagination: {
+        currentPage: pageNum,
+        totalPages,
+        hasNextPage,
+        hasPrevPage,
+        itemsPerPage: limitNum,
+        nextPage: hasNextPage ? pageNum + 1 : null,
+        prevPage: hasPrevPage ? pageNum - 1 : null,
+      }
     });
 
   } catch (error) {
