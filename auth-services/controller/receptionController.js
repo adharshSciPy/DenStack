@@ -37,7 +37,8 @@ const registerReception = async (req, res) => {
     }
     if (!clinic.features?.canAddStaff?.receptionists) {
       return res.status(403).json({
-        message: "This clinic’s current plan does not allow adding receptionists.",
+        message:
+          "This clinic’s current plan does not allow adding receptionists.",
       });
     }
 
@@ -59,13 +60,20 @@ const registerReception = async (req, res) => {
       phoneNumber,
       password,
       shift,
-      clinicId
+      clinicId,
     });
 
     await newReception.save();
 
     // ✅ Push receptionist _id into clinic.staffs.receptionists
     clinic.staffs.receptionists.push(newReception._id);
+    if (
+      clinic.address?.location &&
+      (!Array.isArray(clinic.address.location.coordinates) ||
+        clinic.address.location.coordinates.length !== 2)
+    ) {
+      clinic.address.location = undefined;
+    }
     await clinic.save();
 
     // ✅ Generate tokens
@@ -131,8 +139,9 @@ const loginReception = async (req, res) => {
     const refreshToken = reception.generateRefreshToken();
 
     // ⭐ FETCH CLINIC DETAILS
-    const clinicData = await Clinic.findById(reception.clinicId)
-      .select("name address phoneNumber theme subscription");
+    const clinicData = await Clinic.findById(reception.clinicId).select(
+      "name address phoneNumber theme subscription",
+    );
 
     // ⭐ SEND EVERYTHING IN ONE RESPONSE
     res.status(200).json({
@@ -146,18 +155,16 @@ const loginReception = async (req, res) => {
         shift: reception.shift,
         role: reception.role,
         clinicId: reception.clinicId,
-        clinicData,  
+        clinicData,
       },
       accessToken,
       refreshToken,
     });
-
   } catch (error) {
     console.error("❌ Error in loginReception:", error);
     res.status(500).json({ message: "Server error" });
   }
 };
-
 
 // ====== Get All Receptions ======
 const allReceptions = async (req, res) => {
@@ -173,7 +180,7 @@ const allReceptions = async (req, res) => {
       query.$or = [
         { name: { $regex: search, $options: "i" } }, // case-insensitive search
         { phoneNumber: { $regex: search, $options: "i" } },
-        { employeeId: { $regex: search, $options: "i" } }
+        { employeeId: { $regex: search, $options: "i" } },
       ];
     }
 
@@ -191,7 +198,7 @@ const allReceptions = async (req, res) => {
       total,
       page,
       totalPages: Math.ceil(total / limit),
-      receptions
+      receptions,
     });
   } catch (error) {
     console.error("Error fetching receptions:", error);

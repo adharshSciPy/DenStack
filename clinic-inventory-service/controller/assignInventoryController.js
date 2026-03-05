@@ -1,5 +1,6 @@
 import ClinicInventory from "../model/ClinicInventoryModel.js";
 import StockTransfer from "../model/stockTransferModel.js";
+import InventoryOrderLog from "../model/InventoryOrderLogSchema .js";
 import axios from "axios";
 import dotenv from "dotenv";
 dotenv.config();
@@ -10,25 +11,47 @@ export const assignInventoryController = async (req, res) => {
 
     console.log("✅ assignInventory hit", req.body);
 
-    if (!clinicId || !items || items.length === 0) {
-      return res.status(400).json({ success: false, message: "Missing required fields" });
+    if (!orderId || !clinicId || !items || items.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing required fields",
+      });
+    }
+
+    // 🔒 Idempotency check
+    const alreadyProcessed = await InventoryOrderLog.findOne({ orderId });
+    if (alreadyProcessed) {
+      return res.status(200).json({
+        success: true,
+        message: "Inventory already assigned for this order",
+      });
     }
 
     for (const item of items) {
+      if (!item.productId || !item.quantity) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid item data",
+          item,
+        });
+      }
+
       const existing = await ClinicInventory.findOne({
         clinicId,
         productId: item.productId,
+        inventoryType: "general",
       });
 
       if (existing) {
         existing.quantity += Number(item.quantity);
-        existing.isLowStock = existing.quantity <= (existing.lowStockThreshold || 20);
+        existing.isLowStock =
+          existing.quantity <= (existing.lowStockThreshold || 20);
         await existing.save();
       } else {
         await ClinicInventory.create({
           clinicId,
           productId: item.productId,
-          productName: item.productName,   // ✅ fixed field name
+          productName: item.productName,
           quantity: Number(item.quantity),
           lowStockThreshold: 20,
           isLowStock: Number(item.quantity) <= 20,
@@ -39,12 +62,13 @@ export const assignInventoryController = async (req, res) => {
       }
     }
 
-    // ✅ Always send a response
+    // 🧾 Mark order as processed
+    await InventoryOrderLog.create({ orderId });
+
     return res.status(200).json({
       success: true,
       message: "Inventory assigned successfully",
     });
-
   } catch (err) {
     console.error("Assign Inventory Error:", err);
     return res.status(500).json({

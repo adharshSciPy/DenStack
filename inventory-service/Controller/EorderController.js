@@ -710,18 +710,12 @@ export const updateEcomOrderStatus = async (req, res) => {
     if (orderStatus && !validStatuses.includes(orderStatus)) {
       return res.status(400).json({
         success: false,
-        message: `Invalid status. Valid statuses: ${validStatuses.join(", ")}`,
+        message: "Invalid status",
       });
     }
 
-    const updateData = {};
-    if (orderStatus) updateData.orderStatus = orderStatus;
-    if (trackingNumber) updateData.trackingNumber = trackingNumber;
-
-    const order = await EcomOrder.findByIdAndUpdate(orderId, updateData, {
-      new: true,
-      runValidators: true,
-    });
+    // 🔹 Fetch order
+    const order = await EcomOrder.findById(orderId);
 
     if (!order) {
       return res.status(404).json({
@@ -730,21 +724,71 @@ export const updateEcomOrderStatus = async (req, res) => {
       });
     }
 
-    res.status(200).json({
+    const previousStatus = order.orderStatus;
+
+    // 🔹 Update order
+    if (orderStatus) order.orderStatus = orderStatus;
+    if (trackingNumber) order.trackingNumber = trackingNumber;
+    console.log("sa",order);
+    
+    // ===============================
+    // ✅ INVENTORY SERVICE CALL
+    // ===============================
+    if (
+      orderStatus === "DELIVERED" &&
+      previousStatus !== "DELIVERED" &&
+      !order.inventoryAssigned
+    ) {
+      if (!order.clinic) {
+        return res.status(400).json({
+          success: false,
+          message: "Order missing clinicId",
+        });
+      }
+
+      try {
+        await axios.post(
+          `${process.env.CLINIC_INVENTORY_SERVICE_URL}/assign/inventory/assign`,
+          {
+            orderId: order._id,
+            clinicId: order.clinic,
+            items: order.items.map((item) => ({
+              productId: item.product, // 🔥 FIX
+              productName: item.productName,
+              quantity: item.quantity,
+            })),
+          }
+        );
+
+        order.inventoryAssigned = true;
+      } catch (invErr) {
+        console.error(
+          "❌ Inventory service failed:",
+          invErr.response?.data || invErr.message
+        );
+      }
+    }
+
+    await order.save();
+
+    return res.status(200).json({
       success: true,
-      message: "Order status updated successfully",
+      message: "Order updated successfully",
       data: order,
     });
   } catch (error) {
-    console.error("Update Ecom Order Status Error:", error);
-    res.status(500).json({
+    console.error(
+      "Update Ecom Order Status Error:",
+      error.response?.data || error.message
+    );
+
+    return res.status(500).json({
       success: false,
       message: "Failed to update order status",
       error: error.message,
     });
   }
 };
-
 // ============= UPDATE ECOM PAYMENT STATUS =============
 export const updateEcomPaymentStatus = async (req, res) => {
   try {
