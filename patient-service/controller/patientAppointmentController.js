@@ -295,26 +295,82 @@ const getTodaysAppointments = async (req, res) => {
       });
     }
 
-    // 🗓️ Build today's date string
+    // 🗓️ Build date string
     const targetDate = date ? new Date(date) : new Date();
     const todayStr = `${targetDate.getFullYear()}-${String(
       targetDate.getMonth() + 1
     ).padStart(2, "0")}-${String(targetDate.getDate()).padStart(2, "0")}`;
 
-    const matchStage = {
-      doctorId: new mongoose.Types.ObjectId(doctorId),
-      appointmentDate: todayStr,
-      status: { $in: ["scheduled", "needs_reschedule"] }
-    };
+    // First, get distinct clinics that have appointments for this doctor/date
+    const distinctClinicsPipeline = [
+      {
+        $match: {
+          doctorId: new mongoose.Types.ObjectId(doctorId),
+          appointmentDate: todayStr,
+          status: { $in: ["scheduled", "needs_reschedule"] }
+        }
+      },
+      {
+        $group: {
+          _id: "$clinicId",
+          // Get the most recent appointment _id in this clinic for cursor purposes
+          latestAppointmentId: { $max: "$_id" }
+        }
+      },
+      { $sort: { latestAppointmentId: -1 } } // Sort by most recent appointment
+    ];
 
-    if (cursor && mongoose.Types.ObjectId.isValid(cursor)) {
-      matchStage._id = { $lt: new mongoose.Types.ObjectId(cursor) };
+    // Add cursor condition if provided (cursor is clinicId + timestamp based)
+    if (cursor) {
+      // Assuming cursor format: "clinicId_timestamp" or just the latestAppointmentId
+      // You'll need to adjust this based on your cursor strategy
+      distinctClinicsPipeline.unshift({
+        $match: {
+          "latestAppointmentId": { $lt: new mongoose.Types.ObjectId(cursor) }
+        }
+      });
     }
 
-    const pipeline = [
-      { $match: matchStage },
+    // Get paginated clinics (+1 to check for more)
+    const paginatedClinics = await Appointment.aggregate([
+      ...distinctClinicsPipeline,
+      { $limit: Number(limit) + 1 }
+    ]);
 
-      // 👤 Lookup patient info
+    const hasMore = paginatedClinics.length > Number(limit);
+    const clinicsToProcess = hasMore 
+      ? paginatedClinics.slice(0, -1) 
+      : paginatedClinics;
+
+    // Get the cursor for next page (the latestAppointmentId of the last clinic)
+    const nextCursor = hasMore 
+      ? paginatedClinics[paginatedClinics.length - 1].latestAppointmentId
+      : null;
+
+    // Now get all appointments for these clinics
+    const clinicIds = clinicsToProcess.map(c => c._id).filter(id => id);
+    
+    if (clinicIds.length === 0) {
+      return res.status(200).json({
+        success: true,
+        message: "No appointments found",
+        count: 0,
+        limit: Number(limit),
+        nextCursor: null,
+        hasMore: false,
+        data: [],
+      });
+    }
+
+    const appointmentsPipeline = [
+      {
+        $match: {
+          doctorId: new mongoose.Types.ObjectId(doctorId),
+          appointmentDate: todayStr,
+          clinicId: { $in: clinicIds },
+          status: { $in: ["scheduled", "needs_reschedule"] }
+        }
+      },
       {
         $lookup: {
           from: "patients",
@@ -324,13 +380,14 @@ const getTodaysAppointments = async (req, res) => {
         },
       },
       { $unwind: { path: "$patient", preserveNullAndEmptyArrays: true } },
+      { $sort: { clinicId: 1, _id: -1 } } // Sort by clinic then by appointment
     ];
 
-    // 🔍 Optional search
+    // Add search if provided
     if (search.trim() !== "") {
       const s = search.trim();
       const searchRegex = new RegExp(s, "i");
-      pipeline.push({
+      appointmentsPipeline.push({
         $match: {
           $or: [
             { "patient.name": searchRegex },
@@ -341,52 +398,45 @@ const getTodaysAppointments = async (req, res) => {
       });
     }
 
-    // 🧩 Sort & group by clinic
-    pipeline.push({ $sort: { _id: -1 } });
-    pipeline.push({
-      $group: {
-        _id: "$clinicId",
-        appointments: {
-          $push: {
-            _id: "$_id",
-            appointmentDate: "$appointmentDate",
-            appointmentTime: "$appointmentTime",
-            status: "$status",
-            opNumber: "$opNumber",
-            patient: {
-              _id: "$patient._id",
-              name: "$patient.name",
-              phone: "$patient.phone",
-              age: "$patient.age",
-              gender: "$patient.gender",
-              patientUniqueId: "$patient.patientUniqueId",
-            },
-          },
-        },
-      },
-    });
-    pipeline.push({ $limit: Number(limit) });
+    const appointments = await Appointment.aggregate(appointmentsPipeline);
 
-    const groupedAppointments = await Appointment.aggregate(pipeline);
+    // Group appointments by clinic
+    const groupedByClinic = appointments.reduce((groups, appointment) => {
+      const clinicId = appointment.clinicId?.toString();
+      if (!clinicId) return groups;
+      
+      if (!groups[clinicId]) {
+        groups[clinicId] = {
+          clinicId: clinicId,
+          appointments: []
+        };
+      }
+      
+      groups[clinicId].appointments.push({
+        _id: appointment._id,
+        appointmentDate: appointment.appointmentDate,
+        appointmentTime: appointment.appointmentTime,
+        status: appointment.status,
+        opNumber: appointment.opNumber,
+        patient: appointment.patient ? {
+          _id: appointment.patient._id,
+          name: appointment.patient.name,
+          phone: appointment.patient.phone,
+          age: appointment.patient.age,
+          gender: appointment.patient.gender,
+          patientUniqueId: appointment.patient.patientUniqueId,
+        } : null,
+      });
+      
+      return groups;
+    }, {});
 
-    // ⚡ Cache to avoid multiple network calls for same clinic
+    // Fetch clinic details for each unique clinic
     const clinicCache = {};
-
-    // ---- 🔗 Fetch minimal clinic details (name + phoneNumber) ----
     const results = await Promise.all(
-      groupedAppointments.map(async (group) => {
-        if (!group._id) {
-          return {
-            clinicId: null,
-            clinicName: "Unknown Clinic",
-            clinicPhone: null,
-            appointments: group.appointments,
-          };
-        }
-
-        // ✅ Use cached value if available
-        if (clinicCache[group._id]) {
-          return { ...clinicCache[group._id], appointments: group.appointments };
+      Object.values(groupedByClinic).map(async (group) => {
+        if (clinicCache[group.clinicId]) {
+          return { ...clinicCache[group.clinicId], appointments: group.appointments };
         }
 
         let clinicName = "Unknown Clinic";
@@ -394,7 +444,7 @@ const getTodaysAppointments = async (req, res) => {
 
         try {
           const response = await axios.get(
-            `${AUTH_SERVICE_BASE_URL}/clinic/view-clinic/${group._id}`
+            `${AUTH_SERVICE_BASE_URL}/clinic/view-clinic/${group.clinicId}`
           );
           const clinic = response.data?.data;
           if (clinic) {
@@ -403,30 +453,21 @@ const getTodaysAppointments = async (req, res) => {
           }
         } catch (err) {
           console.warn(
-            `⚠️ Failed to fetch clinic details for ${group._id}:`,
+            `⚠️ Failed to fetch clinic details for ${group.clinicId}:`,
             err.message
           );
         }
 
         const clinicObj = {
-          clinicId: group._id,
+          clinicId: group.clinicId,
           clinicName,
           clinicPhone,
         };
 
-        clinicCache[group._id] = clinicObj; // 🧠 Cache it
-
-        return {
-          ...clinicObj,
-          appointments: group.appointments,
-        };
+        clinicCache[group.clinicId] = clinicObj;
+        return { ...clinicObj, appointments: group.appointments };
       })
     );
-
-    const nextCursor =
-      groupedAppointments.length > 0
-        ? groupedAppointments[groupedAppointments.length - 1]?.appointments?.slice(-1)[0]?._id
-        : null;
 
     return res.status(200).json({
       success: true,
@@ -434,7 +475,7 @@ const getTodaysAppointments = async (req, res) => {
       count: results.length,
       limit: Number(limit),
       nextCursor,
-      hasMore: !!nextCursor,
+      hasMore,
       data: results,
     });
   } catch (err) {
