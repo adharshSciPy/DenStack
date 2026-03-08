@@ -92,21 +92,69 @@ const onboardDoctor = async (req, res) => {
         uniqueId: doctorData.uniqueId,
         isClinicAdmin: doctorData.isClinicAdmin || false
       };
+   } else {
+  // For regular onboarding, fetch from auth-service
+  try {
+    console.log(`🔍 Fetching doctor details from auth-service for ID: ${doctorUniqueId}`);
+    
+    const url = `${process.env.AUTH_SERVICE_BASE_URL}/doctor/details-uniqueid/${doctorUniqueId}`;
+    console.log(`📡 Auth-service URL: ${url}`);
+    
+    const response = await axios.get(url);
+    console.log("✅ Auth-service response received:", response.status);
+    console.log("📦 Auth-service data:", JSON.stringify(response.data, null, 2));
+    
+    // Check if doctor exists in response
+    if (response.data?.success && response.data.doctor) {
+      doctor = response.data.doctor;
+      console.log("👨‍⚕️ Doctor found:", doctor.name, "with ID:", doctor._id);
     } else {
-      // For regular onboarding, fetch from auth-service
-      try {
-        const url = `${process.env.AUTH_SERVICE_BASE_URL}/doctor/details-uniqueid/${doctorUniqueId}`;
-        const response = await axios.get(url);
-        if (response.data?.success && response.data.doctor) {
-          doctor = response.data.doctor;
-        } else {
-          return res.status(404).json({ success: false, message: "Doctor not found in auth-service" });
-        }
-      } catch (err) {
-        console.error("Error communicating with auth-service:", err.message);
-        return res.status(500).json({ success: false, message: "Error communicating with auth-service" });
-      }
+      console.log("❌ Doctor not found in auth-service response");
+      return res.status(404).json({ 
+        success: false, 
+        message: `Doctor with ID ${doctorUniqueId} not found in auth-service. Please check if: 
+          1. The doctor is registered in the auth service
+          2. The doctor ID is correct
+          3. The auth service is running and accessible` 
+      });
     }
+  } catch (err) {
+    console.error("❌ Error communicating with auth-service:", err.message);
+    
+    // Handle specific error cases
+    if (err.response) {
+      // The request was made and the server responded with a status code
+      console.error("Auth-service response status:", err.response.status);
+      console.error("Auth-service response data:", err.response.data);
+      
+      if (err.response.status === 404) {
+        return res.status(404).json({ 
+          success: false, 
+          message: `Doctor with ID ${doctorUniqueId} does not exist in the system. Please register the doctor in auth service first.` 
+        });
+      } else if (err.response.status === 500) {
+        return res.status(502).json({ 
+          success: false, 
+          message: "Auth service is experiencing issues. Please try again later." 
+        });
+      }
+    } else if (err.request) {
+      // The request was made but no response was received
+      console.error("No response received from auth-service");
+      return res.status(503).json({ 
+        success: false, 
+        message: "Auth service is not reachable. Please check if auth service is running." 
+      });
+    }
+    
+    // Generic error
+    return res.status(500).json({ 
+      success: false, 
+      message: "Error communicating with auth-service",
+      error: err.message 
+    });
+  }
+}
 
     // ===== Prevent duplicate onboarding =====
     const exists = await DoctorClinic.findOne({ 
