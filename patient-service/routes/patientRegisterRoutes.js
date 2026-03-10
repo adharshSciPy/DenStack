@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getAllPatients,getPatientById, getPatientsByClinic, getPatientWithUniqueId, patientCheck, registerPatient, sendSMSLink, setPassword, login,getPatientByRandomId, addLabOrderToPatient, getPatientFullCRM, updatePatientDetails,getAllPatientsWithBirthdays, getPatientDentalChart, getVisitHistory, getPatientEncryptedLink, verifyPatientWithEncryptedId } from "../controller/patientRegisterController.js";
+import { getAllPatients,getPatientById, getPatientsByClinic, getPatientWithUniqueId, patientCheck, registerPatient, sendSMSLink, setPassword, login,getPatientByRandomId, addLabOrderToPatient, getPatientFullCRM, updatePatientDetails,getAllPatientsWithBirthdays, getPatientDentalChart, getVisitHistory, getPatientEncryptedLink, verifyPatientWithEncryptedId,getPatientByRandomIdSingle } from "../controller/patientRegisterController.js";
 const patientRegisterRouter = Router();
 
 patientRegisterRouter.route("/register/:id").post(registerPatient)//{id:clinicId}
@@ -22,4 +22,5 @@ patientRegisterRouter.route('/visit-history/:id').get(getVisitHistory);
 // patientRegisterRouter.route('/verify-access').get(verifyPatientAccess);
 patientRegisterRouter.route('/encrypted-link/:patientId').get(getPatientEncryptedLink)
 patientRegisterRouter.route('/verify-encrypted').post(verifyPatientWithEncryptedId)
+patientRegisterRouter.route('/patient-by-randomId-single').get(getPatientByRandomIdSingle)
 export default patientRegisterRouter;
