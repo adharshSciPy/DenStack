@@ -25,15 +25,15 @@ export const createDentalLabOrder = async (req, res) => {
 
     if (
       !vendor ||
-      !dentist ||
-      !patientName ||
+      // !dentist ||
+      !patientName 
       // !deliveryDate ||
-      !price ||
-      !note
+      // !price ||
+      // !note
     ) {
       return res.status(400).json({
         message:
-          "Vendor, dentist, patient, delivery date,note, and price are required",
+          "Vendor, dentist, patient are required",
       });
     }
 
