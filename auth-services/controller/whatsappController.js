@@ -1,12 +1,12 @@
 import mongoose from 'mongoose';
 import WhatsAppSettings from "../models/whatsappSchema.js";
 import MessageHistory from "../models/whatsappmessageHistory.js";
-import { 
-    sendWhatsAppMessage, 
-    uploadFileToServer,  // Make sure this is explicitly imported
-    verifyWalocalConnection,
-    getMessageStatus,
-    uploadMedia 
+import {
+  sendWhatsAppMessage,
+  uploadFileToServer,  // Make sure this is explicitly imported
+  verifyWalocalConnection,
+  getMessageStatus,
+  uploadMedia
 } from '../utils/whatsapp.js';
 
 // @desc    Get WhatsApp settings for a clinic
@@ -15,16 +15,16 @@ import {
 export const getWhatsAppSettings = async (req, res) => {
   try {
     const { clinicId } = req.params;
-    
+
     const settings = await WhatsAppSettings.findOne({ clinicId }).select('-walocalApiKey');
-    
+
     if (settings) {
       return res.json({ success: true, data: settings });
     }
-    
+
     // Return default settings if none found
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       data: {
         isEnabled: false,
         phoneNumber: process.env.WALOCAL_PHONE_NUMBER || '',
@@ -37,13 +37,13 @@ export const getWhatsAppSettings = async (req, res) => {
         messagingTier: 'TIER_1K',
         autoRecharge: false,
         rechargeThreshold: 100
-      } 
+      }
     });
   } catch (error) {
     console.error('Error fetching WhatsApp settings:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: error.message || 'Failed to fetch WhatsApp settings' 
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to fetch WhatsApp settings'
     });
   }
 };
@@ -141,21 +141,21 @@ export const verifyConnection = async (req, res) => {
 export const saveWhatsAppSettings = async (req, res) => {
   try {
     const { clinicId, ...settings } = req.body;
-    
+
     // Validate required fields
     if (!clinicId) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Clinic ID is required' 
+      return res.status(400).json({
+        success: false,
+        message: 'Clinic ID is required'
       });
     }
 
     // If enabling WhatsApp, validate required fields
     if (settings.isEnabled) {
       if (!settings.phoneNumber || !settings.phoneNumberId) {
-        return res.status(400).json({ 
-          success: false, 
-          message: 'Phone number and Phone Number ID are required to enable WhatsApp' 
+        return res.status(400).json({
+          success: false,
+          message: 'Phone number and Phone Number ID are required to enable WhatsApp'
         });
       }
     }
@@ -174,23 +174,23 @@ export const saveWhatsAppSettings = async (req, res) => {
     const updatedSettings = await WhatsAppSettings.findOneAndUpdate(
       { clinicId },
       updateData,
-      { 
-        new: true, 
+      {
+        new: true,
         upsert: true,
-        runValidators: true 
+        runValidators: true
       }
     ).select('-walocalApiKey');
 
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       data: updatedSettings,
-      message: 'WhatsApp settings saved successfully' 
+      message: 'WhatsApp settings saved successfully'
     });
   } catch (error) {
     console.error('Error saving WhatsApp settings:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: error.message || 'Failed to save WhatsApp settings' 
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to save WhatsApp settings'
     });
   }
 };
@@ -202,14 +202,14 @@ export const getMessageHistory = async (req, res) => {
   try {
     const { clinicId } = req.params;
     const { page = 1, limit = 50, type, status } = req.query;
-    
+
     const query = { clinicId };
-    
+
     if (type) query.type = type;
     if (status) query.status = status;
-    
+
     const skip = (parseInt(page) - 1) * parseInt(limit);
-    
+
     const [history, totalCount] = await Promise.all([
       MessageHistory.find(query)
         .sort({ timestamp: -1 })
@@ -219,8 +219,8 @@ export const getMessageHistory = async (req, res) => {
       MessageHistory.countDocuments(query)
     ]);
 
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       data: history,
       pagination: {
         currentPage: parseInt(page),
@@ -231,9 +231,9 @@ export const getMessageHistory = async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching message history:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: error.message || 'Failed to fetch message history' 
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to fetch message history'
     });
   }
 };
@@ -244,24 +244,24 @@ export const getMessageHistory = async (req, res) => {
 export const rechargeMessages = async (req, res) => {
   try {
     const { clinicId, packageId, messageCount, amount, paymentMethod } = req.body;
-    
+
     if (!clinicId || !messageCount || !amount) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Clinic ID, message count, and amount are required' 
+      return res.status(400).json({
+        success: false,
+        message: 'Clinic ID, message count, and amount are required'
       });
     }
 
     const settings = await WhatsAppSettings.findOne({ clinicId });
     if (!settings) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Settings not found. Please configure WhatsApp first.' 
+      return res.status(404).json({
+        success: false,
+        message: 'Settings not found. Please configure WhatsApp first.'
       });
     }
 
     // TODO: Process payment here
-    
+
     // Update message counts
     settings.messageLimit += messageCount;
     settings.messagesRemaining += messageCount;
@@ -269,20 +269,20 @@ export const rechargeMessages = async (req, res) => {
     settings.totalMessagesPurchased = (settings.totalMessagesPurchased || 0) + messageCount;
     await settings.save();
 
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       data: {
         messageLimit: settings.messageLimit,
         messagesRemaining: settings.messagesRemaining,
         messagesUsed: settings.messagesUsed
       },
-      message: `Successfully recharged with ${messageCount} messages` 
+      message: `Successfully recharged with ${messageCount} messages`
     });
   } catch (error) {
     console.error('Error during recharge:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: error.message || 'Recharge failed' 
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Recharge failed'
     });
   }
 };
@@ -293,33 +293,33 @@ export const rechargeMessages = async (req, res) => {
 export const sendTestMessage = async (req, res) => {
   try {
     const { clinicId, to, message } = req.body;
-    
+
     if (!clinicId || !to || !message) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Clinic ID, recipient, and message are required' 
+      return res.status(400).json({
+        success: false,
+        message: 'Clinic ID, recipient, and message are required'
       });
     }
 
     const settings = await WhatsAppSettings.findOne({ clinicId });
     if (!settings) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'WhatsApp settings not found' 
+      return res.status(404).json({
+        success: false,
+        message: 'WhatsApp settings not found'
       });
     }
 
     if (!settings.isEnabled) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'WhatsApp is not enabled. Please complete the setup first.' 
+      return res.status(400).json({
+        success: false,
+        message: 'WhatsApp is not enabled. Please complete the setup first.'
       });
     }
 
     if (settings.messagesRemaining <= 0) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'No messages remaining. Please recharge to continue.' 
+      return res.status(400).json({
+        success: false,
+        message: 'No messages remaining. Please recharge to continue.'
       });
     }
 
@@ -355,8 +355,8 @@ export const sendTestMessage = async (req, res) => {
           timestamp: new Date()
         });
 
-        return res.json({ 
-          success: true, 
+        return res.json({
+          success: true,
           data: historyEntry,
           message: 'Test message sent successfully',
           remainingMessages: settings.messagesRemaining
@@ -381,9 +381,9 @@ export const sendTestMessage = async (req, res) => {
     }
   } catch (error) {
     console.error('❌ Error in sendTestMessage:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: error.message || 'Failed to send test message' 
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to send test message'
     });
   }
 };
@@ -394,28 +394,35 @@ export const sendTestMessage = async (req, res) => {
 // controller/whatsappController.js
 export const sendDocument = async (req, res) => {
   try {
-    const { clinicId, recipient, caption } = req.body;
+    const { clinicId, recipient, caption, patientName, invoiceNumber, amount, dueDate, clinicName } = req.body;
     const file = req.file;
 
     if (!clinicId || !recipient || !file) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Clinic ID, recipient, and file are required' 
+      return res.status(400).json({
+        success: false,
+        message: 'Clinic ID, recipient, and file are required'
+      });
+    }
+
+    if (!patientName || !invoiceNumber || !amount || !dueDate || !clinicName) {
+      return res.status(400).json({
+        success: false,
+        message: 'All template parameters (patientName, invoiceNumber, amount, dueDate, clinicName) are required'
       });
     }
 
     const settings = await WhatsAppSettings.findOne({ clinicId });
     if (!settings || !settings.isEnabled) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'WhatsApp is not configured or enabled' 
+      return res.status(404).json({
+        success: false,
+        message: 'WhatsApp is not configured or enabled'
       });
     }
 
     if (settings.messagesRemaining <= 0) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'No messages remaining. Please recharge.' 
+      return res.status(400).json({
+        success: false,
+        message: 'No messages remaining. Please recharge.'
       });
     }
 
@@ -446,9 +453,11 @@ export const sendDocument = async (req, res) => {
     const messageResponse = await sendWhatsAppMessage({
       to: recipient,
       type: 'document',
+      templateName: 'denstack_invoice',
       documentUrl: uploadResult.url,
       caption: caption || '',
-      fileName: file.originalname
+      fileName: file.originalname,
+      variables: [patientName, invoiceNumber, amount, dueDate, clinicName]
     });
 
     if (messageResponse.success) {
@@ -469,13 +478,18 @@ export const sendDocument = async (req, res) => {
           fileType: file.mimetype,
           fileSize: file.size,
           fileName: file.originalname,
-          fileUrl: uploadResult.url
+          fileUrl: uploadResult.url,
+          patientName,
+          invoiceNumber,
+          amount,
+          dueDate,
+          clinicName
         },
         timestamp: new Date()
       });
 
-      res.json({ 
-        success: true, 
+      res.json({
+        success: true,
         data: historyEntry,
         message: 'Document sent successfully',
         remainingMessages: settings.messagesRemaining
@@ -485,9 +499,9 @@ export const sendDocument = async (req, res) => {
     }
   } catch (error) {
     console.error('❌ Error sending document:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: error.message || 'Failed to send document' 
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to send document'
     });
   }
 };
@@ -536,16 +550,16 @@ export const getMessageStats = async (req, res) => {
       { $sort: { "_id": 1 } }
     ]);
 
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       data: stats,
       period: `${days} days`
     });
   } catch (error) {
     console.error('Error fetching message stats:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: error.message || 'Failed to fetch message statistics' 
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to fetch message statistics'
     });
   }
 };
@@ -559,9 +573,9 @@ export const disconnectWhatsApp = async (req, res) => {
 
     const settings = await WhatsAppSettings.findOne({ clinicId });
     if (!settings) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'WhatsApp settings not found' 
+      return res.status(404).json({
+        success: false,
+        message: 'WhatsApp settings not found'
       });
     }
 
@@ -575,15 +589,18 @@ export const disconnectWhatsApp = async (req, res) => {
     settings.messagesRemaining = 1000;
     await settings.save();
 
-    res.json({ 
-      success: true, 
-      message: 'WhatsApp disconnected successfully' 
+    res.json({
+      success: true,
+      message: 'WhatsApp disconnected successfully'
     });
   } catch (error) {
     console.error('Error disconnecting WhatsApp:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: error.message || 'Failed to disconnect WhatsApp' 
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to disconnect WhatsApp'
     });
   }
 };
+
+
+

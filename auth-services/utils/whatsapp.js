@@ -60,6 +60,7 @@ export const uploadFileToServer = async (fileBuffer, filename, mimeType) => {
  * Send a WhatsApp message via WALOCAL
  * Supports: text, template, document
  */
+
 export const sendWhatsAppMessage = async ({
     to,
     message,
@@ -67,96 +68,60 @@ export const sendWhatsAppMessage = async ({
     templateName = null,
     documentUrl = null,
     caption = '',
-    fileName = ''
+    fileName = '',
+    variables = []  // This will receive the array of 5 values
 }) => {
     try {
-        // Validate authkey
         if (!WALOCAL_AUTHKEY) {
-            throw new Error('WALOCAL_AUTHKEY not configured in environment');
+            throw new Error('WALOCAL_AUTHKEY not configured');
         }
 
-        // Clean phone number (remove + and spaces)
         const cleanMobile = to.replace('+', '').replace(/\s/g, '');
-
-        // Build base query parameters
         const params = {
             authkey: WALOCAL_AUTHKEY,
             mobile: cleanMobile
         };
 
-        let response;
-
         if (type === 'text') {
-            // Text message format: ?authkey=xxx&mobile=xxx&type=text&message=xxx
-            if (!message) {
-                throw new Error('Message is required for text type');
-            }
             params.type = 'text';
             params.message = message;
-
-        } else if (type === 'template') {
-            // Template message format: ?authkey=xxx&mobile=xxx&tempid=template_name
-            if (!templateName) {
-                throw new Error('Template name is required for template messages');
-            }
-            params.tempid = templateName;
-
         } else if (type === 'document') {
-            // Document message using a template
             if (!templateName) {
-                throw new Error('Template name is required for document messages. Create a template with document header in WALOCAL dashboard first.');
+                throw new Error('Template name is required');
             }
-            if (!documentUrl) {
-                throw new Error('Public document URL is required');
-            }
-
-            // Use 'tempid' parameter, not 'type=document'
-            params.tempid = templateName; // e.g., 'document_template'
+            
+            params.tempid = templateName;
             params.document_url = documentUrl;
             if (caption) params.caption = caption;
             if (fileName) params.filename = fileName;
-
-            // Note: 'type' parameter is NOT used for templates
-            delete params.type;
-
-        } else {
-            throw new Error(`Unsupported message type: ${type}`);
+            
+            // ✅ Add all variables as numbered parameters
+            if (variables && variables.length > 0) {
+                variables.forEach((value, index) => {
+                    params[`param${index + 1}`] = value;
+                });
+            }
         }
 
-        // Build URL with query parameters
         const url = `${WHATSAPP_API_BASE}/?${new URLSearchParams(params).toString()}`;
-        console.log(`📡 WALOCAL ${type} URL:`, url);
+        console.log('📡 WALOCAL URL:', url);
 
-        // Make the request
-        response = await axios.get(url, {
-            timeout: type === 'document' ? 30000 : 10000,
-            validateStatus: status => status < 500 // Don't throw on 4xx errors
+        const response = await axios.get(url, {
+            timeout: 30000,
+            validateStatus: status => status < 500
         });
-
-        // Check response status
-        if (response.status >= 400) {
-            throw new Error(`WALOCAL API returned status ${response.status}: ${JSON.stringify(response.data)}`);
-        }
-
-        console.log('✅ WALOCAL response:', response?.data);
 
         return {
             success: true,
-            messageId: response?.data?.id || response?.data?.message_id || Date.now().toString(),
+            messageId: response?.data?.id || Date.now().toString(),
             data: response?.data
         };
 
     } catch (error) {
-        console.error('❌ WALOCAL API Error:', {
-            message: error.message,
-            status: error.response?.status,
-            data: error.response?.data,
-            url: error.config?.url
-        });
-
+        console.error('❌ WALOCAL Error:', error.message);
         return {
             success: false,
-            error: error.response?.data?.message || error.message,
+            error: error.message,
             details: error.response?.data
         };
     }
@@ -335,3 +300,7 @@ export const getBusinessProfile = async (phoneNumberId) => {
         error: 'Not supported by WALOCAL API'
     };
 };
+
+
+
+

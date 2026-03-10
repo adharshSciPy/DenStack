@@ -1149,4 +1149,38 @@ const verifyPatientWithEncryptedId = async (req, res) => {
     });
   }
 };
-export { registerPatient, getPatientWithUniqueId, getAllPatients, patientCheck, getPatientsByClinic, getPatientById, sendSMSLink, setPassword, login,getPatientByRandomId ,addLabOrderToPatient,getPatientFullCRM,updatePatientDetails,getAllPatientsWithBirthdays,getPatientDentalChart,getVisitHistory, getPatientEncryptedLink,verifyPatientWithEncryptedId }
+const getPatientByRandomIdSingle = async (req, res) => {
+  try {
+    const { randomId } = req.query;
+
+    if (!randomId) {
+      return res.status(400).json({
+        success: false,
+        message: "Random ID is required",
+      });
+    }
+
+    const query = { patientRandomId: randomId };
+
+    const patient = await Patient.findOne(query).lean();
+
+    if (!patient) {
+      return res.status(404).json({
+        success: false,
+        message: "Patient not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: patient,
+    });
+  } catch (error) {
+    console.error("getPatientByRandomId error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  }
+};
+export { registerPatient, getPatientWithUniqueId, getAllPatients, patientCheck, getPatientsByClinic, getPatientById, sendSMSLink, setPassword, login,getPatientByRandomId ,addLabOrderToPatient,getPatientFullCRM,updatePatientDetails,getAllPatientsWithBirthdays,getPatientDentalChart,getVisitHistory, getPatientEncryptedLink,verifyPatientWithEncryptedId,getPatientByRandomIdSingle }
