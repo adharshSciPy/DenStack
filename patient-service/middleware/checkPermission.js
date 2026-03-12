@@ -32,3 +32,23 @@ export const canWriteAppointments = (req, res, next) => {
 
   return next();
 };
+
+export const canWriteBills = (req, res, next) => {
+
+  // ⭐ SUPER ADMIN → FULL ACCESS
+  if (req.user?.isSuperAdmin || req.user?.permissions?.all ||req.user?.isHybrid) {
+    return next();
+  }
+  if (req.user?.role === "patient") {
+    return next();
+  }
+  // ✅ REAL PERMISSION CHECK
+  if (!req.user?.permissions?.billing?.write) {
+    return res.status(403).json({
+      success: false,
+      message: "Write access denied for bills",
+    });
+  }
+
+  return next();
+};
