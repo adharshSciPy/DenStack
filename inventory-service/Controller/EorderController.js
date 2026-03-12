@@ -973,3 +973,125 @@ export const getUserDeliveredOrders = async (req, res) => {
     res.status(500).json({ success: false, message: "Failed to retrieve delivered orders", error: error.message });
   }
 };
+
+
+
+
+export const pricePreview = async (req, res) => {
+  try {
+    const { items, clinicId } = req.body;
+
+    if (!items || !items.length) {
+      return res.status(400).json({ success: false, message: "items are required" });
+    }
+
+    // ── Resolve buyer identity (same logic as createEcomOrder) ───────────────
+    const resolvedUserId   = req.user?.id || req.user?._id || null;
+    const resolvedClinicId = clinicId || null;
+
+    let userRole              = "600";
+    let isClinicDoctor        = false;
+    let hasActiveSubscription = false;
+
+    if (resolvedClinicId) {
+      // Clinic buyer
+      try {
+        const clinicDetails = await fetchClinicDetails(resolvedClinicId);
+        userRole = clinicDetails.role || "700";
+        if (clinicDetails.subscription) {
+          const endDate = new Date(clinicDetails.subscription.endDate);
+          hasActiveSubscription = clinicDetails.subscription.isActive && endDate > new Date();
+        }
+      } catch {
+        // If clinic fetch fails, fall back to default pricing
+        userRole = "700";
+      }
+
+    } else if (resolvedUserId) {
+      const tokenRole    = req.user?.role;
+      const CLINIC_ROLE  = process.env.CLINIC_ROLE  || "700";
+      const DOCTOR_ROLES = [process.env.DOCTOR_ROLE, "800"].filter(Boolean);
+
+      if (tokenRole !== CLINIC_ROLE && !DOCTOR_ROLES.includes(tokenRole)) {
+        // Regular user
+        userRole = tokenRole || "600";
+      } else {
+        // Doctor — fetch role info
+        try {
+          const roleInfo    = await getUserRoleInfo(resolvedUserId);
+          userRole          = roleInfo.role;
+          isClinicDoctor    = roleInfo.isClinicDoctor;
+          hasActiveSubscription = roleInfo.hasActiveSubscription;
+        } catch {
+          userRole = tokenRole || "600";
+        }
+      }
+    }
+
+    // ── Fetch products and calculate prices (NO stock modification) ──────────
+    const previewItems = [];
+
+    for (const item of items) {
+      if (!item.productId) continue;
+
+      const quantity = parseInt(item.quantity) || 1;
+      const product  = await Product.findById(item.productId);
+      if (!product) continue;
+
+      let variantData;
+
+      if (!item.variantId) {
+        // Base product pricing
+        variantData = {
+          originalPrice:          product.originalPrice,
+          clinicDiscountPrice:    product.clinicDiscountPrice,
+          doctorDiscountPrice:    product.doctorDiscountPrice,
+          clinicDiscountPercentage: product.clinicDiscountPercentage,
+          doctorDiscountPercentage: product.doctorDiscountPercentage,
+        };
+      } else {
+        const variant = product.variants.id(item.variantId);
+        if (!variant) continue;
+        variantData = variant;
+      }
+
+      const pricing = getPriceForUser(variantData, userRole, isClinicDoctor, hasActiveSubscription);
+
+      previewItems.push({
+        productId:         item.productId,
+        variantId:         item.variantId || null,
+        productName:       product.name,
+        quantity,
+        originalPrice:     variantData.originalPrice,
+        unitPrice:         pricing.price,
+        itemTotal:         pricing.price * quantity,
+        originalItemTotal: variantData.originalPrice * quantity,
+        itemDiscount:      (variantData.originalPrice - pricing.price) * quantity,
+        discountPercentage: pricing.discountPercentage,
+        appliedDiscount:   pricing.appliedDiscount,
+        priceType:         pricing.priceType,
+      });
+    }
+
+    const subtotal     = previewItems.reduce((s, i) => s + i.itemTotal, 0);
+    const totalDiscount = previewItems.reduce((s, i) => s + i.itemDiscount, 0);
+
+    return res.status(200).json({
+      success: true,
+      message: "Price preview calculated",
+      items: previewItems,
+      summary: {
+        subtotal,
+        totalDiscount,
+        discountPercentage: subtotal > 0 ? ((totalDiscount / (subtotal + totalDiscount)) * 100).toFixed(2) : 0,
+        shipping:    subtotal > 500 ? 0 : 50,
+        tax:         parseFloat((subtotal * 0.18).toFixed(2)),
+        total:       subtotal + (subtotal > 500 ? 0 : 50) + parseFloat((subtotal * 0.18).toFixed(2)),
+      },
+    });
+
+  } catch (error) {
+    console.error("Price Preview Error:", error);
+    return res.status(500).json({ success: false, message: "Failed to calculate price preview", error: error.message });
+  }
+};
