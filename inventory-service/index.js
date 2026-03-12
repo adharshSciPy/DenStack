@@ -21,9 +21,12 @@ import tokenCheckRouter from "./Controller/tokenCheck.js";
 
 import lowStockAlertsCron from "./middlewares/lowStockCron.js";
 import paymentRouter from "./Routes/paymentRouter.js";
+import couponCron from "./middlewares/couponCron.js";
 
 dotenv.config();
 connectDB();
+
+couponCron();
 
 const app = express();
 
