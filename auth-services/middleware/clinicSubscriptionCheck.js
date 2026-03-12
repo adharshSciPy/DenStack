@@ -1,3 +1,5 @@
+import jwt from "jsonwebtoken";
+import Clinic from "../models/clinicSchema.js";
 const clinicSubscriptionCheck = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;

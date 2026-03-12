@@ -15,8 +15,8 @@ const orderItemSchema = new Schema(
     variant: {
       variantId: {
         type: mongoose.Schema.Types.ObjectId,
-        required: false, // ✅ Change to false or remove required entirely
-        default: null, // ✅ Add default null
+        required: false,
+        default: null,
       },
       size: String,
       color: String,
@@ -33,7 +33,6 @@ const orderItemSchema = new Schema(
       min: 0,
     },
     originalPrice: {
-      // ✅ ADDED: Original price before any discount
       type: Number,
       min: 0,
     },
@@ -43,19 +42,16 @@ const orderItemSchema = new Schema(
       min: 0,
     },
     discount: {
-      // ✅ ADDED: Discount amount applied to this item
       type: Number,
       default: 0,
       min: 0,
     },
     priceType: {
-      // ✅ ADDED: Type of pricing applied ('clinic' or 'doctor')
       type: String,
       enum: ["clinic", "doctor", "original"],
       default: "original",
     },
     appliedDiscount: {
-      // ✅ ADDED: Description of discount applied
       type: String,
     },
     image: {
@@ -108,7 +104,7 @@ const paymentDetailsSchema = new Schema(
   {
     method: {
       type: String,
-      enum: ["COD", "ONLINE", "UPI", "CARD", "WALLET"],
+      enum: ["COD", "ONLINE", "UPI", "CARD", "WALLET", "RAZORPAY"], // ✅ added RAZORPAY
       required: true,
     },
     transactionId: {
@@ -122,6 +118,19 @@ const paymentDetailsSchema = new Schema(
     paidAt: {
       type: Date,
     },
+    // ✅ Razorpay-specific fields
+    razorpayOrderId: {
+      type: String,
+      default: null,
+    },
+    razorpayPaymentId: {
+      type: String,
+      default: null,
+    },
+    razorpaySignature: {
+      type: String,
+      default: null,
+    },
   },
   { _id: false },
 );
@@ -133,17 +142,35 @@ const orderSchema = new Schema(
       type: String,
       unique: true,
     },
+
+    // ✅ Clinic orders (clinicId from auth microservice)
     clinic: {
       type: mongoose.Schema.Types.ObjectId,
-      required: true,
-      // This will be the clinic ID from auth microservice
+      required: false,
+      default: null,
     },
+
+    // ✅ Normal user orders
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      required: false,
+      default: null,
+    },
+
+    // ✅ Who placed the order
+    buyerType: {
+      type: String,
+      enum: ["clinic", "doctor", "user"],
+      default: "user",
+    },
+
     clinicDetails: {
       name: String,
       email: String,
       phone: String,
       address: String,
     },
+
     items: {
       type: [orderItemSchema],
       required: true,
@@ -197,7 +224,6 @@ const orderSchema = new Schema(
       min: 0,
     },
     discountPercentage: {
-      // ✅ ADDED: Overall discount percentage for the order
       type: Number,
       default: 0,
       min: 0,
@@ -208,11 +234,13 @@ const orderSchema = new Schema(
       min: 0,
     },
     userRole: {
-      // ✅ ADDED: Role of user who placed the order (for pricing audit)
       type: String,
     },
     isClinicDoctor: {
-      // ✅ ADDED: Whether user was a clinic doctor (for pricing audit)
+      type: Boolean,
+      default: false,
+    },
+    hasActiveSubscription: {
       type: Boolean,
       default: false,
     },
@@ -258,7 +286,7 @@ orderSchema.pre("save", async function (next) {
   next();
 });
 
-// Auto-update deliveredAt when status changes to DELIVERED
+// Auto-update deliveredAt/cancelledAt when status changes
 orderSchema.pre("save", function (next) {
   if (this.isModified("orderStatus")) {
     if (this.orderStatus === "DELIVERED" && !this.deliveredAt) {
@@ -271,11 +299,13 @@ orderSchema.pre("save", function (next) {
   next();
 });
 
-// Index for faster queries
+// Indexes
 orderSchema.index({ clinic: 1, createdAt: -1 });
+orderSchema.index({ user: 1, createdAt: -1 });
+orderSchema.index({ buyerType: 1 });
 orderSchema.index({ orderStatus: 1 });
 orderSchema.index({ "paymentDetails.status": 1 });
-orderSchema.index({ userRole: 1 }); // ✅ ADDED: Index for role-based queries
+orderSchema.index({ userRole: 1 });
 
 const EcomOrder = mongoose.model("EcomOrder", orderSchema);
 export default EcomOrder;

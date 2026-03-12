@@ -11,7 +11,6 @@ const dentalLabOrderSchema = new mongoose.Schema(
     dentist: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
     },
     patientName: {
       type: mongoose.Schema.Types.ObjectId,

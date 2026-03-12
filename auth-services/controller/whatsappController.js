@@ -394,13 +394,20 @@ export const sendTestMessage = async (req, res) => {
 // controller/whatsappController.js
 export const sendDocument = async (req, res) => {
   try {
-    const { clinicId, recipient, caption } = req.body;
+    const { clinicId, recipient, caption, patientName, invoiceNumber, amount, dueDate, clinicName } = req.body;
     const file = req.file;
 
     if (!clinicId || !recipient || !file) {
       return res.status(400).json({
         success: false,
         message: 'Clinic ID, recipient, and file are required'
+      });
+    }
+
+    if (!patientName || !invoiceNumber || !amount || !dueDate || !clinicName) {
+      return res.status(400).json({
+        success: false,
+        message: 'All template parameters (patientName, invoiceNumber, amount, dueDate, clinicName) are required'
       });
     }
 
@@ -446,10 +453,11 @@ export const sendDocument = async (req, res) => {
     const messageResponse = await sendWhatsAppMessage({
       to: recipient,
       type: 'document',
-      templateName: 'your_approved_template_name',
+      templateName: 'denstack_invoice',
       documentUrl: uploadResult.url,
       caption: caption || '',
-      fileName: file.originalname
+      fileName: file.originalname,
+      variables: [patientName, invoiceNumber, amount, dueDate, clinicName]
     });
 
     if (messageResponse.success) {
@@ -470,7 +478,12 @@ export const sendDocument = async (req, res) => {
           fileType: file.mimetype,
           fileSize: file.size,
           fileName: file.originalname,
-          fileUrl: uploadResult.url
+          fileUrl: uploadResult.url,
+          patientName,
+          invoiceNumber,
+          amount,
+          dueDate,
+          clinicName
         },
         timestamp: new Date()
       });
@@ -588,4 +601,6 @@ export const disconnectWhatsApp = async (req, res) => {
     });
   }
 };
+
+
 

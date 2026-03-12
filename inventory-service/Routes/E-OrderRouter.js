@@ -14,7 +14,9 @@ import {
     cancelEcomOrder,
     getRecentEcomOrders,
     getEcomOrderAnalytics,
-    getDeliveredProducts
+    getDeliveredProducts,
+    getUserDeliveredOrders,
+    getOrderStatus
 } from "../Controller/EorderController.js";
 
 const ecomOrderRouter = express.Router();
@@ -31,6 +33,7 @@ ecomOrderRouter.get("/analytics", verifyAuthToken, getEcomOrderAnalytics);
 ecomOrderRouter.get("/getById/:orderId", verifyAuthToken, getEcomOrderById);
 ecomOrderRouter.get("/clinic/:clinicId", verifyAuthToken, getClinicEcomOrders);
 ecomOrderRouter.get("/clinic/deliver/:clinicId", verifyAuthToken, getDeliveredProducts);
+ecomOrderRouter.get("/user/deliver/:userId", verifyAuthToken, getUserDeliveredOrders);
 
 
 // ✅ Manage orders - any authenticated user (for now)
@@ -38,6 +41,6 @@ ecomOrderRouter.put("/updateStatus/:orderId", verifyAuthToken, updateEcomOrderSt
 ecomOrderRouter.put("/updatePayment/:orderId", verifyAuthToken, updateEcomPaymentStatus);
 ecomOrderRouter.put("/cancel/:orderId", verifyAuthToken, cancelEcomOrder);
 ecomOrderRouter.get("/clinic/deliver/:clinicId", verifyAuthToken, getDeliveredProducts);
-
+ecomOrderRouter.get("/status/:orderId", verifyAuthToken, getOrderStatus); 
 
 export default ecomOrderRouter;

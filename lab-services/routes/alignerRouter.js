@@ -4,7 +4,9 @@ import {
   updateAlignerOrderStatus,
   getAlignerOrdersByPatientId,
   getLatestAlignerOrdersByVendorId,
-  getMonthlyLabRevenueByVendor
+  getMonthlyLabRevenueByVendor,
+  updatedPaymentStatus,
+  getVendorMonthlyAlignerStats 
   
 } from "../controller/alignerController.js";
 import express from "express";
@@ -22,4 +24,6 @@ alignerRouter.patch("/order/:orderId/update-status", updateAlignerOrderStatus);
 alignerRouter.get("/patient/:patientId/orders", getAlignerOrdersByPatientId);
 alignerRouter.get("/vendor/latest-orders/:vendorId", getLatestAlignerOrdersByVendorId);
 alignerRouter.get("/vendor/monthly-revenue/:labVendorId", getMonthlyLabRevenueByVendor);
+alignerRouter.patch("/order/update-payment-status/:orderId", updatedPaymentStatus);
+alignerRouter.get("/stats/monthly-aligner-stats/:vendorId", getVendorMonthlyAlignerStats);
 export default alignerRouter;

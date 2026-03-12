@@ -20,7 +20,7 @@ import userAccountRouter from "./Routes/userAccountRouter.js";
 import tokenCheckRouter from "./Controller/tokenCheck.js";
 
 import lowStockAlertsCron from "./middlewares/lowStockCron.js";
-import paymentRouter from "./Routes/paymentRoutes.js";
+import paymentRouter from "./Routes/paymentRouter.js";
 
 dotenv.config();
 connectDB();

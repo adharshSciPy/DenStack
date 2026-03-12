@@ -22,7 +22,7 @@ const createAlignerOrder = async (req, res) => {
     const upperFile = req.files?.upperFile?.[0];
     const lowerFile = req.files?.lowerFile?.[0];
     const totalJaw = req.files?.totalJaw?.[0];
-    
+
     const upperStl = upperFile
       ? `/uploads/dental-orders/${upperFile.filename}`
       : null;
@@ -162,7 +162,6 @@ const getAlignerOrdersByPatientId = async (req, res) => {
   }
 };
 
-
 export const getLatestAlignerOrdersByVendorId = async (req, res) => {
   try {
     const { vendorId } = req.params;
@@ -200,13 +199,13 @@ export const getLatestAlignerOrdersByVendorId = async (req, res) => {
 
     // 🔹 Step 3: Collect IDs
     const doctorIds = [
-      ...new Set(orders.map(o => o.doctorName).filter(Boolean)),
+      ...new Set(orders.map((o) => o.doctorName).filter(Boolean)),
     ];
 
     const patientIds = [
-      ...new Set(orders.map(o => o.patientId?.toString()).filter(Boolean)),
+      ...new Set(orders.map((o) => o.patientId?.toString()).filter(Boolean)),
     ];
-    
+
     const doctorCache = {};
     const patientCache = {};
 
@@ -215,14 +214,14 @@ export const getLatestAlignerOrdersByVendorId = async (req, res) => {
       doctorIds.map(async (id) => {
         try {
           const resp = await axios.get(
-            `http://localhost:8001/api/v1/auth/doctor/details/${id}`
+            `http://localhost:8001/api/v1/auth/doctor/details/${id}`,
           );
-          doctorCache[id] = resp.data?.data?.name || "";          
-        } catch(error) {
-          console.log(`Failed to fetch doctor name for ID: ${id}` ,error);
+          doctorCache[id] = resp.data?.data?.name || "";
+        } catch (error) {
+          console.log(`Failed to fetch doctor name for ID: ${id}`, error);
           doctorCache[id] = "";
         }
-      })
+      }),
     );
 
     // 🔹 Step 5: Patient API
@@ -230,17 +229,17 @@ export const getLatestAlignerOrdersByVendorId = async (req, res) => {
       patientIds.map(async (id) => {
         try {
           const resp = await axios.get(
-            `${PATIENT_SERVICE_URL}/api/v1/patient-service/patient/details/${id}`
+            `${PATIENT_SERVICE_URL}/api/v1/patient-service/patient/details/${id}`,
           );
           patientCache[id] = resp.data?.data?.name || "";
         } catch {
           patientCache[id] = "";
         }
-      })
+      }),
     );
-    
+
     // 🔹 Step 6: Merge names
-    const finalOrders = orders.map(order => ({
+    const finalOrders = orders.map((order) => ({
       ...order.toObject(),
       doctorName: doctorCache[order.doctorName] || "",
       patientName: patientCache[order.patientId?.toString()] || "",
@@ -253,7 +252,6 @@ export const getLatestAlignerOrdersByVendorId = async (req, res) => {
       nextCursor,
       message: "Aligner orders fetched successfully",
     });
-
   } catch (error) {
     console.error("Aligner order fetch error:", error);
     return res.status(500).json({
@@ -267,7 +265,7 @@ export const getMonthlyLabRevenueByVendor = async (req, res) => {
     const { labVendorId } = req.params;
     let { month, year } = req.query;
     console.log("Received labVendorId:", labVendorId);
-    
+
     if (!labVendorId) {
       return res.status(400).json({
         success: false,
@@ -292,13 +290,13 @@ export const getMonthlyLabRevenueByVendor = async (req, res) => {
 
     const startDate = new Date(year, month - 1, 1);
     const endDate = new Date(year, month, 1);
-    
 
     const stats = await AlignerOrder.aggregate([
       {
         $match: {
           vendorId: vendorObjectId, // ✅ Now using ObjectId
           createdAt: { $gte: startDate, $lt: endDate },
+          paymentStatus: "paid",
         },
       },
       {
@@ -309,7 +307,6 @@ export const getMonthlyLabRevenueByVendor = async (req, res) => {
         },
       },
     ]);
-
 
     return res.status(200).json({
       success: true,
@@ -328,7 +325,94 @@ export const getMonthlyLabRevenueByVendor = async (req, res) => {
     });
   }
 };
+export const updatedPaymentStatus = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { paymentStatus } = req.body;
+    const updatedOrder = await AlignerOrder.findByIdAndUpdate(
+      orderId,
+      { paymentStatus },
+      { new: true },
+    );
+    if (!updatedOrder) {
+      return res.status(404).json({
+        success: false,
+        message: "Aligner order not found",
+      });
+    }
+    res.status(200).json({
+      success: true,
+      message: "Payment status updated successfully",
+      data: updatedOrder,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+export const getVendorMonthlyAlignerStats = async (req, res) => {
+  try {
+    const { vendorId } = req.params;
+    let { month, year } = req.query;
 
+    if (!vendorId) {
+      return res.status(400).json({
+        success: false,
+        message: "vendorId is required",
+      });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(vendorId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid vendorId",
+      });
+    }
+
+    const now = new Date();
+    month = month ? Number(month) : now.getMonth() + 1;
+    year = year ? Number(year) : now.getFullYear();
+
+    const startDate = new Date(year, month - 1, 1);
+    const endDate = new Date(year, month, 1);
+
+    const stats = await AlignerOrder.aggregate([
+      {
+        $match: {
+          vendorId: new mongoose.Types.ObjectId(vendorId),
+          createdAt: { $gte: startDate, $lt: endDate },
+          paymentStatus: "paid", // optional
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalOrders: { $sum: 1 },
+          totalRevenue: { $sum: "$totalAmount" },
+        },
+      },
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        vendorId,
+        totalOrders: stats[0]?.totalOrders || 0,
+        totalRevenue: stats[0]?.totalRevenue || 0,
+        month,
+        year,
+      },
+    });
+  } catch (error) {
+    console.error("Vendor monthly stats error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
 export {
   createAlignerOrder,
   getAlignerOrderById,
