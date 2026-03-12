@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken";
 import EcommerceUser from "../models/EcommerceUserSchema.js";
 import Clinic from "../models/clinicSchema.js";
+import Doctor from "../models/doctorSchema.js";
 import {
   emailValidator,
   passwordValidator,
@@ -310,7 +311,89 @@ const editUserProfile = async (req, res) => {
     });
   }
 };
+// Doctor Marketplace Login (SSO)
+const doctorMarketplaceLogin = async (req, res) => {
+  try {
+    console.log("DOCTOR AUTH HEADER:", req.headers.authorization);
 
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({ message: "Doctor token missing" });
+    }
+
+    const doctorToken = authHeader.split(" ")[1];
+
+    const decoded = jwt.verify(
+      doctorToken,
+      process.env.ACCESS_TOKEN_SECRET
+    );
+
+    // Assuming your doctor token contains doctorId
+    const doctor = await Doctor.findById(decoded.id || decoded.doctorId);
+
+    if (!doctor) {
+      return res.status(404).json({ message: "Doctor not found" });
+    }
+
+    // Check if user exists with doctor's email
+    let user = await EcommerceUser.findOne({ email: doctor.email });
+
+    if (!user) {
+      // Create new e-commerce user for doctor
+      user = await EcommerceUser.create({
+        name: doctor.name,
+        email: doctor.email,
+        isDoctorUser: true,
+        doctorId: doctor._id, // Optional: store reference
+        // You might want to set a random password or leave it null
+        // since they'll always login via SSO
+      });
+    }
+
+    // Generate e-commerce token
+    const ecommerceToken = jwt.sign(
+      {
+        id: user._id,
+        role: "doctor",
+        doctorId: doctor._id,
+        email: doctor.email
+      },
+      process.env.ACCESS_TOKEN_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    // Set cookie
+    res.cookie("accessToken", ecommerceToken, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    });
+
+    // Also send token in response for client-side storage if needed
+    res.json({ 
+      success: true,
+      token: ecommerceToken,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: "doctor"
+      }
+    });
+
+  } catch (err) {
+    console.error("Doctor SSO error:", err);
+    if (err.name === 'JsonWebTokenError') {
+      return res.status(401).json({ message: "Invalid doctor token" });
+    }
+    if (err.name === 'TokenExpiredError') {
+      return res.status(401).json({ message: "Doctor token expired" });
+    }
+    res.status(500).json({ message: "Server error during doctor login" });
+  }
+};
 
 const logoutUser = (req, res) => {
   res.clearCookie("accessToken", {
@@ -328,4 +411,4 @@ const logoutUser = (req, res) => {
   res.json({ message: "Logged out successfully" });
 };
 
-export { registerEcommerceUser, loginEcommerceUser, clinicMarketplaceLogin, getProfile, editUserProfile, logoutUser };
+export { registerEcommerceUser, loginEcommerceUser, clinicMarketplaceLogin, getProfile, editUserProfile,doctorMarketplaceLogin,logoutUser };
