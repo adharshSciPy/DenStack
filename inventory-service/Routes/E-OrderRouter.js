@@ -3,7 +3,7 @@
 // ============================================
 
 import express from "express";
-import { verifyAuthToken, canPlaceOrder } from "../middlewares/authMiddleware.js";
+import { verifyAuthToken, canPlaceOrder } from "../middlewares/authmiddleware.js";
 import {
     createEcomOrder,
     getAllEcomOrders,
@@ -16,7 +16,8 @@ import {
     getEcomOrderAnalytics,
     getDeliveredProducts,
     getUserDeliveredOrders,
-    getOrderStatus
+    getOrderStatus,
+    pricePreview 
 } from "../Controller/EorderController.js";
 
 const ecomOrderRouter = express.Router();
@@ -34,6 +35,10 @@ ecomOrderRouter.get("/getById/:orderId", verifyAuthToken, getEcomOrderById);
 ecomOrderRouter.get("/clinic/:clinicId", verifyAuthToken, getClinicEcomOrders);
 ecomOrderRouter.get("/clinic/deliver/:clinicId", verifyAuthToken, getDeliveredProducts);
 ecomOrderRouter.get("/user/deliver/:userId", verifyAuthToken, getUserDeliveredOrders);
+
+
+
+ecomOrderRouter.post('/price-preview', verifyAuthToken, pricePreview);
 
 
 // ✅ Manage orders - any authenticated user (for now)

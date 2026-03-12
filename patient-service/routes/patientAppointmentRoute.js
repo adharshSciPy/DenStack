@@ -29,7 +29,7 @@ import { authDoctor } from "../middleware/authDoctor.js";
 import { addPaymentToBill } from "../../billing-service/controller/billingController.js";
 import { verifyToken } from "../middleware/verifyToken.js";
 import { attachPermissions } from "../middleware/attachPermission.js";
-import { canReadAppointments, canWriteAppointments } from "../middleware/checkPermission.js";
+import { canReadAppointments, canWriteAppointments,canWriteBills } from "../middleware/checkPermission.js";
 
 const patientAppointmentRouter = Router();
 
@@ -48,9 +48,11 @@ patientAppointmentRouter.route("/reschedule/:id").patch(appointmentReschedule);
 patientAppointmentRouter.route("/cancel/:id").patch(cancelAppointment);
 patientAppointmentRouter.route("/by-date").get(getAppointmentsByDate);
 patientAppointmentRouter.route("/clinic/unpaid_bills/:id").get(getUnpaidBillsByClinic);
-patientAppointmentRouter.route("/update_bills").patch(addReceptionBilling);
+patientAppointmentRouter.route("/update_bills").patch(verifyToken,attachPermissions,canWriteBills,addReceptionBilling);
 patientAppointmentRouter.get("/allappointments", getAllAppointments);
 patientAppointmentRouter.route("/monthly_appointmnets/:id").get(getMonthlyAppointmentsClinicWise)
+patientAppointmentRouter.route("/monthly_appointmnets/receptionist/:id").get(verifyToken,attachPermissions,canReadAppointments,getMonthlyAppointmentsClinicWise)
+
 patientAppointmentRouter.route("/visit-history/:id").get(getPatientHistoryById);
 patientAppointmentRouter.route("/recall-approval/:id").patch(approveRecallAppointment);
 patientAppointmentRouter.route("/treatment-plans/:id").get(getPatientTreatmentPlans)
