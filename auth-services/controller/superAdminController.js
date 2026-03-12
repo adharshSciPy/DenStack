@@ -16,6 +16,9 @@ import {
 } from "../utils/validators.js";
 import axios from "axios";
 import jwt from "jsonwebtoken";
+import crypto from "crypto";
+import {sendOTPEmail} from "../services/emailService.js";
+
 const ORDER_SERVICE = process.env.ORDER_SERVICE_URL;
 const PATIENT_SERVICE = process.env.PATIENT_SERVICE_BASE_URL;
 const LAB_ORDER_SERVICE = process.env.LAB_ORDER_SERVICE_BASE_URL;
@@ -583,6 +586,77 @@ const getUsageAnalytics = async (req, res) => {
     });
   }
 };
+const forgotSuperAdminPassword = async (req, res) => {
+  try {
 
+    const { email } = req.body;
 
-export { registerSuperAdmin, loginSuperAdmin, getSalesMetrics, getSalesTrends, getMonthlySummary, getDashboardStats, getDashboardSummary, getUsageAnalytics }
+    const user = await SuperAdmin.findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Generate 6 digit OTP
+    const otp = crypto.randomInt(100000, 999999).toString();
+
+    user.otp = otp;
+    user.otpExpires = Date.now() + 10 * 60 * 1000; // 10 min
+
+    await user.save();
+
+    await sendOTPEmail(email, otp);
+
+    res.json({
+      message: "OTP sent to email",
+    });
+console.log(otp);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+const verifySuperAdminOTP = async (req, res) => {
+
+  const { email, otp } = req.body;
+
+  const user = await SuperAdmin.findOne({
+    email,
+    otp,
+    otpExpires: { $gt: Date.now() }
+  });
+
+  if (!user) {
+    return res.status(400).json({ message: "Invalid or expired OTP" });
+  }
+
+  res.json({
+    message: "OTP verified"
+  });
+
+};
+const resetSuperAdminPassword = async (req, res) => {
+
+  const { email, otp, newPassword } = req.body;
+
+  const user = await SuperAdmin.findOne({
+    email,
+    otp,
+    otpExpires: { $gt: Date.now() }
+  });
+
+  if (!user) {
+    return res.status(400).json({ message: "Invalid or expired OTP" });
+  }
+
+  user.password = newPassword;
+  user.otp = undefined;
+  user.otpExpires = undefined;
+
+  await user.save();
+
+  res.json({
+    message: "Password reset successful"
+  });
+
+};
+export { registerSuperAdmin, loginSuperAdmin, getSalesMetrics, getSalesTrends, getMonthlySummary, getDashboardStats, getDashboardSummary, getUsageAnalytics ,forgotSuperAdminPassword,verifySuperAdminOTP,resetSuperAdminPassword}
