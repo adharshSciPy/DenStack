@@ -46,6 +46,10 @@ const cartSchema = new Schema(
             required: false, // ✅ Changed to false
             default: null
         },
+        doctor: {
+        type: mongoose.Schema.Types.ObjectId,
+        default: null
+    },
         items: {
             type: [cartItemSchema],
             default: []
@@ -64,12 +68,12 @@ const cartSchema = new Schema(
 
 // ✅ Add validation: At least one of clinic or user must be present
 cartSchema.pre("save", function (next) {
-    if (!this.clinic && !this.user) {
-        next(new Error("Either clinic or user is required"));
-    } else {
-        next();
+    if (!this.clinic && !this.user && !this.doctor) {
+        return next(new Error("Either clinic, user or doctor is required"));
     }
+    next();
 });
+
 
 // Auto-calculate totals before saving
 cartSchema.pre("save", function (next) {
@@ -81,6 +85,7 @@ cartSchema.pre("save", function (next) {
 // Index for faster queries
 cartSchema.index({ clinic: 1 });
 cartSchema.index({ user: 1 });
+cartSchema.index({ doctor: 1 });
 
 const Cart = mongoose.model("Cart", cartSchema);
 export default Cart;
