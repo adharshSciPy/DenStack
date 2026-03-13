@@ -213,6 +213,12 @@ const clinicSchema = new Schema(
         },
       ],
     },
+     otp: {
+  type: String
+},
+otpExpires: {
+  type: Date
+}
   },
   { timestamps: true },
 );

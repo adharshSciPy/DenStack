@@ -105,6 +105,12 @@ const pharmacistSchema = new mongoose.Schema(
       type: Date,
       default: Date.now,
     },
+     otp: {
+  type: String
+},
+otpExpires: {
+  type: Date
+}
   },
   { timestamps: true }
 );
