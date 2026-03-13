@@ -169,13 +169,20 @@ const getInHouseLabVendors = async (req, res) => {
 // NEW: Get only external lab vendors
 const getExternalLabVendors = async (req, res) => {
   try {
-    const vendors = await LabVendor.find({ type: "external" }).sort({ createdAt: -1 });
+    const vendors = await LabVendor.find({ type: "external"}).sort({ createdAt: -1 });
     res.status(200).json(vendors);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
-
+const getExternalLabs = async (req, res) => {
+  try {
+    const vendors = await LabVendor.find({ type: ["external","aligner"] }).sort({ createdAt: -1 });
+    res.status(200).json(vendors);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
 
 const getAlignerVendors = async (req, res) => {
   try {
@@ -255,5 +262,6 @@ export {
   getExternalLabVendors,
   getInHouseLabsByClinicId,
   createAlignerVendor,
-  getAlignerVendors
+  getAlignerVendors,
+  getExternalLabs
 };

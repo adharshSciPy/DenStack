@@ -18,7 +18,7 @@ const registerTechnician = async (req, res) => {
     password,
     clinicId,
     labVendorId,
-    labType: incomingLabType, // ALIGNER / EXTERNAL comes from frontend
+    labType: labType, // ALIGNER / EXTERNAL comes from frontend
   } = req.body;
 
   console.log("this", req.body);
@@ -74,16 +74,16 @@ const registerTechnician = async (req, res) => {
     // 🔹 CASE 2: No clinic → ALIGNER / EXTERNAL
     if (!clinicId) {
       if (
-        !incomingLabType ||
-        !["aligner", "external"].includes(incomingLabType)
+        !labType ||
+        !["aligner", "external"].includes(labType)
       ) {
         return res.status(400).json({
           message:
             "labType must be ALIGNER or EXTERNAL for non-clinic technicians",
         });
-      }
+      } 
 
-      labType = incomingLabType;
+      labType = labType;
     }
 
     // 🔹 Create technician
