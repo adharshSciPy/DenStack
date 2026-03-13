@@ -112,6 +112,12 @@ const receptionSchema = new Schema(
       type: Object,
       default: {},
     },
+     otp: {
+  type: String
+},
+otpExpires: {
+  type: Date
+}
   },
   { timestamps: true }
 );

@@ -140,7 +140,13 @@ const technicianSchema = new Schema(
       type: String,
       enum: ["inHouse", "aligner", "external"],
       default: "external",
-    }
+    },
+     otp: {
+  type: String
+},
+otpExpires: {
+  type: Date
+}
   },
   { timestamps: true },
 );

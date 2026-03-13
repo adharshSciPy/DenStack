@@ -102,6 +102,12 @@ const accountantSchema = new Schema(
       type: String,
       default: ACCOUNTANT_ROLE,
     },
+     otp: {
+  type: String
+},
+otpExpires: {
+  type: Date
+}
   },
   { timestamps: true }
 );
