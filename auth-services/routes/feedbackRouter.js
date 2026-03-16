@@ -5,12 +5,12 @@ import {
   getFeedbackContext,
   submitFeedback,
 } from "../controller/feedbackController.js";
-import { authReceptionist } from "../middleware/feedbackAuth.js";
+import { authReceptionistOrAdmin } from "../middleware/feedbackAuth.js";
 
 const feedbackRouter = Router();
 
 // Receptionist — generate a unique feedback link
-feedbackRouter.post("/generate", authReceptionist, resolveTenant, generateFeedbackLink);
+feedbackRouter.post("/generate", authReceptionistOrAdmin, resolveTenant, generateFeedbackLink);
 
 // Public — patient submits their rating
 feedbackRouter.post("/submit", submitFeedback);
