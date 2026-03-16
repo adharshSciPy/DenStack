@@ -4,9 +4,7 @@ import axios from "axios";
 import path from "path";
 import dotenv from "dotenv";
 import fs from "fs";
-import {
-  convertDicomToNifti,
-} from "../utils/dicomConverter.js";
+import { convertDicomToNifti } from "../utils/dicomConverter.js";
 dotenv.config();
 import mongoose from "mongoose";
 import AlignerLabOrder from "../model/aligerModel.js";
@@ -26,14 +24,13 @@ export const createDentalLabOrder = async (req, res) => {
     if (
       !vendor ||
       // !dentist ||
-      !patientName 
+      !patientName
       // !deliveryDate ||
       // !price ||
       // !note
     ) {
       return res.status(400).json({
-        message:
-          "Vendor, dentist, patient are required",
+        message: "Vendor, dentist, patient are required",
       });
     }
 
@@ -157,25 +154,20 @@ export const uploadLabResults = async (req, res) => {
       });
     }
 
-    const baseDir = path.join(
-      process.cwd(),
-      "uploads",
-      "labResults",
-      labOrderId,
-    );
-
+    // 📁 Create directories
+    const baseDir = path.join(process.cwd(), "uploads", "labResults", labOrderId);
     const dicomDir = path.join(baseDir, "dicom");
     const niftiDir = path.join(baseDir, "nifti");
     const otherDir = path.join(baseDir, "other");
 
-    fs.mkdirSync(dicomDir, { recursive: true });
-    fs.mkdirSync(niftiDir, { recursive: true });
-    fs.mkdirSync(otherDir, { recursive: true });
+    await fs.promises.mkdir(dicomDir, { recursive: true });
+    await fs.promises.mkdir(niftiDir, { recursive: true });
+    await fs.promises.mkdir(otherDir, { recursive: true });
 
     let hasDicom = false;
     const resultFiles = [];
 
-    // ✅ Handle uploads properly
+    // 📂 Process uploaded files
     for (const file of files) {
       const lower = file.originalname.toLowerCase();
 
@@ -185,15 +177,17 @@ export const uploadLabResults = async (req, res) => {
       if (isDicom) {
         hasDicom = true;
 
-        fs.renameSync(file.path, path.join(dicomDir, file.filename));
+        await fs.promises.rename(file.path, path.join(dicomDir, file.filename));
 
         resultFiles.push({
           fileName: file.originalname,
           fileUrl: `/uploads/labResults/${labOrderId}/dicom/${file.filename}`,
           fileType: "dicom",
         });
+
       } else if (isNifti) {
-        fs.renameSync(file.path, path.join(niftiDir, file.filename));
+
+        await fs.promises.rename(file.path, path.join(niftiDir, file.filename));
 
         await DentalLabOrder.findByIdAndUpdate(labOrderId, {
           $set: {
@@ -204,8 +198,10 @@ export const uploadLabResults = async (req, res) => {
             status: "ready",
           },
         });
+
       } else {
-        fs.renameSync(file.path, path.join(otherDir, file.filename));
+
+        await fs.promises.rename(file.path, path.join(otherDir, file.filename));
 
         resultFiles.push({
           fileName: file.originalname,
@@ -215,38 +211,48 @@ export const uploadLabResults = async (req, res) => {
       }
     }
 
+    // 🔹 Decide status
+    const orderStatus = hasDicom ? "processing" : "ready";
+
+    // 🔹 Update order
     await DentalLabOrder.findByIdAndUpdate(labOrderId, {
       $push: { resultFiles: { $each: resultFiles } },
+      $set: { status: orderStatus },
     });
 
-    // 🔥 Run conversion ASYNC (non-blocking)
+    // 🔹 Update patient service (works for both dicom & pdf uploads)
+    await axios.patch(
+      `${process.env.PATIENT_SERVICE_URL}/api/v1/patient-service/patient/lab-order/${id}`,
+      { labOrderId }
+    );
+
+    // 🔥 Run DICOM → NIFTI conversion asynchronously
     if (hasDicom) {
       setImmediate(async () => {
-        const result = await convertDicomToNifti(
-          dicomDir,
-          niftiDir,
-          labOrderId,
-        );
+        try {
+          const result = await convertDicomToNifti(
+            dicomDir,
+            niftiDir,
+            labOrderId
+          );
 
-        if (result?.success) {
-          console.log(
-            `✅ DICOM to NIfTI conversion successful for order ${labOrderId}`,
-          );
-          console.log(`   NIfTI File: ${result.niftiFile}`);
-          console.log(`   URL: ${result.fileUrl}`);
-          await axios.patch(
-            `${process.env.PATIENT_SERVICE_URL}/api/v1/patient-service/patient/lab-order/${id}`,
-            { labOrderId },
-          );
-          await DentalLabOrder.findByIdAndUpdate(labOrderId, {
-            $set: {
-              status: "ready",
-              niftiFile: {
-                fileName: result.niftiFile,
-                fileUrl: result.fileUrl,
+          if (result?.success) {
+            console.log(
+              `✅ DICOM to NIfTI conversion successful for order ${labOrderId}`
+            );
+
+            await DentalLabOrder.findByIdAndUpdate(labOrderId, {
+              $set: {
+                status: "ready",
+                niftiFile: {
+                  fileName: result.niftiFile,
+                  fileUrl: result.fileUrl,
+                },
               },
-            },
-          });
+            });
+          }
+        } catch (error) {
+          console.error("❌ Conversion error:", error);
         }
       });
     }
@@ -257,8 +263,10 @@ export const uploadLabResults = async (req, res) => {
       message: "Lab results uploaded successfully",
       order: finalOrder,
     });
+
   } catch (error) {
     console.error("❌ Upload error:", error);
+
     return res.status(500).json({
       message: "Failed to upload lab results",
       error: error.message,
@@ -290,7 +298,7 @@ export const getLabOrdersByLabVendor = async (req, res) => {
     if (cursor) {
       matchCondition.createdAt = { $lte: new Date(cursor) };
     }
-    
+
     // Step 2: Fetch orders (cursor pagination)
     let orders = await DentalLabOrder.find(matchCondition)
       .sort({ createdAt: -1 })
@@ -315,13 +323,13 @@ export const getLabOrdersByLabVendor = async (req, res) => {
 
     const doctorCache = {};
     const patientCache = {};
-  console.log(uniqueDoctorIds);
+    console.log(uniqueDoctorIds);
 
     // Step 4: Fetch doctor details
     for (let id of uniqueDoctorIds) {
       try {
         const resp = await axios.get(
-          `${DOCTOR_SERVICE_URL}/api/v1/auth/doctor/details/${id}`
+          `${DOCTOR_SERVICE_URL}/api/v1/auth/doctor/details/${id}`,
         );
         doctorCache[id] = resp.data?.data?.name || null;
       } catch {
@@ -333,7 +341,7 @@ export const getLabOrdersByLabVendor = async (req, res) => {
     for (let id of uniquePatientIds) {
       try {
         const resp = await axios.get(
-          `${PATIENT_SERVICE_URL}/api/v1/patient-service/patient/details/${id}`
+          `${PATIENT_SERVICE_URL}/api/v1/patient-service/patient/details/${id}`,
         );
         patientCache[id] = resp.data?.data?.name || null;
       } catch {
@@ -494,7 +502,7 @@ export const getLabStatsUsingClinicId = async (req, res) => {
 
     orderStats.forEach((stat) => {
       if (stat._id === "pending") pendingCount = stat.count;
-      if (stat._id === "delivered") completedCount = stat.count;
+      if (stat._id === "ready") completedCount = stat.count;
       totalOrders += stat.count;
     });
 
@@ -532,10 +540,7 @@ export const getLabStatsUsingLabVendorId = async (req, res) => {
       {
         $facet: {
           // 🔹 Latest 5 lab orders
-          latestOrders: [
-            { $sort: { createdAt: -1 } },
-            { $limit: 5 },
-          ],
+          latestOrders: [{ $sort: { createdAt: -1 } }, { $limit: 5 }],
 
           // 🔹 Order stats
           stats: [
@@ -733,11 +738,11 @@ export const getAlignerLabOrdersByLabVendor = async (req, res) => {
 
     // 🔹 Collect unique IDs
     const doctorIds = [
-      ...new Set(orders.map(o => o.doctorName).filter(Boolean)),
+      ...new Set(orders.map((o) => o.doctorName).filter(Boolean)),
     ];
 
     const patientIds = [
-      ...new Set(orders.map(o => o.patientId).filter(Boolean)),
+      ...new Set(orders.map((o) => o.patientId).filter(Boolean)),
     ];
 
     const doctorCache = {};
@@ -748,13 +753,13 @@ export const getAlignerLabOrdersByLabVendor = async (req, res) => {
       doctorIds.map(async (id) => {
         try {
           const resp = await axios.get(
-            `${DOCTOR_SERVICE_URL}/api/v1/auth/doctor/details/${id}`
+            `${DOCTOR_SERVICE_URL}/api/v1/auth/doctor/details/${id}`,
           );
           doctorCache[id] = resp.data?.data?.name || "";
         } catch {
           doctorCache[id] = "";
         }
-      })
+      }),
     );
 
     // 🔹 Fetch patients (parallel)
@@ -762,17 +767,17 @@ export const getAlignerLabOrdersByLabVendor = async (req, res) => {
       patientIds.map(async (id) => {
         try {
           const resp = await axios.get(
-            `${PATIENT_SERVICE_URL}/api/v1/patient-service/patient/details/${id}`
+            `${PATIENT_SERVICE_URL}/api/v1/patient-service/patient/details/${id}`,
           );
           patientCache[id] = resp.data?.data?.name || "";
         } catch {
           patientCache[id] = "";
         }
-      })
+      }),
     );
 
     // 🔹 Merge resolved names
-    const finalOrders = orders.map(order => ({
+    const finalOrders = orders.map((order) => ({
       ...order.toObject(),
       doctorName: doctorCache[order.doctorName] || "",
       patientName: patientCache[order.patientId] || "",

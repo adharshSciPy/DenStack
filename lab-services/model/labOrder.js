@@ -33,7 +33,7 @@ const dentalLabOrderSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["pending", "processing", "ready", "conversion_failed"],
+      enum: ["pending", "processing", "ready", "conversion_failed", "cancelled"],
       default: "pending",
     },
     attachments: [

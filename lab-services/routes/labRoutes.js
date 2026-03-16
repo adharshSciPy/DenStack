@@ -11,7 +11,8 @@ import {
   getInHouseLabsByClinicId,
   createAlignerVendor,
   getAlignerVendors,
-  getExternalLabs
+  getExternalLabs,
+  addTechnicianToLabVendor
 } from "../controller/labController.js";
 import { verifyRole } from "../middleware/verifyAdmin.js";
 const labRouter = Router();
@@ -31,4 +32,5 @@ labRouter
   .route("/inhouse-labs-by-clinic/:clinicId")
   .get(getInHouseLabsByClinicId);
 labRouter.route("/aligner-vendors").get(getAlignerVendors);
+labRouter.route("/add-technician/:id").patch(addTechnicianToLabVendor);
 export default labRouter;
