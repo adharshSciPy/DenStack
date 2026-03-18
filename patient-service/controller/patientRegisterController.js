@@ -199,31 +199,33 @@ const getAllPatients = async (req, res) => {
       includeTotal = "false",
     } = req.query;
 
-    const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 25, 1), 100); // max 100
+    const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 25, 1), 100);
     const includeCount = String(includeTotal).toLowerCase() === "true";
 
     // Base query
-    const query = { clinicId: new mongoose.Types.ObjectId(clinicId) };
+    const baseQuery = { clinicId: new mongoose.Types.ObjectId(clinicId) };
 
     // Filters
     if (phone) {
       const cleaned = String(phone).replace(/\D/g, "");
-      if (/^\d{10}$/.test(cleaned)) query.phone = Number(cleaned);
+      if (/^\d{10}$/.test(cleaned)) baseQuery.phone = Number(cleaned);
     }
-    if (patientUniqueId) query.patientUniqueId = patientUniqueId;
+
+    if (patientUniqueId) {
+      baseQuery.patientUniqueId = patientUniqueId;
+    }
 
     // Prefix search (index-friendly)
     if (search) {
       const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const s = esc(search);
-      // Only use regex on 'name' (indexed) or 'patientUniqueId'
-      query.$or = [
+      baseQuery.$or = [
         { name: { $regex: "^" + s, $options: "i" } },
         { patientUniqueId: { $regex: "^" + s, $options: "i" } },
       ];
     }
 
-    // Projection: default exclude sensitive fields
+    // Projection
     const projection = {};
     if (fields) {
       fields.split(",").map(f => f.trim()).forEach(f => {
@@ -233,29 +235,34 @@ const getAllPatients = async (req, res) => {
     projection.password = 0;
     projection.__v = 0;
 
-    // Sort
-    const sortDir = String(sortOrder).toLowerCase() === "asc" ? 1 : -1;
-    const sortField = sortBy || "createdAt";
-    const sort = { [sortField]: sortDir };
+    // Count total BEFORE adding cursor filter so we get accurate total
+    let totalCount;
+    if (includeCount) {
+      totalCount = await Patient.countDocuments(baseQuery);
+    }
 
-    // Cursor pagination
+    // Now build the paginated query by cloning base and adding cursor
+    const paginatedQuery = { ...baseQuery };
+
     if (afterId) {
       if (!mongoose.Types.ObjectId.isValid(afterId)) {
         return res.status(400).json({ success: false, message: "Invalid cursor id" });
       }
       const objectCursor = new mongoose.Types.ObjectId(afterId);
-      query._id = { $gt: objectCursor }; // always fetch documents after this _id
+      // Always use $gt with ascending _id sort — they must match
+      paginatedQuery._id = { $gt: objectCursor };
     }
 
-    // Fetch documents + 1 extra to detect "hasMore"
-    const docs = await Patient.find(query)
-      .sort({ _id: sortDir }) // sort by _id for stable cursor pagination
+    // Always sort by _id ascending for cursor pagination to work correctly
+    // $gt operator only returns correct results when paired with ascending sort
+    const docs = await Patient.find(paginatedQuery)
+      .sort({ _id: 1 })
       .limit(parsedLimit + 1)
       .select(projection)
       .lean();
 
     const hasMore = docs.length > parsedLimit;
-    if (hasMore) docs.pop(); // remove extra doc
+    if (hasMore) docs.pop(); // remove the extra doc used for hasMore detection
 
     const nextCursor = docs.length ? String(docs[docs.length - 1]._id) : null;
 
@@ -266,12 +273,12 @@ const getAllPatients = async (req, res) => {
       hasMore,
     };
 
-    // Include total count only if explicitly requested
     if (includeCount) {
-      meta.total = await Patient.countDocuments(query);
+      meta.total = totalCount;
     }
 
-    return res.json({ success: true, meta, data: docs });
+    return res.json({ success: true, count: docs.length, meta, data: docs });
+
   } catch (err) {
     console.error("getAllPatients error:", err);
     return res.status(500).json({ success: false, message: "Server error", error: err.message });
