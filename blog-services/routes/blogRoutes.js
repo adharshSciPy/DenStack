@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { verifyDoctor } from "../middleware/verifyDoctor.js";
-import {upload} from "../middleware/upload.js";
+import { upload } from "../middleware/upload.js";
 import {
   createBlog,
   getAllBlogs,
@@ -18,16 +18,23 @@ import {
   getNestedReplies,
   editComment,
   deleteComment,
+  adminGetAllBlogs,
+  toggleBlogBlock,
+  adminGetBlogById,
   // replyToComment
 } from "../controller/blogController.js";
-const blogRouter=Router();
+const blogRouter = Router();
 // Only doctors can do all of these:
-blogRouter.route("/post-blog").post(verifyDoctor,upload.array("images", 5), createBlog);
+blogRouter
+  .route("/post-blog")
+  .post(verifyDoctor, upload.array("images", 5), createBlog);
 blogRouter.route("/all-blogs").get(getAllBlogs);
 blogRouter.route("/blog/:id").get(verifyDoctor, getBlogById);
 blogRouter.route("/my-blogs").get(verifyDoctor, getBlogsByDoctor);
 blogRouter.route("/other-blogs").get(verifyDoctor, getOtherDoctorBlogs);
-blogRouter.route("/edit-blog/:id").patch(verifyDoctor,upload.array("images", 5), editBlog);
+blogRouter
+  .route("/edit-blog/:id")
+  .patch(verifyDoctor, upload.array("images", 5), editBlog);
 blogRouter.route("/delete-blog/:id").delete(verifyDoctor, deleteBlog);
 blogRouter.route("/comment/:blogId").post(verifyDoctor, addComment);
 blogRouter.route("/like-toggle/:blogId").post(verifyDoctor, toggleBlogLike);
@@ -37,6 +44,11 @@ blogRouter.route("/reply/:blogId/:commentId").post(verifyDoctor, replyComment);
 blogRouter.route("/replies/:commentId").get(getCommentReplies);
 blogRouter.route("/nested-replies/:parentId").get(getNestedReplies);
 blogRouter.route("/edit-comment/:commentId").patch(verifyDoctor, editComment);
-blogRouter.route("/delete-comment/:commentId").delete(verifyDoctor, deleteComment);
+blogRouter
+  .route("/delete-comment/:commentId")
+  .delete(verifyDoctor, deleteComment);
+blogRouter.route("/admin/blogs").get(adminGetAllBlogs);
+blogRouter.route("/admin/blog/:blogId").get( adminGetBlogById);
+blogRouter.route("/admin/toggle-block/:blogId").patch(toggleBlogBlock);
 // blogRouter.route("/reply/:blogId/:commentId").post(verifyDoctor, replyToComment);
 export default blogRouter;

@@ -9,7 +9,10 @@ import {
 import bcrypt from "bcrypt";
 import { sendOTPEmail } from "../services/emailService.js";
 import crypto from "crypto";
+import axios from "axios";
 
+
+const LAB_SERVICE_URL = process.env.LAB_SERVICE_URL ;
 // ====== Register Nurse ======
 // ====== Register Nurse ======
 const registerTechnician = async (req, res) => {
@@ -20,10 +23,10 @@ const registerTechnician = async (req, res) => {
     password,
     clinicId,
     labVendorId,
-    labType: labType, // ALIGNER / EXTERNAL comes from frontend
+    labType: frontendLabType,
   } = req.body;
 
-  console.log("this", req.body);
+  console.log("Technician register request:", req.body);
 
   try {
     // 🔹 Basic validations
@@ -76,16 +79,16 @@ const registerTechnician = async (req, res) => {
     // 🔹 CASE 2: No clinic → ALIGNER / EXTERNAL
     if (!clinicId) {
       if (
-        !labType ||
-        !["aligner", "external"].includes(labType)
+        !frontendLabType ||
+        !["aligner", "external"].includes(frontendLabType)
       ) {
         return res.status(400).json({
           message:
             "labType must be ALIGNER or EXTERNAL for non-clinic technicians",
         });
-      } 
+      }
 
-      labType = labType;
+      labType = frontendLabType;
     }
 
     // 🔹 Create technician
@@ -96,7 +99,7 @@ const registerTechnician = async (req, res) => {
       password,
       clinicId: clinicId || null,
       labVendorId: labVendorId || null,
-      labType, // ✅ derived strictly by backend
+      labType,
     });
 
     await newTechnician.save();
@@ -105,11 +108,30 @@ const registerTechnician = async (req, res) => {
     if (clinicId) {
       await Clinic.updateOne(
         { _id: clinicId },
-        { $push: { "staffs.technicians": newTechnician._id } },
+        { $push: { "staffs.technicians": newTechnician._id } }
       );
     }
 
-    // 🔹 Tokens
+    // 🔹 Call LAB microservice to add technician to vendor
+    if (labVendorId) {
+      try {
+        await axios.patch(
+          `${LAB_SERVICE_URL}/api/v1/lab/add-technician/${labVendorId}`,
+          {
+            technicianId: newTechnician._id,
+          }
+        );
+
+        console.log("Technician added to lab vendor successfully");
+      } catch (labError) {
+        console.error(
+          "⚠ Lab service update failed:",
+          labError.response?.data || labError.message
+        );
+      }
+    }
+
+    // 🔹 Generate tokens
     const accessToken = newTechnician.generateAccessToken();
     const refreshToken = newTechnician.generateRefreshToken();
 
