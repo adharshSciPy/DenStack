@@ -7,7 +7,12 @@ import {
   phoneValidator,
 } from "../utils/validators.js";
 import bcrypt from "bcrypt";
+import { sendOTPEmail } from "../services/emailService.js";
+import crypto from "crypto";
+import axios from "axios";
 
+
+const LAB_SERVICE_URL = process.env.LAB_SERVICE_URL ;
 // ====== Register Nurse ======
 // ====== Register Nurse ======
 const registerTechnician = async (req, res) => {
@@ -18,10 +23,10 @@ const registerTechnician = async (req, res) => {
     password,
     clinicId,
     labVendorId,
-    labType: incomingLabType, // ALIGNER / EXTERNAL comes from frontend
+    labType: frontendLabType,
   } = req.body;
 
-  console.log("this", req.body);
+  console.log("Technician register request:", req.body);
 
   try {
     // 🔹 Basic validations
@@ -74,8 +79,8 @@ const registerTechnician = async (req, res) => {
     // 🔹 CASE 2: No clinic → ALIGNER / EXTERNAL
     if (!clinicId) {
       if (
-        !incomingLabType ||
-        !["aligner", "external"].includes(incomingLabType)
+        !frontendLabType ||
+        !["aligner", "external"].includes(frontendLabType)
       ) {
         return res.status(400).json({
           message:
@@ -83,7 +88,7 @@ const registerTechnician = async (req, res) => {
         });
       }
 
-      labType = incomingLabType;
+      labType = frontendLabType;
     }
 
     // 🔹 Create technician
@@ -94,7 +99,7 @@ const registerTechnician = async (req, res) => {
       password,
       clinicId: clinicId || null,
       labVendorId: labVendorId || null,
-      labType, // ✅ derived strictly by backend
+      labType,
     });
 
     await newTechnician.save();
@@ -103,11 +108,30 @@ const registerTechnician = async (req, res) => {
     if (clinicId) {
       await Clinic.updateOne(
         { _id: clinicId },
-        { $push: { "staffs.technicians": newTechnician._id } },
+        { $push: { "staffs.technicians": newTechnician._id } }
       );
     }
 
-    // 🔹 Tokens
+    // 🔹 Call LAB microservice to add technician to vendor
+    if (labVendorId) {
+      try {
+        await axios.patch(
+          `${LAB_SERVICE_URL}/api/v1/lab/add-technician/${labVendorId}`,
+          {
+            technicianId: newTechnician._id,
+          }
+        );
+
+        console.log("Technician added to lab vendor successfully");
+      } catch (labError) {
+        console.error(
+          "⚠ Lab service update failed:",
+          labError.response?.data || labError.message
+        );
+      }
+    }
+
+    // 🔹 Generate tokens
     const accessToken = newTechnician.generateAccessToken();
     const refreshToken = newTechnician.generateRefreshToken();
 
@@ -306,11 +330,86 @@ const editTechnician = async (req, res) => {
       .json({ message: "Internal Server Error", error: error.message });
   }
 };
+const forgotTechnicianPassword = async (req, res) => {
+  try {
 
+    const { email } = req.body;
+
+    const user = await Technician.findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Generate 6 digit OTP
+    const otp = crypto.randomInt(100000, 999999).toString();
+
+    user.otp = otp;
+    user.otpExpires = Date.now() + 10 * 60 * 1000; // 10 min
+
+    await user.save();
+
+    await sendOTPEmail(email, otp);
+
+    res.json({
+      message: "OTP sent to email",
+    });
+console.log(otp);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+const verifyTechnicianOTP = async (req, res) => {
+
+  const { email, otp } = req.body;
+
+  const user = await Technician.findOne({
+    email,
+    otp,
+    otpExpires: { $gt: Date.now() }
+  });
+
+  if (!user) {
+    return res.status(400).json({ message: "Invalid or expired OTP" });
+  }
+
+  res.json({
+    message: "OTP verified"
+  });
+
+};
+const resetTechnicianPassword = async (req, res) => {
+
+  const { email, otp, newPassword } = req.body;
+
+  const user = await Technician.findOne({
+    email,
+    otp,
+    otpExpires: { $gt: Date.now() }
+  });
+
+  if (!user) {
+    return res.status(400).json({ message: "Invalid or expired OTP" });
+  }
+
+  user.password = newPassword;
+  user.otp = undefined;
+  user.otpExpires = undefined;
+
+  await user.save();
+
+  res.json({
+    message: "Password reset successful"
+  });
+
+};
 export {
   registerTechnician,
   loginTechnician,
   allTechnicians,
   fetchTechnicianById,
   editTechnician,
+  forgotTechnicianPassword,
+  verifyTechnicianOTP,
+  resetTechnicianPassword,
 };

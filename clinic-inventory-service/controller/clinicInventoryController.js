@@ -145,6 +145,7 @@ const getLowStockProducts = async (req, res) => {
     const results = await ClinicInventoryModel.find({
       clinicId,
       quantity: { $lt: LOW_STOCK_THRESHOLD },
+      inventoryType: "general",
     }).lean();
 
     return res.status(200).json({

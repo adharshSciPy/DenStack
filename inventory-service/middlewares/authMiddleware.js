@@ -87,22 +87,13 @@ export const optionalAuth = (req, res, next) => {
 
 // ✅ Keep this as is
 export const canPlaceOrder = (req, res, next) => {
-    const CLINIC_ROLE = process.env.CLINIC_ROLE || "700";
-    
     if (!req.user) {
         return res.status(401).json({
             success: false,
             message: 'Authentication required'
         });
     }
-
-    // Allow if: user is a clinic (role 700) OR user is a clinic-doctor (isClinicDoctor = true)
-    if (req.user.role === CLINIC_ROLE || req.user.isClinicDoctor === true) {
-        return next();
-    }
-
-    return res.status(403).json({
-        success: false,
-        message: 'Only clinics and clinic staff can place orders'
-    });
+    // ✅ All logged-in users can place orders
+    // req.user.role is available in the controller for discount logic
+    return next();
 };

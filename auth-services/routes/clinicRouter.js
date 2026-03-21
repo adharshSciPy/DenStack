@@ -26,7 +26,10 @@ import {
   updateSubClinic,
   loginSubClinic,
   getLocationBasedClinics,
-  getClinicStaffSalaries
+  getClinicStaffSalaries,
+  forgotClinicPassword,
+  verifyClinicOTP,
+  resetClinicPassword
 } from "../controller/clinicController.js";
 import clinicAuth from "../middleware/clinicAuth.js"
 import upload from "../middleware/upload.js";
@@ -87,5 +90,9 @@ clinicAuthRoutes.post(
 );
 clinicAuthRoutes.route("/delete-logo").delete(clinicAuth,deleteLogo)
 clinicAuthRoutes.route("/location-based-clinics").get(getLocationBasedClinics)
-clinicAuthRoutes.route("/staff-salaries/:clinicId").get(clinicAuth,getClinicStaffSalaries)
+clinicAuthRoutes.route("/staff-salaries/:clinicId").get(clinicAuth,getClinicStaffSalaries);
+clinicAuthRoutes.route("/forgot-password").post(forgotClinicPassword);
+clinicAuthRoutes.route("/verify-otp").post(verifyClinicOTP);
+clinicAuthRoutes.route("/reset-password").post(resetClinicPassword);
+
 export default clinicAuthRoutes;

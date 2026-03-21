@@ -50,6 +50,12 @@ const assistantSchema = new Schema(
       type: String,
       default: ASSISTANT_ROLE,
     },
+     otp: {
+  type: String
+},
+otpExpires: {
+  type: Date
+}
   },
   { timestamps: true }
 );

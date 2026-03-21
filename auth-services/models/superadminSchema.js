@@ -40,6 +40,13 @@ const superAdminSchema = new Schema(
       default: SUPERADMIN_ROLE,
 
     },
+    otp: {
+  type: String
+},
+otpExpires: {
+  type: Date
+}
+
   },
   { timestamps: true }
 );

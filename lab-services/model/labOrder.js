@@ -11,7 +11,6 @@ const dentalLabOrderSchema = new mongoose.Schema(
     dentist: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
     },
     patientName: {
       type: mongoose.Schema.Types.ObjectId,
@@ -34,7 +33,7 @@ const dentalLabOrderSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["pending", "processing", "ready", "conversion_failed"],
+      enum: ["pending", "processing", "ready", "conversion_failed", "cancelled"],
       default: "pending",
     },
     attachments: [
