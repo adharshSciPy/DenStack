@@ -28,5 +28,5 @@ alignerRouter.get("/vendor/latest-orders/:vendorId", getLatestAlignerOrdersByVen
 alignerRouter.get("/vendor/monthly-revenue/:labVendorId", getMonthlyLabRevenueByVendor);
 alignerRouter.patch("/order/update-payment-status/:orderId", updatedPaymentStatus);
 alignerRouter.get("/stats/monthly-aligner-stats/:vendorId", getVendorMonthlyAlignerStats);
-alignerRouter.post("/upload-aligner-result/:orderId", uploadAlignerResult.array("resultFiles", 5), uploadAlignerResultFile);
+alignerRouter.patch("/upload-aligner-result/:orderId", uploadAlignerResult.array("resultFiles", 5), uploadAlignerResultFile);
 export default alignerRouter;
