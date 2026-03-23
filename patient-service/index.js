@@ -10,6 +10,7 @@ import fs from "fs"
 import dentalRouter from "./routes/dentalChartRoute.js";
 import medicineRouter from "./routes/medicineRoute.js";
 import pendingBookingRouter from "./routes/pendingBookingRoute.js";
+import bulkUploadRouter from "./routes/bulkUploadRoutes.js";
 
 dotenv.config();
 connectDB();
@@ -32,6 +33,7 @@ app.use("/api/v1/patient-service/consultation",doctorConsultationRouter)
 app.use("/api/v1/patient-service/dental",dentalRouter)
 app.use("/api/v1/patient-service/medicine",medicineRouter)
 app.use("/api/v1/patient-service/pending-booking",pendingBookingRouter)
+app.use("/api/v1/patient-service/bulk",bulkUploadRouter);
 
 
 

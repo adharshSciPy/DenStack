@@ -4,13 +4,13 @@ const alignerOrderSchema = new mongoose.Schema(
   {
     patientId: {
       type: mongoose.Schema.Types.ObjectId,
-      required: true
+      required: true,
     },
 
     vendorId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "LabVendor",
-      required: true
+      required: true,
     },
 
     doctorName: String,
@@ -18,7 +18,7 @@ const alignerOrderSchema = new mongoose.Schema(
 
     trays: {
       upperArch: Number,
-      lowerArch: Number
+      lowerArch: Number,
     },
 
     treatmentDuration: String,
@@ -33,7 +33,7 @@ const alignerOrderSchema = new mongoose.Schema(
       },
       total: {
         type: String,
-      }
+      },
     },
 
     status: {
@@ -45,9 +45,9 @@ const alignerOrderSchema = new mongoose.Schema(
         "shipped",
         "in-treatment",
         "completed",
-        "cancelled"
+        "cancelled",
       ],
-      default: "draft"
+      default: "draft",
     },
 
     notes: String,
@@ -57,10 +57,20 @@ const alignerOrderSchema = new mongoose.Schema(
     paymentStatus: {
       type: String,
       enum: ["pending", "paid"],
-      default: "pending"
-    }
+      default: "pending",
+    },
+    resultFiles: [
+      {
+        fileUrl: String,
+        fileType: String, // pdf / image
+        uploadedAt: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 export default mongoose.model("AlignerOrder", alignerOrderSchema);

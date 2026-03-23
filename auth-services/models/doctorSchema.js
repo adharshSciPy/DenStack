@@ -95,7 +95,13 @@ const doctorSchema = new Schema(
         enum: ['active', 'inactive'],
         default: 'active'
       }
-    }]
+    }]  ,
+   otp: {
+  type: String
+},
+otpExpires: {
+  type: Date
+}
   },
   { timestamps: true }
 );

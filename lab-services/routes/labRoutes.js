@@ -10,7 +10,9 @@ import {
   getExternalLabVendors,
   getInHouseLabsByClinicId,
   createAlignerVendor,
-  getAlignerVendors
+  getAlignerVendors,
+  getExternalLabs,
+  addTechnicianToLabVendor
 } from "../controller/labController.js";
 import { verifyRole } from "../middleware/verifyAdmin.js";
 const labRouter = Router();
@@ -25,8 +27,10 @@ labRouter.route("/create-inhouse-vendor").post(createInHouseLabVendor);
 labRouter.route("/vendor-by-clinic/:clinicId").get(getLabByClinicId);
 // labRouter.route("/inhouse-vendors").get(getInHouseLabVendors);
 labRouter.route("/external-vendors").get(getExternalLabVendors);
+labRouter.route("/external-labs").get(getExternalLabs);
 labRouter
   .route("/inhouse-labs-by-clinic/:clinicId")
   .get(getInHouseLabsByClinicId);
 labRouter.route("/aligner-vendors").get(getAlignerVendors);
+labRouter.route("/add-technician/:id").patch(addTechnicianToLabVendor);
 export default labRouter;

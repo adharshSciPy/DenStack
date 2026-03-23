@@ -4,7 +4,7 @@ import cors from "cors";
 import connectDB from "./mongoDB/connectDB.js";
 import doctorOnboard from "./routes/doctorOnboardRouter.js";
 import patientAndTreatmentDetailsRouter from "./routes/patientAndTreatmentDetailsController.js";
-
+import consentRouter from "./routes/consentRoutes.js";
 
 dotenv.config();
 connectDB();
@@ -21,7 +21,8 @@ app.get("/", (req, res) => {
 });
 app.use("/api/v1/clinic-service",doctorOnboard)
 app.use("/api/v1/patient_treatment/details",patientAndTreatmentDetailsRouter)
-
+app.use("/api/v1/consent",consentRouter)
+app.use("/uploads", express.static("uploads"));
 
 const PORT = process.env.PORT || 8003;
 app.listen(PORT, () => {

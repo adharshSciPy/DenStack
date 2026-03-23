@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { loginSuperAdmin, registerSuperAdmin, getSalesMetrics, getSalesTrends, getMonthlySummary, getDashboardStats, getDashboardSummary, getUsageAnalytics } from "../controller/superAdminController.js";
-import { verifyAuthToken, authorizeRoles } from "../../inventory-service/middlewares/authmiddleware.js";
+import { loginSuperAdmin, registerSuperAdmin, getSalesMetrics, getSalesTrends, getMonthlySummary, getDashboardStats, getDashboardSummary, getUsageAnalytics, forgotSuperAdminPassword, verifySuperAdminOTP, resetSuperAdminPassword } from "../controller/superAdminController.js";
+import { verifyAuthToken, authorizeRoles } from "../../inventory-service/middlewares/authMiddleware.js";
 const SUPERADMIN = process.env.SUPERADMIN_ROLE
 const superAdminAuthRoutes = Router();
 superAdminAuthRoutes.route("/register").post(registerSuperAdmin);
@@ -12,4 +12,8 @@ superAdminAuthRoutes.get("/getMonthlySummary", getMonthlySummary)
 superAdminAuthRoutes.get("/appointmentStats", getDashboardStats)
 superAdminAuthRoutes.get("/dashStats", getDashboardSummary)
 superAdminAuthRoutes.get("/usageAnalytics", verifyAuthToken, authorizeRoles(SUPERADMIN), getUsageAnalytics);
+superAdminAuthRoutes.post("/forgot-password", forgotSuperAdminPassword);
+superAdminAuthRoutes.post("/verify-otp", verifySuperAdminOTP);
+superAdminAuthRoutes.post("/reset-password", resetSuperAdminPassword);
+
 export default superAdminAuthRoutes

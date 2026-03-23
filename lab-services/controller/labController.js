@@ -169,13 +169,20 @@ const getInHouseLabVendors = async (req, res) => {
 // NEW: Get only external lab vendors
 const getExternalLabVendors = async (req, res) => {
   try {
-    const vendors = await LabVendor.find({ type: "external" }).sort({ createdAt: -1 });
+    const vendors = await LabVendor.find({ type: "external"}).sort({ createdAt: -1 });
     res.status(200).json(vendors);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };
-
+const getExternalLabs = async (req, res) => {
+  try {
+    const vendors = await LabVendor.find({ type: ["external","aligner"] }).sort({ createdAt: -1 });
+    res.status(200).json(vendors);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
 
 const getAlignerVendors = async (req, res) => {
   try {
@@ -242,7 +249,39 @@ const deleteLabVendor = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+const addTechnicianToLabVendor = async (req, res) => {
+  try {
+    const { id } = req.params; // Lab vendor ID
+    const { technicianId } = req.body; // Technician ID to add
 
+    // Validate technicianId
+    if (!technicianId) {
+      return res.status(400).json({ message: "Technician ID is required" });
+    }
+
+    // Find the lab vendor and update the technicianId array
+    const vendor = await LabVendor.findByIdAndUpdate(
+      id,
+      { $addToSet: { technicianIds: technicianId } }, // $addToSet prevents duplicates
+      { new: true, runValidators: true }
+    );
+
+    if (!vendor) {
+      return res.status(404).json({ message: "Lab vendor not found" });
+    }
+
+    res.status(200).json({
+      message: "Technician added successfully",
+      vendor
+    });
+  } catch (error) {
+    if (error.name === "ValidationError") {
+      const messages = Object.values(error.errors).map((err) => err.message);
+      return res.status(400).json({ message: messages.join(", ") });
+    }
+    res.status(500).json({ message: error.message });
+  }
+};
 export {
   createLabVendor,
   getAllLabVendors,
@@ -255,5 +294,7 @@ export {
   getExternalLabVendors,
   getInHouseLabsByClinicId,
   createAlignerVendor,
-  getAlignerVendors
+  getAlignerVendors,
+  getExternalLabs,
+  addTechnicianToLabVendor
 };

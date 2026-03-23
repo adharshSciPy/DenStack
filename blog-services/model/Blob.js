@@ -38,6 +38,10 @@ const blogSchema = new mongoose.Schema({
     type: String,
     enum: ['draft', 'published', 'archived'],
     default: 'published'
+  },
+   blocked: {
+    type: Boolean,
+    default: false
   }
 }, {
   timestamps: true

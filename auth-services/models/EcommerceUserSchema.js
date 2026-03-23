@@ -49,7 +49,13 @@ const EcommerceUserSchema = new Schema({
   role: {
     type: String,
     default: "user",
-  }
+  },
+   otp: {
+  type: String
+},
+otpExpires: {
+  type: Date
+}
 });
 
 EcommerceUserSchema.pre("save", async function (next) {

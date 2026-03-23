@@ -1,6 +1,8 @@
 import Assistant from "../models/assistantSchema.js"
+import { sendOTPEmail } from "../services/emailService.js";
 import { nameValidator, emailValidator, passwordValidator, phoneValidator } from "../utils/validators.js";
 import mongoose from "mongoose";
+import crypto from "crypto";
 
 const generatePROId = () => {
     const randomNum = Math.floor(100000 + Math.random() * 900000);
@@ -250,7 +252,80 @@ const approveAssist = async (req, res) => {
         res.status(500).json({ message: "Internal Server Error", error: error.message })
     }
 }
+const forgotAssistantPassword = async (req, res) => {
+  try {
+
+    const { email } = req.body;
+
+    const user = await Assistant.findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Generate 6 digit OTP
+    const otp = crypto.randomInt(100000, 999999).toString();
+
+    user.otp = otp;
+    user.otpExpires = Date.now() + 10 * 60 * 1000; // 10 min
+
+    await user.save();
+
+    await sendOTPEmail(email, otp);
+
+    res.json({
+      message: "OTP sent to email",
+    });
+console.log(otp);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+const verifyAssistantOTP = async (req, res) => {
+
+  const { email, otp } = req.body;
+
+  const user = await Assistant.findOne({
+    email,
+    otp,
+    otpExpires: { $gt: Date.now() }
+  });
+
+  if (!user) {
+    return res.status(400).json({ message: "Invalid or expired OTP" });
+  }
+
+  res.json({
+    message: "OTP verified"
+  });
+
+};
+const resetAssistantPassword = async (req, res) => {
+
+  const { email, otp, newPassword } = req.body;
+
+  const user = await Assistant.findOne({
+    email,
+    otp,
+    otpExpires: { $gt: Date.now() }
+  });
+
+  if (!user) {
+    return res.status(400).json({ message: "Invalid or expired OTP" });
+  }
+
+  user.password = newPassword;
+  user.otp = undefined;
+  user.otpExpires = undefined;
+
+  await user.save();
+
+  res.json({
+    message: "Password reset successful"
+  });
+
+};
 
 export {
-    registerAssistant, loginAssistant, allAssistant, fetchAssistantById, fetchAssistantByUniqueId, updateAssistant, deleteAssistant, approveAssist
+    registerAssistant, loginAssistant, allAssistant, fetchAssistantById, fetchAssistantByUniqueId, updateAssistant, deleteAssistant, approveAssist, forgotAssistantPassword, verifyAssistantOTP, resetAssistantPassword 
 }

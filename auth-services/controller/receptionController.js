@@ -6,6 +6,9 @@ import {
   phoneValidator,
 } from "../utils/validators.js";
 import Clinic from "../models/clinicSchema.js";
+import { sendOTPEmail } from "../services/emailService.js";
+import crypto from "crypto";
+
 
 // ====== Register Reception ======
 // ====== Register Receptionist ======
@@ -234,5 +237,78 @@ const fetchReceptionById = async (req, res) => {
     });
   }
 };
+const forgotReceptionPassword = async (req, res) => {
+  try {
 
-export { registerReception, loginReception, allReceptions, fetchReceptionById };
+    const { email } = req.body;
+
+    const user = await Reception.findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Generate 6 digit OTP
+    const otp = crypto.randomInt(100000, 999999).toString();
+
+    user.otp = otp;
+    user.otpExpires = Date.now() + 10 * 60 * 1000; // 10 min
+
+    await user.save();
+
+    await sendOTPEmail(email, otp);
+
+    res.json({
+      message: "OTP sent to email",
+    });
+console.log(otp);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+const verifyReceptionOTP = async (req, res) => {
+
+  const { email, otp } = req.body;
+
+  const user = await Reception.findOne({
+    email,
+    otp,
+    otpExpires: { $gt: Date.now() }
+  });
+
+  if (!user) {
+    return res.status(400).json({ message: "Invalid or expired OTP" });
+  }
+
+  res.json({
+    message: "OTP verified"
+  });
+
+};
+const resetReceptionPassword = async (req, res) => {
+
+  const { email, otp, newPassword } = req.body;
+
+  const user = await Reception.findOne({
+    email,
+    otp,
+    otpExpires: { $gt: Date.now() }
+  });
+
+  if (!user) {
+    return res.status(400).json({ message: "Invalid or expired OTP" });
+  }
+
+  user.password = newPassword;
+  user.otp = undefined;
+  user.otpExpires = undefined;
+
+  await user.save();
+
+  res.json({
+    message: "Password reset successful"
+  });
+
+};
+
+export { registerReception, loginReception, allReceptions, fetchReceptionById,forgotReceptionPassword,verifyReceptionOTP,resetReceptionPassword};

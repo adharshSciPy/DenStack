@@ -219,7 +219,7 @@ const getAllBlogs = async (req, res) => {
     } = req.query;
 
     // Build query
-    const query = { status: "published" };
+    const query = { status: "published",blocked:false };
 
     if (specialty) {
       query["doctorSpecialty"] = specialty;
@@ -304,14 +304,16 @@ const getBlogById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const blog = await Blog.findById(id).lean();
+     const blog = await Blog.findOne({ 
+      _id: id,
+      blocked: false  // Add this line
+    }).lean();
     if (!blog) {
       return res.status(404).json({
         success: false,
         message: "Blog not found",
       });
     }
-    console.log("sds",blog);
     
     // Fetch doctor data
     const doctorData = await fetchDoctorData(blog.doctorId);
@@ -385,6 +387,7 @@ const getOtherDoctorBlogs = async (req, res) => {
     const query = {
       doctorId: { $ne: doctorId },
       status: "published",
+      blocked:false
     };
 
     // Add search filter
@@ -1448,6 +1451,168 @@ const getBlogStats = async (req, res) => {
   }
 };
 
+const adminGetAllBlogs = async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 20,
+      search,
+      showBlocked = 'false',
+      sortBy = 'createdAt',
+      sortOrder = 'desc'
+    } = req.query;
+
+    // Build query
+    const query = {};
+
+    // Filter by blocked status
+    if (showBlocked === 'true') {
+      query.blocked = true;
+    } else if (showBlocked === 'false') {
+      query.blocked = false;
+    }
+    // If 'all', don't add blocked filter
+
+    // Search in title and content
+    if (search) {
+      query.$or = [
+        { title: { $regex: search, $options: 'i' } },
+        { content: { $regex: search, $options: 'i' } },
+        { tags: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    // Build sort
+    const sort = {};
+    sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
+
+    // Execute query with pagination
+    const blogs = await Blog.find(query)
+      .sort(sort)
+      .limit(parseInt(limit))
+      .skip((parseInt(page) - 1) * parseInt(limit))
+      .lean();
+
+    // Get doctor IDs for enrichment
+    const doctorIds = blogs.map(blog => blog.doctorId).filter(id => id);
+    
+    // Fetch doctor data
+    let doctorsMap = {};
+    if (doctorIds.length > 0) {
+      doctorsMap = await batchFetchDoctors(doctorIds);
+    }
+
+    // Enrich blogs with doctor data
+    const enrichedBlogs = blogs.map(blog => ({
+      ...blog,
+      doctor: doctorsMap[blog.doctorId] || {
+        _id: blog.doctorId,
+        name: 'Unknown Doctor',
+        email: '',
+        profilePicture: null,
+        specialty: 'General'
+      }
+    }));
+
+    // Get counts for stats
+    const totalBlogs = await Blog.countDocuments({});
+    const blockedCount = await Blog.countDocuments({ blocked: true });
+    const activeCount = await Blog.countDocuments({ blocked: false });
+
+    res.json({
+      success: true,
+      blogs: enrichedBlogs,
+      stats: {
+        total: totalBlogs,
+        blocked: blockedCount,
+        active: activeCount
+      },
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages: Math.ceil(totalBlogs / parseInt(limit)),
+        totalBlogs,
+        hasNextPage: parseInt(page) < Math.ceil(totalBlogs / parseInt(limit)),
+        hasPrevPage: parseInt(page) > 1
+      }
+    });
+  } catch (error) {
+    console.error('Error in adminGetAllBlogs:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+const toggleBlogBlock = async (req, res) => {
+  try {
+    const { blogId } = req.params;
+
+    const blog = await Blog.findById(blogId);
+    if (!blog) {
+      return res.status(404).json({
+        success: false,
+        message: 'Blog not found'
+      });
+    }
+
+    // Toggle the blocked status
+    blog.blocked = !blog.blocked;
+    await blog.save();
+
+    res.json({
+      success: true,
+      message: `Blog ${blog.blocked ? 'blocked' : 'unblocked'} successfully`,
+      blog: {
+        _id: blog._id,
+        title: blog.title,
+        blocked: blog.blocked
+      }
+    });
+  } catch (error) {
+    console.error('Error in toggleBlogBlock:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+
+const adminGetBlogById = async (req, res) => {
+  try {
+    const { blogId } = req.params;
+
+    const blog = await Blog.findById(blogId).lean();
+    if (!blog) {
+      return res.status(404).json({
+        success: false,
+        message: 'Blog not found'
+      });
+    }
+
+    // Get doctor data
+    const doctorsMap = await batchFetchDoctors([blog.doctorId]);
+    
+    res.json({
+      success: true,
+      blog: {
+        ...blog,
+        doctor: doctorsMap[blog.doctorId] || {
+          _id: blog.doctorId,
+          name: 'Unknown Doctor'
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error in adminGetBlogById:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
 // ==================== EXPORTS ====================
 
 export {
@@ -1475,4 +1640,9 @@ export {
 
   // Stats
   getBlogStats,
+
+  //block
+  adminGetAllBlogs,
+  toggleBlogBlock,
+  adminGetBlogById
 };

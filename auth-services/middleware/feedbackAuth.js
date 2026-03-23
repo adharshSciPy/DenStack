@@ -20,20 +20,26 @@ const verifyToken = (req, res) => {
 };
 
 // ─── Receptionist only (role: 500) — can generate feedback links ──────────────
-export const authReceptionist = (req, res, next) => {
+export const authReceptionistOrAdmin = (req, res, next) => {
   const decoded = verifyToken(req, res);
   if (!decoded) return;
 
-  if (Number(decoded.role) !== Number(process.env.RECEPTION_ROLE)) {
+  const allowedRoles = [
+    Number(process.env.RECEPTION_ROLE),
+    Number(process.env.CLINIC_ROLE)
+  ];
+
+  if (!allowedRoles.includes(Number(decoded.role))) {
     return res.status(403).json({
       success: false,
-      message: "Only Receptionists can generate feedback links",
+      message: "Only Admin or Receptionist can generate feedback links",
     });
   }
 
   req.user = decoded;
   next();
 };
+
 
 // ─── Clinic Admin only (role: 700) — view/resolve feedback + analytics ────────
 export const authClinicAdminFeedback = (req, res, next) => {

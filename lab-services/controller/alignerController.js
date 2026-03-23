@@ -413,6 +413,52 @@ export const getVendorMonthlyAlignerStats = async (req, res) => {
     });
   }
 };
+export const uploadAlignerResultFile = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+
+    const files = req.files;
+
+    if (!files || files.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "No files uploaded",
+      });
+    }
+
+    const order = await AlignerOrder.findById(orderId);
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Aligner order not found",
+      });
+    }
+
+    // map uploaded files
+    const uploadedFiles = files.map((file) => ({
+      fileUrl: `/uploads/aligner-results/${file.filename}`,
+      fileType: file.mimetype.startsWith("image") ? "image" : "pdf",
+    }));
+
+    // push into array
+    order.resultFiles = [...(order.resultFiles || []), ...uploadedFiles];
+
+    await order.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Result files uploaded successfully",
+      data: order,
+    });
+  } catch (error) {
+    console.error("Upload result error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
 export {
   createAlignerOrder,
   getAlignerOrderById,
