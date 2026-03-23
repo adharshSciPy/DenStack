@@ -104,7 +104,7 @@ const paymentDetailsSchema = new Schema(
   {
     method: {
       type: String,
-      enum: ["COD", "ONLINE", "UPI", "CARD", "WALLET", "RAZORPAY"], // ✅ added RAZORPAY
+      enum: ["COD", "ONLINE", "UPI", "CARD", "WALLET", "RAZORPAY"],
       required: true,
     },
     transactionId: {
@@ -118,7 +118,6 @@ const paymentDetailsSchema = new Schema(
     paidAt: {
       type: Date,
     },
-    // ✅ Razorpay-specific fields
     razorpayOrderId: {
       type: String,
       default: null,
@@ -143,21 +142,18 @@ const orderSchema = new Schema(
       unique: true,
     },
 
-    // ✅ Clinic orders (clinicId from auth microservice)
     clinic: {
       type: mongoose.Schema.Types.ObjectId,
       required: false,
       default: null,
     },
 
-    // ✅ Normal user orders
     user: {
       type: mongoose.Schema.Types.ObjectId,
       required: false,
       default: null,
     },
 
-    // ✅ Who placed the order
     buyerType: {
       type: String,
       enum: ["clinic", "doctor", "user"],
@@ -181,14 +177,17 @@ const orderSchema = new Schema(
         message: "Order must have at least one item",
       },
     },
+
     shippingAddress: {
       type: shippingAddressSchema,
       required: true,
     },
+
     paymentDetails: {
       type: paymentDetailsSchema,
       required: true,
     },
+
     orderStatus: {
       type: String,
       enum: [
@@ -203,65 +202,94 @@ const orderSchema = new Schema(
       ],
       default: "PENDING",
     },
+
     subtotal: {
       type: Number,
       required: true,
       min: 0,
     },
+
     shippingCharge: {
       type: Number,
       default: 0,
       min: 0,
     },
+
     tax: {
       type: Number,
       default: 0,
       min: 0,
     },
+
     discount: {
       type: Number,
       default: 0,
       min: 0,
     },
+
     discountPercentage: {
       type: Number,
       default: 0,
       min: 0,
     },
+
+    // ✅ ADDED — was missing, causing coupon data to be silently dropped on save
+    couponCode: {
+      type: String,
+      default: null,
+    },
+
+    // ✅ ADDED — was missing
+    couponDiscount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
     totalAmount: {
       type: Number,
       required: true,
       min: 0,
     },
+
     userRole: {
       type: String,
     },
+
     isClinicDoctor: {
       type: Boolean,
       default: false,
     },
+
     hasActiveSubscription: {
       type: Boolean,
       default: false,
     },
+
     orderNotes: {
       type: String,
     },
+
     trackingNumber: {
       type: String,
     },
+
     estimatedDelivery: {
       type: Date,
     },
+
     deliveredAt: {
       type: Date,
     },
+
     cancelledAt: {
       type: Date,
     },
+
     cancellationReason: {
       type: String,
     },
+
     inventoryAssigned: {
       type: Boolean,
       default: false,
@@ -306,6 +334,7 @@ orderSchema.index({ buyerType: 1 });
 orderSchema.index({ orderStatus: 1 });
 orderSchema.index({ "paymentDetails.status": 1 });
 orderSchema.index({ userRole: 1 });
+orderSchema.index({ couponCode: 1 }); // ✅ index for coupon lookups
 
 const EcomOrder = mongoose.model("EcomOrder", orderSchema);
 export default EcomOrder;

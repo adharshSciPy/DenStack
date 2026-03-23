@@ -18,10 +18,12 @@ import buyingGuideRouter from "./Routes/buyingGuideRouter.js";
 import eventRouter from "./Routes/eventRouter.js";
 import userAccountRouter from "./Routes/userAccountRouter.js";
 import tokenCheckRouter from "./Controller/tokenCheck.js";
+import shippingRouter from "./Routes/shippingRouter.js";
 
 import lowStockAlertsCron from "./middlewares/lowStockCron.js";
 import paymentRouter from "./Routes/paymentRouter.js";
 import couponCron from "./middlewares/couponCron.js";
+import couponRouter from "./Routes/couponRouter.js";
 
 dotenv.config();
 connectDB();
@@ -76,6 +78,9 @@ app.use("/api/v1/event", eventRouter);
 app.use("/api/v1/userAccount", userAccountRouter);
 app.use("/api/v1/auth",tokenCheckRouter); 
 app.use('/api/v1/payment', paymentRouter);
+app.use('/api/v1/coupons', couponRouter);
+app.use("/api/v1/shipping", shippingRouter);
+
 const PORT = process.env.PORT || 8004;
 app.listen(PORT, () => {
   console.log(`✅ Server running on port:${PORT}`);

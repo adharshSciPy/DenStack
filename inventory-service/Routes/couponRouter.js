@@ -22,16 +22,16 @@ const couponRouter = express.Router();
 // ============= COUPON ROUTES =============
 
 // ✅ Admin only - stats & code generation
-couponRouter.get("/stats",         verifyAuthToken, authorizeRoles("admin"), getCouponStats);
-couponRouter.get("/generate-code", verifyAuthToken, authorizeRoles("admin"), generateCouponCode);
+couponRouter.get("/stats",         verifyAuthToken, authorizeRoles("800"), getCouponStats);
+couponRouter.get("/generate-code", verifyAuthToken, authorizeRoles("800"), generateCouponCode);
 
 // ✅ Admin only - CRUD
-couponRouter.post("/create",       verifyAuthToken, authorizeRoles("admin"), createCoupon);
-couponRouter.get("/getAll",        verifyAuthToken, authorizeRoles("admin"), getAllCoupons);
-couponRouter.get("/getById/:id",   verifyAuthToken, authorizeRoles("admin"), getCouponById);
-couponRouter.get("/users/:id",     verifyAuthToken, authorizeRoles("admin"), getCouponUsers);
-couponRouter.put("/update/:id",    verifyAuthToken, authorizeRoles("admin"), updateCoupon);
-couponRouter.delete("/delete/:id", verifyAuthToken, authorizeRoles("admin"), deleteCoupon);
+couponRouter.post("/create",       verifyAuthToken, authorizeRoles("800"), createCoupon);
+couponRouter.get("/getAll",        verifyAuthToken, authorizeRoles("800"), getAllCoupons);
+couponRouter.get("/getById/:id",   verifyAuthToken, authorizeRoles("800"), getCouponById);
+couponRouter.get("/users/:id",     verifyAuthToken, authorizeRoles("800"), getCouponUsers);
+couponRouter.put("/update/:id",    verifyAuthToken, authorizeRoles("800"), updateCoupon);
+couponRouter.delete("/delete/:id", verifyAuthToken, authorizeRoles("800"), deleteCoupon);
 
 // ✅ All users (doctor, clinic, normal user) - validate coupon (cart page — does NOT record usage)
 couponRouter.post("/validate",     verifyAuthToken, validateCoupon);

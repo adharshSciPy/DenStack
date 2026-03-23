@@ -11,8 +11,7 @@ const usedBySchema = new mongoose.Schema(
     email: { type: String, required: true, lowercase: true, trim: true },
     usedAt: { type: Date, default: Date.now },
     orderId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "EcomOrder",
+      type: String,   // ✅ was ObjectId — changed to String to store "EORD#0048"
       default: null,
     },
   },
@@ -89,8 +88,6 @@ couponSchema.virtual("status").get(function () {
 
 couponSchema.set("toJSON", { virtuals: true });
 couponSchema.set("toObject", { virtuals: true });
-
-// Index for fast code lookups
 couponSchema.index({ code: 1 });
 couponSchema.index({ expiryDate: 1 });
 couponSchema.index({ isActive: 1 });
