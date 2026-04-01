@@ -2,6 +2,8 @@ import crypto from "crypto";
 import Joi from "joi";
 import FeedbackRequest from "../models/FeedbackRequest.js";
 import Clinic from "../models/clinicSchema.js"
+import mongoose from "mongoose";
+
 
 // ─── Validation Schemas ───────────────────────────────────────────────────────
 
@@ -165,5 +167,91 @@ return res.status(200).json({
     return res.status(500).json({ success: false, message: "Server error", details: err.message });
   }
 };
+const getNegativeReviews = async (req, res) => {
+  try {
+    const { clinicId } = req.params;
+    const { page = 1, limit = 20 } = req.query;
 
-export { generateFeedbackLink, getFeedbackContext, submitFeedback };
+    // ✅ Strict match (ONLY what you asked)
+    const matchStage = {
+      hospitalId: new mongoose.Types.ObjectId(clinicId),
+      reviewType: "negative",
+      status: "completed",
+    };
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const [result] = await FeedbackRequest.aggregate([
+      { $match: matchStage },
+
+      {
+        $facet: {
+          data: [
+            { $sort: { submittedAt: -1 } },
+            { $skip: skip },
+            { $limit: parseInt(limit) },
+            {
+              $project: {
+                _id: 1,
+                patientName: 1,
+                patientPhone: 1,
+                doctorName: 1,
+                department: 1,
+                visitDate: 1,
+                rating: 1,
+                feedbackText: 1,
+                submittedAt: 1,
+                createdAt: 1,
+              },
+            },
+          ],
+
+          totalCount: [{ $count: "count" }],
+
+          stats: [
+            {
+              $group: {
+                _id: null,
+                avgRating: { $avg: "$rating" },
+              },
+            },
+          ],
+        },
+      },
+    ]);
+
+    const total = result.totalCount[0]?.count || 0;
+    const stats = result.stats[0] || {};
+
+    return res.status(200).json({
+      success: true,
+      data: result.data,
+
+      stats: {
+        total,
+        avgRating: stats.avgRating
+          ? parseFloat(stats.avgRating.toFixed(1))
+          : 0,
+      },
+
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages: Math.ceil(total / parseInt(limit)),
+        totalItems: total,
+        hasNextPage: skip + result.data.length < total,
+        hasPreviousPage: parseInt(page) > 1,
+      },
+    });
+  } catch (error) {
+    console.error("❌ Error fetching negative reviews:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+      details: error.message,
+    });
+  }
+};
+
+
+export { generateFeedbackLink, getFeedbackContext, submitFeedback,getNegativeReviews };

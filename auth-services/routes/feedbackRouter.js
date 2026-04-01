@@ -3,6 +3,7 @@ import resolveTenant from "../middleware/resolveTenant.js";
 import {
   generateFeedbackLink,
   getFeedbackContext,
+  getNegativeReviews,
   submitFeedback,
 } from "../controller/feedbackController.js";
 import { authReceptionistOrAdmin } from "../middleware/feedbackAuth.js";
@@ -17,5 +18,6 @@ feedbackRouter.post("/submit", submitFeedback);
 
 // Public — patient opens the link (dynamic route always last)
 feedbackRouter.get("/:token", getFeedbackContext);
+feedbackRouter.get("/negative-reviews/:clinicId", getNegativeReviews);
 
 export default feedbackRouter;
