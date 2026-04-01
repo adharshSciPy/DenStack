@@ -6,5 +6,6 @@ const router = express.Router();
 
 router.post("/set", verifyAuthToken, setShippingCharge);
 router.get("/get", getShippingCharge);
+router.put("/update", verifyAuthToken, setShippingCharge); 
 
 export default router;

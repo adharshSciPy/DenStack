@@ -3,19 +3,30 @@ import jwt from "jsonwebtoken";
 export const verifyAuthToken = (req, res, next) => {
   const authHeader = req.headers.authorization;
 
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+  let token = authHeader?.startsWith("Bearer ")
+    ? authHeader.split(" ")[1]
+    : null;
+
+  if (!token) {
+    token = req.cookies?.accessToken;
+  }
+
+  if (!token) {
     return res.status(401).json({ message: "No token provided" });
   }
 
-  const token = authHeader.split(" ")[1];
-
   try {
     const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
-    console.log("🔴 DECODED TOKEN:", decoded);
     req.user = decoded;
     next();
   } catch (error) {
-    return res.status(401).json({ message: "Invalid or expired token" });
+    console.log("JWT ERROR:", error.message);
+
+    if (error.name === "TokenExpiredError") {
+      return res.status(401).json({ message: "Token expired" });
+    }
+
+    return res.status(401).json({ message: "Invalid token" });
   }
 };
 
@@ -27,6 +38,8 @@ export const authorizeRoles = (...roles) => {
     ) {
       return res.status(403).json({
         message: "Forbidden: You do not have permission",
+
+        
       });
     }
     next();

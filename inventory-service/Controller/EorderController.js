@@ -1372,3 +1372,188 @@ export const pricePreview = async (req, res) => {
     });
   }
 };
+// ============= GET ORDER STATS =============
+// GET /api/v1/order/orderStats
+export const getOrderStats = async (req, res) => {
+  try {
+    const [stats] = await EcomOrder.aggregate([
+      {
+        $group: {
+          _id: null,
+          totalOrders:     { $sum: 1 },
+          pending:         { $sum: { $cond: [{ $eq: ["$orderStatus", "PENDING"] },          1, 0] } },
+          confirmed:       { $sum: { $cond: [{ $eq: ["$orderStatus", "CONFIRMED"] },        1, 0] } },
+          processing:      { $sum: { $cond: [{ $eq: ["$orderStatus", "PROCESSING"] },       1, 0] } },
+          shipped:         { $sum: { $cond: [{ $eq: ["$orderStatus", "SHIPPED"] },          1, 0] } },
+          outForDelivery:  { $sum: { $cond: [{ $eq: ["$orderStatus", "OUT_FOR_DELIVERY"] }, 1, 0] } },
+          delivered:       { $sum: { $cond: [{ $eq: ["$orderStatus", "DELIVERED"] },        1, 0] } },
+          cancelled:       { $sum: { $cond: [{ $eq: ["$orderStatus", "CANCELLED"] },        1, 0] } },
+        },
+      },
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      stats: {
+        totalOrders:  stats?.totalOrders   || 0,
+        // Admin dashboard groups PENDING + CONFIRMED + PROCESSING as "processing"
+        processing:   (stats?.pending || 0) + (stats?.confirmed || 0) + (stats?.processing || 0),
+        // SHIPPED + OUT_FOR_DELIVERY as "shipped"
+        shipped:      (stats?.shipped || 0) + (stats?.outForDelivery || 0),
+        delivered:    stats?.delivered  || 0,
+        cancelled:    stats?.cancelled  || 0,
+      },
+    });
+  } catch (error) {
+    console.error("Get Order Stats Error:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch order stats", error: error.message });
+  }
+};
+
+// ============= GET RECENT ORDERS (Admin table) =============
+// GET /api/v1/order/recentOrders
+export const getRecentOrders = async (req, res) => {
+  try {
+    const { limit = 50, page = 1, status } = req.query;
+
+    const filter = {};
+    if (status && status !== "All") filter.orderStatus = status;
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const orders = await EcomOrder.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit))
+      .lean();
+
+    const total = await EcomOrder.countDocuments(filter);
+
+    // Map to the shape OrderManagement component expects:
+    // { _id, orderId, date, clinic, items[{name,quantity}], totalAmount, orderStatus, priority }
+    const data = orders.map((order) => ({
+      _id:           order._id,
+      orderId:       order.orderId,
+      date:          order.createdAt,
+      clinic:        order.clinicDetails?.name || order.shippingAddress?.fullName || "—",
+      items:         (order.items || []).map((i) => ({
+        name:     i.productName,
+        quantity: i.quantity,
+      })),
+      totalAmount:   order.totalAmount,
+      orderStatus:   order.orderStatus,
+      paymentStatus: order.paymentDetails?.status  || "PENDING",
+      paymentMethod: order.paymentDetails?.method  || "—",
+      buyerType:     order.buyerType,
+      couponCode:    order.couponCode    || null,
+      couponDiscount: order.couponDiscount || 0,
+      shippingCharge: order.shippingCharge || 0,
+      // Derive priority from order amount
+      priority: order.totalAmount >= 2000 ? "HIGH" : "STANDARD",
+    }));
+
+    return res.status(200).json({
+      success: true,
+      message: "Recent orders retrieved successfully",
+      data,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages:  Math.ceil(total / parseInt(limit)),
+        totalOrders: total,
+      },
+    });
+  } catch (error) {
+    console.error("Get Recent Orders Error:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch recent orders", error: error.message });
+  }
+};
+
+// ============= GET DASHBOARD ANALYTICS =============
+// GET /api/v1/order/dashboard-analytics
+export const getDashboardAnalytics = async (req, res) => {
+  try {
+    const now         = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const endOfLastMonth   = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
+
+    // ── This month ────────────────────────────────────────────────────────────
+    const [thisMonth] = await EcomOrder.aggregate([
+      { $match: { createdAt: { $gte: startOfMonth }, orderStatus: { $ne: "CANCELLED" } } },
+      {
+        $group: {
+          _id:              null,
+          orderCount:       { $sum: 1 },
+          totalRevenue:     { $sum: "$totalAmount" },
+          deliveredCount:   { $sum: { $cond: [{ $eq: ["$orderStatus", "DELIVERED"] }, 1, 0] } },
+        },
+      },
+    ]);
+
+    // ── Last month (for growth %) ─────────────────────────────────────────────
+    const [lastMonth] = await EcomOrder.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: startOfLastMonth, $lte: endOfLastMonth },
+          orderStatus: { $ne: "CANCELLED" },
+        },
+      },
+      {
+        $group: {
+          _id:          null,
+          orderCount:   { $sum: 1 },
+          totalRevenue: { $sum: "$totalAmount" },
+        },
+      },
+    ]);
+
+    const thisOrderCount   = thisMonth?.orderCount   || 0;
+    const thisRevenue      = thisMonth?.totalRevenue  || 0;
+    const thisDelivered    = thisMonth?.deliveredCount || 0;
+    const lastOrderCount   = lastMonth?.orderCount   || 0;
+    const lastRevenue      = lastMonth?.totalRevenue  || 0;
+
+    // Average order value this month
+    const avgOrderValue     = thisOrderCount > 0 ? Math.round(thisRevenue / thisOrderCount) : 0;
+    const lastAvgOrderValue = lastOrderCount  > 0 ? Math.round(lastRevenue / lastOrderCount) : 0;
+    const avgGrowthPct      = lastAvgOrderValue > 0
+      ? parseFloat((((avgOrderValue - lastAvgOrderValue) / lastAvgOrderValue) * 100).toFixed(1))
+      : 0;
+
+    // Fulfillment rate = delivered / total non-cancelled this month
+    const fulfillmentRate = thisOrderCount > 0
+      ? parseFloat(((thisDelivered / thisOrderCount) * 100).toFixed(1))
+      : 0;
+
+    // ── Days in month so far → orders per day ────────────────────────────────
+    const daysElapsed   = Math.max(1, Math.ceil((now - startOfMonth) / (1000 * 60 * 60 * 24)));
+    const ordersPerDay  = parseFloat((thisOrderCount / daysElapsed).toFixed(1));
+
+    return res.status(200).json({
+      success: true,
+      dashboard: {
+        orderVolume: {
+          label: "Orders this month",
+          value: thisOrderCount,
+          perDay: ordersPerDay,
+        },
+        averageOrderValue: {
+          label: "Avg order value this month",
+          value: avgOrderValue,
+          growthPercent: avgGrowthPct,
+        },
+        fulfillmentRate: {
+          label: "Delivery success rate",
+          value: fulfillmentRate,
+        },
+        revenue: {
+          label: "Revenue this month",
+          value: thisRevenue,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Get Dashboard Analytics Error:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch dashboard analytics", error: error.message });
+  }
+};

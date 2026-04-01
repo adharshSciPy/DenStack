@@ -75,54 +75,44 @@ const loginEcommerceUser = async (req, res) => {
   const { email, password } = req.body;
 
   try {
-    if (!emailValidator(email))
-      return res.status(400).json({ message: "Invalid email" });
-    if (!passwordValidator(password))
-      return res.status(400).json({ message: "Invalid password" });
+    const user = await EcommerceUser.findOne({ email });
+    if (!user) {
+      return res.status(401).json({ message: "Invalid credentials" });
+    }
 
-    const superAdmin = await EcommerceUser.findOne({ email });
-    if (!superAdmin)
-      return res
-        .status(401)
-        .json({ message: "Email or password is incorrect" });
+    const isMatch = await user.isPasswordCorrect(password);
+    if (!isMatch) {
+      return res.status(401).json({ message: "Invalid credentials" });
+    }
 
-    const isMatch = await superAdmin.isPasswordCorrect(password);
-    if (!isMatch)
-      return res
-        .status(401)
-        .json({ message: "Email or password is incorrect" });
+    const accessToken = user.generateAccessToken();
+    const refreshToken = user.generateRefreshToken();
 
-    const accessToken = superAdmin.generateAccessToken();
-    const refreshToken = superAdmin.generateRefreshToken();
-
-    // 🔐 ACCESS TOKEN COOKIE
+    // ✅ ACCESS TOKEN COOKIE
     res.cookie("accessToken", accessToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
-      // maxAge: 25 * 60 * 1000, 
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 24 * 60 * 60 * 1000, // 1 day
     });
 
-    // 🔁 REFRESH TOKEN COOKIE
+    // ✅ REFRESH TOKEN COOKIE
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
-      // maxAge: 7 * 24 * 60 * 60 * 1000,   
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
 
-    res.status(200).json({
+    res.json({
       message: "Login successful",
-      superAdmin: {
-        id: superAdmin._id,
-        name: superAdmin.name,
-        email: superAdmin.email,
-        phoneNumber: superAdmin.phoneNumber,
-        role: superAdmin.role
+      user: {
+        id: user._id,
+        email: user.email,
+        role: user.role,
       },
     });
   } catch (error) {
-    console.error(error);
     res.status(500).json({ message: "Server error" });
   }
 };
@@ -401,13 +391,13 @@ const doctorMarketplaceLogin = async (req, res) => {
 const logoutUser = (req, res) => {
   res.clearCookie("accessToken", {
     httpOnly: true,
-    sameSite: "strict",
+    sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
   });
 
   res.clearCookie("refreshToken", {
     httpOnly: true,
-    sameSite: "strict",
+    sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
   });
 
@@ -460,6 +450,37 @@ const verifyEcomUserOTP = async (req, res) => {
     message: "OTP verified"
   });
 
+};
+const refreshAccessToken = (req, res) => {
+  try {
+    const refreshToken = req.cookies.refreshToken;
+
+    if (!refreshToken) {
+      return res.status(401).json({ message: "No refresh token" });
+    }
+
+    const decoded = jwt.verify(
+      refreshToken,
+      process.env.REFRESH_TOKEN_SECRET
+    );
+
+    const newAccessToken = jwt.sign(
+      { id: decoded.id },
+      process.env.ACCESS_TOKEN_SECRET,
+      { expiresIn: "1d" }
+    );
+
+    res.cookie("accessToken", newAccessToken, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 24 * 60 * 60 * 1000,
+    });
+
+    res.json({ message: "Token refreshed" });
+  } catch (err) {
+    return res.status(401).json({ message: "Invalid refresh token" });
+  }
 };
 const resetEcomUserPassword = async (req, res) => {
 
